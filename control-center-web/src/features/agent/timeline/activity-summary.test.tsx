@@ -1906,6 +1906,40 @@ describe('Agent tool activity details', () => {
     expect(onOpenApproval).toHaveBeenCalledWith(activity);
   });
 
+  it.each([
+    { inline: true, recovery: 'approval' }, { inline: false, recovery: 'approval' },
+    { inline: true, recovery: 'permission' }, { inline: false, recovery: 'permission' },
+  ] as const)('preserves absent $recovery capability through an expanded disclosure (inline: $inline)', ({ inline, recovery }) => {
+    const approval = recovery === 'approval';
+    const activity = toolActivity('tool_finished', 'failed', {
+      toolCallId: `absent-${recovery}-${inline}`, toolName: approval ? 'input' : 'workspace_shell',
+      ...(approval ? { approvalId: 'bound-original-approval', payloadSha256: 'a'.repeat(64) } : {}),
+      result: { details: { ok: false, operation: approval ? 'apply_settings' : 'run',
+        result: { error: approval ? '该操作需要本机审批后继续。' : '工作区不在授权目录内，当前权限不足。' } } },
+    });
+    const callback = vi.fn();
+    const view = render(<ActivitySummary activities={[activity]} inline={inline} />);
+    const expand = () => {
+      if (inline) {
+        const details = openInlineActivity(view.container);
+        for (const row of details.querySelectorAll('details.agent-activity-row:not([open])')) fireEvent.click(row.querySelector('summary')!);
+      } else openActivity(view.container);
+    };
+    expand();
+    const label = approval ? '去审批' : '请求权限';
+    expect(screen.getByLabelText('工具失败')).toHaveTextContent(approval ? '该操作需要本机审批后继续。' : '当前权限不足。');
+    expect(screen.queryByRole('button', { name: label })).toBeNull();
+    // Normal Sessions still receive the existing capability, close the
+    // disclosure, and invoke its original owner once.
+    view.rerender(<ActivitySummary activities={[activity]} inline={inline}
+      onOpenApproval={approval ? callback : undefined} onRequestPermission={approval ? undefined : callback} />);
+    fireEvent.click(screen.getByRole('button', { name: label }));
+    expect(callback).toHaveBeenCalledOnce();
+    if (approval) expect(callback).toHaveBeenCalledWith(activity);
+    if (inline) expect(view.container.querySelector('details.agent-activity--inline > summary')).toHaveAttribute('aria-expanded', 'false');
+    else expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
   it('does not present an authorized Room execution bridge as an approval step', () => {
     const activity = toolActivity('tool_started', 'running', {
       toolCallId: 'call-room-policy',

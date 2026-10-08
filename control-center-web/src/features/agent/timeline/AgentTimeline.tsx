@@ -520,13 +520,13 @@ export function AgentTimeline({
   loading?: boolean;
   modelSelectionAvailable: boolean;
   turnRecoveryDisabled?: boolean;
-  onRetryTurn: (
+  onRetryTurn?: (
     turnId: string,
     onAdmissionRolledBack?: () => void,
   ) => boolean;
   onContinueTurn?: (turnId: string) => boolean;
-  onSwitchModel: () => void;
-  onApprovalDecision: (approvalId: string, decision: 'approved' | 'rejected', hash: string) => void;
+  onSwitchModel?: () => void;
+  onApprovalDecision?: (approvalId: string, decision: 'approved' | 'rejected', hash: string) => void;
   onOpenApproval?: (activity: AgentActivityProjection) => void;
   onRequestPermission?: () => void;
   forkAvailable?: boolean;
@@ -1167,7 +1167,7 @@ export const AgentTurn = memo(function AgentTurn({
   ) => boolean;
   onContinueTurn?: (turnId: string) => boolean;
   onSwitchModel?: () => void;
-  onApprovalDecision: (approvalId: string, decision: 'approved' | 'rejected', hash: string) => void;
+  onApprovalDecision?: (approvalId: string, decision: 'approved' | 'rejected', hash: string) => void;
   onOpenApproval?: (activity: AgentActivityProjection) => void;
   onRequestPermission?: () => void;
   forkAvailable?: boolean;
@@ -1883,7 +1883,7 @@ function ActivityGroupView({
 }: {
   sessionId: string;
   activities: AgentActivityProjection[];
-  onApprovalDecision: (approvalId: string, decision: 'approved' | 'rejected', hash: string) => void;
+  onApprovalDecision?: (approvalId: string, decision: 'approved' | 'rejected', hash: string) => void;
   onOpenApproval?: (activity: AgentActivityProjection) => void;
   onRequestPermission?: () => void;
 }) {

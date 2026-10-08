@@ -549,7 +549,7 @@ describe('PAWOS Agent App', () => {
     await waitFor(() => expect(within(rail).queryByText('Room 内部会话')).not.toBeInTheDocument());
   });
 
-  it('reconciles canonical selected-Session metadata while the rail is closed', async () => {
+  it('resolves canonical selected-Session metadata before mounting its workspace while the rail is closed', async () => {
     const sessionId = 'eval-session';
     const transport = createTransport({
       sessions: [{
@@ -567,17 +567,21 @@ describe('PAWOS Agent App', () => {
 
     renderAgent(transport, { initialRoute: `/agent?session=${sessionId}` });
 
-    expect(screen.getByTestId('session-record-id')).toHaveTextContent(sessionId);
-    expect(screen.getByTestId('session-record-known')).toHaveTextContent('false');
+    expect(screen.getByRole('status', { name: 'Session 工作记录状态' })).toHaveTextContent(sessionId);
+    expect(screen.queryByTestId('session-record-id')).toBeNull();
     await waitFor(() => expect(screen.getByTestId('session-record-read-only')).toHaveTextContent('true'));
+    expect(screen.getByTestId('session-record-id')).toHaveTextContent(sessionId);
     expect(screen.getByTestId('session-record-known')).toHaveTextContent('true');
     expect(transport.requests.filter(({ request }) => request.pathId === 'agent.sessions.list')).toHaveLength(1);
   });
 
-  it('mounts a directly targeted Session before loading its optional work-record catalog', async () => {
+  it('mounts a directly targeted canonical Session before loading its optional work-record catalog', async () => {
     const catalog = deferred<unknown>();
+    let sessionReads = 0;
     const transport = new MockControlTransport({ routes: {
-      'agent.sessions.list': () => catalog.promise,
+      'agent.sessions.list': () => ++sessionReads === 1
+        ? { items: [{ id: 'session-latency', title: '直接目标', updatedAtMs: 1, evaluationSnapshot: false }], hasMore: false }
+        : catalog.promise,
       'agent.rooms.list': () => catalog.promise,
       'agent.roles.list': () => catalog.promise,
       'agent.role.models': () => catalog.promise,
@@ -586,7 +590,7 @@ describe('PAWOS Agent App', () => {
     const user = userEvent.setup();
     renderAgent(transport, { initialRoute: '/agent?session=session-latency' });
 
-    expect(screen.getByTestId('session-record-id')).toHaveTextContent(/^session-latency$/);
+    expect(await screen.findByTestId('session-record-id')).toHaveTextContent(/^session-latency$/);
     await waitFor(() => expect(catalogRequestPaths(transport)).toEqual(['agent.sessions.list']));
 
     await user.click(screen.getByRole('button', { name: '打开工作记录' }));

@@ -762,6 +762,7 @@ function PawSessionWorkspaceBody({
   }
 
   async function resumeCurrentTask(): Promise<void> {
+    if (evaluationSnapshot) return;
     const projection = agentProjection(address);
     const recovery = projection.durableRecovery;
     if (resumeRequestRef.current?.recordId === recordId && resumeRequestRef.current.transport === transport
@@ -839,7 +840,7 @@ function PawSessionWorkspaceBody({
   function acceptsComposerInput(): boolean {
     // This guard is synchronous too: a file import may have started before
     // React commits the disabled button, and false keeps Composer's draft.
-    return workspaceScopeRef.current === workspaceScope && !sending && !modelChanging
+    return !evaluationSnapshot && workspaceScopeRef.current === workspaceScope && !sending && !modelChanging
       && !sessionActionLockRef.current && !attachmentImports.pending.size
       && !recovery.checking && !recovery.issues.length
       && !(editState && (editState.resolving || !editState.entryId));
@@ -862,12 +863,13 @@ function PawSessionWorkspaceBody({
   }
 
   useEffect(() => {
-    if (!initialSubmission || initialSubmissionRef.current === initialSubmission.clientMessageId
+    if (evaluationSnapshot || !initialSubmission || initialSubmissionRef.current === initialSubmission.clientMessageId
       || !hasSnapshot || attachmentImportPending || recovery.checking || recovery.issues.length || !record || sending || modelChanging) return;
     void send('prompt', initialSubmission.message, initialSubmission.message, initialSubmission.clientMessageId);
-  }, [initialSubmission, hasSnapshot, attachmentImportPending, recovery.checking, recovery.issues.length, record, sending, modelChanging]);
+  }, [evaluationSnapshot, initialSubmission, hasSnapshot, attachmentImportPending, recovery.checking, recovery.issues.length, record, sending, modelChanging]);
 
   async function send(delivery: AgentMessageDelivery, rawDraft: string, displayDraft = rawDraft, initialClientMessageId?: string): Promise<void> {
+    if (evaluationSnapshot) return;
     if (attachmentImports.pending.size) return;
     if (recovery.checking || recovery.issues.length) { setError('请先核实或移除恢复失败的附件。'); return; }
     if (!workspaceRecord || sending || modelChanging) return;
@@ -1131,6 +1133,7 @@ function PawSessionWorkspaceBody({
   }
 
   async function stop(): Promise<void> {
+    if (evaluationSnapshot) return;
     const projection = agentProjection(address);
     const target = projection.durableRecovery?.compactionTarget;
     if (target) { await stopCompaction(target); return; }
@@ -1178,7 +1181,7 @@ function PawSessionWorkspaceBody({
   }
 
   function retryTurn(turnId: string, onAdmissionRolledBack?: () => void): boolean {
-    if (!workspaceRecord || sending || busy || sessionActionLockRef.current) return false;
+    if (evaluationSnapshot || !workspaceRecord || sending || busy || sessionActionLockRef.current) return false;
     sessionActionLockRef.current = true;
     void (async () => {
       try {
@@ -1334,6 +1337,7 @@ function PawSessionWorkspaceBody({
   }
 
   function continueTurn(turnId: string): boolean {
+    if (evaluationSnapshot) return false;
     const current = agentProjection(address);
     if (current.turnOrder.at(-1) !== turnId || current.turnsById[turnId]?.status !== 'failed') return false;
     void send('prompt', '继续。请基于当前 Session 已保留的工具结果和文件生成最终回复，不要重试或重复已经完成的操作；如果仍缺少信息，明确说明下一步。');
@@ -1341,6 +1345,7 @@ function PawSessionWorkspaceBody({
   }
 
   function openForkDialog(initialEntryId = ''): void {
+    if (evaluationSnapshot) return;
     if (durableSession) { setError('Pi Durable 暂不支持历史分支。'); return; }
     setForkDialogNodes(conversationNodes(agentProjection(address)));
     setForkDialogInitialEntryId(initialEntryId);
@@ -1348,6 +1353,7 @@ function PawSessionWorkspaceBody({
   }
 
   async function beginEditMessage(messageId = ''): Promise<void> {
+    if (evaluationSnapshot) return;
     if (!record || busy || sending || !classicHistoryAvailable || !conversationRewriteAvailable || record.roomParticipant) {
       setError(durableSession ? 'Pi Durable 暂不支持历史改写。' : record?.roomParticipant
         ? '这段对话属于 Room 伙伴，历史修改由 Room 管理。'
@@ -1413,6 +1419,7 @@ function PawSessionWorkspaceBody({
   }
 
   async function decideApproval(approvalId: string, decision: 'approved' | 'rejected', payloadSha256: string): Promise<void> {
+    if (evaluationSnapshot) return;
     try {
       await transport.request({
         pathId: 'agent.approval.decide',
@@ -1492,6 +1499,7 @@ function PawSessionWorkspaceBody({
   }
 
   async function changePermission(selection: AgentPermissionSelection): Promise<void> {
+    if (evaluationSnapshot) return;
     if (!record || busy) { setError('请先停止当前回合，再调整运行权限。'); return; }
     const scope = workspaceScope;
     const isCurrent = () => workspaceScopeRef.current === scope;
@@ -1582,6 +1590,7 @@ function PawSessionWorkspaceBody({
   }
 
   async function changeModel(provider: string, modelId: string, level: ThinkingLevel): Promise<void> {
+    if (evaluationSnapshot) return;
     const request = { scope: workspaceScope };
     const isCurrent = () => workspaceScopeRef.current === request.scope;
     setModelChangeRequest(request);
@@ -1899,14 +1908,14 @@ function PawSessionWorkspaceBody({
                 jumpRequest={jumpRequest}
                 scrollToLatestRequest={scrollToLatestRequest}
                 onFollowStateChange={setTimelineFollow}
-                onForkFromMessage={openForkDialog}
-                onEditMessage={(messageId) => void beginEditMessage(messageId)}
-                onRetryTurn={retryTurn}
-                onContinueTurn={continueTurn}
-                onSwitchModel={() => setModelPickerRequest((value) => value + 1)}
-                onApprovalDecision={(id, decision, hash) => void decideApproval(id, decision, hash)}
-                onOpenApproval={setRequestedApproval}
-                onRequestPermission={() => setPermissionPickerRequest((value) => value + 1)}
+                onForkFromMessage={evaluationSnapshot ? undefined : openForkDialog}
+                onEditMessage={evaluationSnapshot ? undefined : (messageId) => void beginEditMessage(messageId)}
+                onRetryTurn={evaluationSnapshot ? undefined : retryTurn}
+                onContinueTurn={evaluationSnapshot ? undefined : continueTurn}
+                onSwitchModel={evaluationSnapshot ? undefined : () => setModelPickerRequest((value) => value + 1)}
+                onApprovalDecision={evaluationSnapshot ? undefined : (id, decision, hash) => void decideApproval(id, decision, hash)}
+                onOpenApproval={evaluationSnapshot ? undefined : setRequestedApproval}
+                onRequestPermission={evaluationSnapshot ? undefined : () => setPermissionPickerRequest((value) => value + 1)}
               />
             </section>
 

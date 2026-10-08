@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-08T02:55:57.921426+00:00",
+  "generatedAt": "2026-10-08T03:59:00.127083+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "undo/paw-experience-20261007",
@@ -63,7 +63,7 @@
     },
     "verification": {
       "description": "Regression checks for the included product changes.",
-      "pathCount": 120
+      "pathCount": 121
     },
     "voice_desktop": {
       "description": "App naming and desktop voice integration.",
@@ -207,10 +207,10 @@
     }
   },
   "summary": {
-    "pathCount": 2221,
+    "pathCount": 2222,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1905
+      "keep_release": 1906
     },
     "groupCounts": {
       "local_docs": 121,
@@ -232,7 +232,7 @@
       "pi1_experience_iteration": 38,
       "primary_assistant_iteration": 84,
       "paw_experience_20261007": 94,
-      "verification": 120,
+      "verification": 121,
       "voice_desktop": 19,
       "composition_refactor": 32,
       "portable_agent_ui": 8,
@@ -7874,6 +7874,13 @@
       "disposition": "keep_release",
       "group": "conversation_controls",
       "reason": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery."
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawAgentAppMetadata.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Verify canonical selected-Session metadata, readonly Runtime admission, original drafts and stable recoverable loading before mounting the conversation workspace."
     },
     {
       "path": "control-center-web/src/paw-os/apps/PawAgentHome.test.tsx",

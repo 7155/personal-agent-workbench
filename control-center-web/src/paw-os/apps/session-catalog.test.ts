@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest';
 import type { ControlTransport } from '@/platform/transport';
-import { readSessionCatalog } from './session-catalog';
+import { readSelectedSession, readSessionCatalog } from './session-catalog';
 
 it('includes old imported conversations beyond the first page', async () => {
   const request = vi.fn().mockResolvedValueOnce({ items: [{ id: 'recent' }], hasMore: true, nextBeforeUpdatedAtMs: 42, nextBeforeId: 'recent' })
@@ -57,4 +57,25 @@ it('does not publish a late page for a superseded directory request', async () =
   resolvePage({ items: [{ id: 'stale' }], hasMore: false });
   await reading;
   expect(onPage).not.toHaveBeenCalled();
+});
+
+it('ends the selected-ID read as soon as its canonical row is found, without reading an unrelated tail', async () => {
+  const selected = { id: 'older-original', title: '原评测', updatedAtMs: 1, evaluationSnapshot: true, surfaceKind: 'extension', ownerAppId: 'extension:test' };
+  const request = vi.fn().mockResolvedValueOnce({ items: [{ id: 'recent', title: '新对话', updatedAtMs: 42 }], hasMore: true, nextBeforeUpdatedAtMs: 42, nextBeforeId: 'recent' })
+    .mockResolvedValueOnce({ items: [selected], hasMore: true, nextBeforeUpdatedAtMs: 1, nextBeforeId: 'older-original' });
+  expect(await readSelectedSession({ request } as unknown as ControlTransport, 'older-original')).toBe(selected);
+  expect(request).toHaveBeenCalledTimes(2);
+  expect(request.mock.calls[1][0].query).toMatchObject({ includeArchived: true, beforeUpdatedAtMs: 42, beforeId: 'recent' });
+});
+
+it('returns no selected row only after a complete directory is exhausted', async () => {
+  const request = vi.fn().mockResolvedValueOnce({ items: [], hasMore: true, nextBeforeUpdatedAtMs: 42, nextBeforeId: 'recent' })
+    .mockResolvedValueOnce({ items: [], hasMore: false });
+  expect(await readSelectedSession({ request } as unknown as ControlTransport, 'missing-original')).toBeUndefined();
+  expect(request).toHaveBeenCalledTimes(2);
+});
+
+it('rejects a malformed canonical evaluation flag instead of treating it as writable', async () => {
+  const request = vi.fn().mockResolvedValue({ items: [{ id: 'original', title: '原记录', updatedAtMs: 1, evaluationSnapshot: 'true' }], hasMore: false });
+  await expect(readSelectedSession({ request } as unknown as ControlTransport, 'original')).rejects.toThrow('格式异常');
 });

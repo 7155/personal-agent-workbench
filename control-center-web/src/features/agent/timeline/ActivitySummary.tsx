@@ -321,14 +321,14 @@ export function ActivitySummary({
                   sessionId={sessionId}
                   initiallyOpen={false}
                   onApprovalDecision={onApprovalDecision}
-                  onOpenApproval={(selected) => {
+                  onOpenApproval={onOpenApproval ? (selected) => {
                     setInlineOpen(false);
-                    onOpenApproval?.(selected);
-                  }}
-                  onRequestPermission={() => {
+                    onOpenApproval(selected);
+                  } : undefined}
+                  onRequestPermission={onRequestPermission ? () => {
                     setInlineOpen(false);
-                    onRequestPermission?.();
-                  }}
+                    onRequestPermission();
+                  } : undefined}
                 />
               ))}
             </div>
@@ -364,14 +364,14 @@ export function ActivitySummary({
                 activity={activity}
                 sessionId={sessionId}
                 onApprovalDecision={onApprovalDecision}
-                onOpenApproval={(selected) => {
+                onOpenApproval={onOpenApproval ? (selected) => {
                   setDetailsOpen(false);
-                  onOpenApproval?.(selected);
-                }}
-                onRequestPermission={() => {
+                  onOpenApproval(selected);
+                } : undefined}
+                onRequestPermission={onRequestPermission ? () => {
                   setDetailsOpen(false);
-                  onRequestPermission?.();
-                }}
+                  onRequestPermission();
+                } : undefined}
               />
             ))}
           </div>
