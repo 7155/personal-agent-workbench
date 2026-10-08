@@ -41,11 +41,11 @@ describe('PAWOS native Apps', () => {
     await waitFor(() => expect(transport.requests.some(({ request }) => request.pathId === 'planning.dashboard' && request.query?.date === '2020-03-19')).toBe(true));
   });
 
-  it('does not send an invalid route date to the planning backend', async () => {
+  it.each(['2020-02-30', '0000-10-08'])('does not send invalid route date %s to the planning backend', async (invalidDate) => {
     const transport = nativeTransport();
-    renderNative('project-workbench', transport, { initialRoute: '/planning?date=2020-02-30' });
-    expect(await screen.findByLabelText('规划日期')).not.toHaveValue('2020-02-30');
-    expect(transport.requests.filter(({ request }) => request.pathId === 'planning.dashboard').every(({ request }) => request.query?.date !== '2020-02-30')).toBe(true);
+    renderNative('project-workbench', transport, { initialRoute: `/planning?date=${invalidDate}` });
+    expect(await screen.findByLabelText('规划日期')).not.toHaveValue(invalidDate);
+    expect(transport.requests.filter(({ request }) => request.pathId === 'planning.dashboard').every(({ request }) => request.query?.date !== invalidDate)).toBe(true);
   });
 
   it('preserves the chosen date through the overview primary action and cold remount', async () => {
