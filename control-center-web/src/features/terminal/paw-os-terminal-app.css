@@ -1086,7 +1086,6 @@
   .paw-terminal-cwd:hover { background: rgb(255 255 255 / 7%); color: var(--paw-terminal-text); }
   .paw-terminal-create__actions button:hover:not(:disabled) { background: rgb(255 255 255 / 9%); }
   .paw-terminal-create__actions button[type='submit']:hover:not(:disabled) { background: color-mix(in srgb, var(--paw-terminal-accent-strong) 88%, #fff); }
-  .paw-terminal-tab:hover,
   .paw-terminal-tab-new:hover,
   .paw-terminal-console__empty button:hover { transform: translate3d(0, -1px, 0); }
   .paw-terminal-console__empty button:hover { box-shadow: 0 9px 28px color-mix(in srgb, var(--paw-terminal-accent) 30%, transparent); }
