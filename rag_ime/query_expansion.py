@@ -6,7 +6,7 @@ from difflib import SequenceMatcher
 
 from .memory_ingest import normalize_text
 from .memory_ownership import resolve_visible_memory_owners, sql_memory_owner_predicate
-from .memory_projection_consistency import authoritative_retrieval_doc
+from .memory_projection_consistency import authoritative_retrieval_docs
 from .text_utils import compact_whitespace, token_terms
 
 
@@ -317,6 +317,7 @@ def _retrieval_doc_tags(
         (project, project, app, app, *owner_params),
     ).fetchall()
     tags: list[str] = []
+    matching = []
     for row in rows:
         haystack = " ".join(
             str(row[key] or "")
@@ -324,7 +325,10 @@ def _retrieval_doc_tags(
         )
         if not any(_term_hits_text(term, haystack) for term in query_terms):
             continue
-        if not _authoritative_doc_row(conn, row):
+        matching.append(row)
+    authority = authoritative_retrieval_docs(conn, (dict(row) for row in matching))
+    for row, valid in zip(matching, authority):
+        if not valid:
             continue
         for tag in compact_whitespace(str(row["tags_text"] or "")).split():
             if tag and tag not in tags:
@@ -534,29 +538,19 @@ def _retrieval_doc_expansions(
         (project, project, app, app, *owner_params),
     ).fetchall()
     result: list[str] = []
+    matching = []
     for row in rows:
         haystack = f"{row['query_expansions_text'] or ''} {row['surface_hints_text'] or ''}"
         if not any(_term_hits_text(term, haystack) for term in query_terms):
             continue
-        if not _authoritative_doc_row(conn, row):
+        matching.append(row)
+    authority = authoritative_retrieval_docs(conn, (dict(row) for row in matching))
+    for row, valid in zip(matching, authority):
+        if not valid:
             continue
+        haystack = f"{row['query_expansions_text'] or ''} {row['surface_hints_text'] or ''}"
         result.extend(compact_whitespace(haystack).split())
     return result
-
-
-def _authoritative_doc_row(
-    conn: sqlite3.Connection,
-    row: sqlite3.Row,
-) -> bool:
-    return authoritative_retrieval_doc(
-        conn,
-        {
-            "doc_type": row["doc_type"],
-            "source_id": row["source_id"],
-            "source_revision": row["source_revision"],
-            "projection_version": row["projection_version"],
-        },
-    )
 
 
 def _term_hits_text(term: str, text: str) -> bool:

@@ -202,15 +202,15 @@
       "pathCount": 95
     },
     "architecture_recovery_20261008": {
-      "description": "Transactional Knowledge projection recovery, evaluation-only history, explicit scheduler lifecycle and removal of private implementations without consumers; foreground and installed acceptance are recorded separately. Preserve known original Wake admissions and reconcile exact durable evidence without effect replay.",
-      "pathCount": 13
+      "description": "Transactional Knowledge projection recovery, evaluation-only history, explicit scheduler lifecycle and removal of private implementations without consumers; foreground and installed acceptance are recorded separately. Preserve known original Wake admissions and reconcile exact durable evidence without effect replay. Batch canonical retrieval authority and hydrate lexical-prefix candidates without changing scope or complete fallback; admission counts do not imply a scan budget.",
+      "pathCount": 17
     }
   },
   "summary": {
-    "pathCount": 2229,
+    "pathCount": 2233,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1913
+      "keep_release": 1917
     },
     "groupCounts": {
       "local_docs": 121,
@@ -240,7 +240,7 @@
       "conversation_controls": 65,
       "durable_desktop_iteration": 28,
       "trace_optimization": 63,
-      "architecture_recovery_20261008": 13,
+      "architecture_recovery_20261008": 17,
       "scheduled_tasks": 25,
       "session_full_access": 8,
       "mac_local_update_20261006": 8,
@@ -15868,6 +15868,34 @@
       "disposition": "keep_release",
       "group": "paw_experience_20261007",
       "reason": "Preserve unsaved Files drafts across reload/reopen with original Session/resource binding and no automatic write replay."
+    },
+    {
+      "path": "rag_ime/memory_projection_consistency.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "architecture_recovery_20261008",
+      "reason": "Batch canonical retrieval authority checks and hydrate selected lexical candidates; preserve ranking, scope/privacy and complete fallback with truthful admission diagnostics."
+    },
+    {
+      "path": "rag_ime/query_expansion.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "architecture_recovery_20261008",
+      "reason": "Batch canonical retrieval authority checks and hydrate selected lexical candidates; preserve ranking, scope/privacy and complete fallback with truthful admission diagnostics."
+    },
+    {
+      "path": "tests/test_hybrid_rag_retriever.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "architecture_recovery_20261008",
+      "reason": "Batch canonical retrieval authority checks and hydrate selected lexical candidates; preserve ranking, scope/privacy and complete fallback with truthful admission diagnostics."
+    },
+    {
+      "path": "tests/test_memory_projection_consistency.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "architecture_recovery_20261008",
+      "reason": "Batch canonical retrieval authority checks and hydrate selected lexical candidates; preserve ranking, scope/privacy and complete fallback with truthful admission diagnostics."
     }
   ]
 }
