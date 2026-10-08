@@ -34,6 +34,55 @@ describe('PAWOS Workbench Planning operations', () => {
     expect(await within(taskDialog).findByText('已保存')).toBeInTheDocument();
   });
 
+  it.each([
+    ['todo', '完成所选任务'],
+    ['completed', '重新打开所选任务'],
+  ])('keeps saving as the only primary action when editing a %s task', async (status, actionLabel) => {
+    const transport = renderOperations({
+      planning: { runtimeRevision: 7, date: '2026-10-08', plan: { project: 'PAWOS' } },
+      selectedTask: { id: 'task-7', title: '整理任务', detail: '核对结果', status },
+    });
+    const dialog = await screen.findByRole('dialog', { name: '编辑任务' });
+    const save = within(dialog).getByRole('button', { name: '保存任务修改' });
+    expect(save).toHaveAttribute('data-variant', 'primary');
+    expect(within(dialog).getByRole('button', { name: actionLabel })).toHaveAttribute('data-variant', 'secondary');
+    expect(dialog.querySelectorAll('button[data-variant="primary"]')).toHaveLength(1);
+    expect(within(dialog).getByRole('button', { name: '关闭' })).not.toHaveAttribute('data-variant', 'primary');
+    expect(transport.requests).toHaveLength(0);
+  });
+
+  it('saves the edited original task through its bound preview and save receipt', async () => {
+    const user = userEvent.setup();
+    const transport = renderOperations({
+      planning: { runtimeRevision: 7, date: '2026-10-08', plan: { project: 'PAWOS' } },
+      selectedTask: { id: 'task-7', title: '整理任务', detail: '核对结果', status: 'todo' },
+    });
+    const dialog = await screen.findByRole('dialog', { name: '编辑任务' });
+    const title = within(dialog).getByRole('textbox', { name: '任务标题' });
+    await user.clear(title);
+    await user.type(title, '整理原任务');
+    await user.click(within(dialog).getByRole('button', { name: '保存任务修改' }));
+    await waitFor(() => expect(requestFor(transport, 'planning.task.save')).toMatchObject({
+      body: { taskId: 'task-7', title: '整理原任务', detail: '核对结果', date: '2026-10-08', project: 'PAWOS', expectedRuntimeRevision: 7, previewToken: 'preview-task-save', payloadSha256: 'sha256:task' },
+    }));
+    expect(requestFor(transport, 'planning.task.action')).toBeUndefined();
+    expect(await within(dialog).findByText('已保存')).toBeInTheDocument();
+  });
+
+  it.each(['Escape', '关闭'])('dismisses an unsaved edit via %s without submitting the draft or changing status', async (dismiss) => {
+    const user = userEvent.setup();
+    const transport = renderOperations({
+      planning: { runtimeRevision: 7, date: '2026-10-08', plan: { project: 'PAWOS' } },
+      selectedTask: { id: 'task-7', title: '整理任务', detail: '核对结果', status: 'todo' },
+    });
+    const dialog = await screen.findByRole('dialog', { name: '编辑任务' });
+    await user.type(within(dialog).getByRole('textbox', { name: '完成说明' }), ' 未保存的草稿');
+    if (dismiss === 'Escape') await user.keyboard('{Escape}');
+    else await user.click(within(dialog).getByRole('button', { name: '关闭' }));
+    expect(transport.openChanges).toEqual([false]);
+    expect(transport.requests).toHaveLength(0);
+  });
+
   it('completes a selected task and undoes only through the receipt event id', async () => {
     const user = userEvent.setup();
     const transport = renderOperations({
@@ -196,7 +245,7 @@ function renderOperations({
           ) : (
             <PawWorkbenchTaskDialog
               onChanged={() => undefined}
-              onOpenChange={() => undefined}
+              onOpenChange={(open) => transport.openChanges.push(open)}
               open
               planning={planning}
               selectedTask={selectedTask}
@@ -212,6 +261,7 @@ function renderOperations({
 class OperationsTransport implements ControlTransport {
   readonly kind = 'mock' as const;
   readonly requests: ControlRequest[] = [];
+  readonly openChanges: boolean[] = [];
 
   async capabilities(): Promise<FrontendCapabilities> {
     return {

@@ -79,15 +79,22 @@ describe('ManagementMutationWorkflow feedback and confirmation', () => {
     expect(screen.getByRole('button', { name: '保存设置' })).toHaveFocus();
   });
 
-  it.each(['创建任务', '完成所选任务', '重新打开所选任务'])('keeps the original %s target focused through direct preview and apply', async (title) => {
+  it.each([
+    ['创建任务', 'primary'],
+    ['完成所选任务', 'primary'],
+    ['重新打开所选任务', 'primary'],
+    ['完成所选任务', 'secondary'],
+    ['重新打开所选任务', 'secondary'],
+  ] as const)('keeps the original %s %s target focused through direct preview and apply', async (title, triggerVariant) => {
     const user = userEvent.setup();
     const pendingPreview = deferred<ManagementWorkPreview<TestContext>>();
     const pendingApply = deferred<ManagementWorkReceipt>();
     const onPreview = vi.fn(() => pendingPreview.promise);
     const onApply = vi.fn(() => pendingApply.promise);
-    renderWorkflow({ onApply, onPreview, risk: 'R1', title });
+    renderWorkflow({ onApply, onPreview, risk: 'R1', title, triggerVariant });
 
     const trigger = screen.getByRole('button', { name: title });
+    expect(trigger).toHaveAttribute('data-variant', triggerVariant);
     trigger.focus();
     await user.keyboard('{Enter}');
     expect(trigger).toBeEnabled();
@@ -99,6 +106,7 @@ describe('ManagementMutationWorkflow feedback and confirmation', () => {
     await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1));
     expect(trigger).toHaveFocus();
     expect(trigger).toHaveAttribute('aria-busy', 'true');
+    expect(trigger).toHaveAttribute('data-variant', triggerVariant);
     expect(screen.getByRole('button', { name: title })).toBe(trigger);
     await user.keyboard('{Enter} ');
     await user.click(trigger);
@@ -143,8 +151,10 @@ describe('ManagementMutationWorkflow feedback and confirmation', () => {
       onPreview: async () => previewFixture('R3'),
       risk: 'R3',
       title: '永久清除',
+      triggerVariant: 'secondary',
     });
 
+    expect(screen.getByRole('button', { name: '查看影响' })).toHaveAttribute('data-variant', 'danger');
     await user.click(screen.getByRole('button', { name: '查看影响' }));
     await user.click(await screen.findByRole('button', { name: '继续确认' }));
     const checkbox = screen.getByRole('checkbox');
@@ -318,6 +328,7 @@ function renderWorkflow({
   onRollback,
   risk,
   title,
+  triggerVariant,
 }: {
   onApply: (preview: ManagementWorkPreview<TestContext>) => Promise<ManagementWorkReceipt>;
   onPreview: () => Promise<ManagementWorkPreview<TestContext>>;
@@ -327,6 +338,7 @@ function renderWorkflow({
   ) => Promise<ManagementWorkReceipt>;
   risk: 'R1' | 'R2' | 'R3';
   title: string;
+  triggerVariant?: 'primary' | 'secondary';
 }) {
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   return render(
@@ -341,6 +353,7 @@ function renderWorkflow({
         onRollback={onRollback}
         risk={risk}
         title={title}
+        triggerVariant={triggerVariant}
       />
     </QueryClientProvider>,
   );

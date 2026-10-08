@@ -1961,7 +1961,20 @@ i.paw-files-tree__disclosure {
   outline-offset: 2px;
 }
 .paw-files-app[data-editing] .paw-files-preview > header { min-height: 0; padding-block: 4px; }
-.paw-files-app[data-editing] .paw-files-preview__id { row-gap: 0; }
+/* A persistent native scrollbar uses part of the path row's height. Reserve
+   its track beside full-size targets in both disclosure states, so opening
+   details does not resize the live textarea or shift its reading position. */
+.paw-files-app[data-editing] .paw-files-preview__id {
+  --paw-files-identity-h: calc(max(44px, var(--paw-files-control-h)) + 12px);
+  row-gap: 0;
+}
+.paw-files-app[data-editing] .paw-files-preview__id > summary {
+  min-height: var(--paw-files-identity-h);
+}
+.paw-files-app[data-editing] .paw-files-editor:has(.paw-files-editor__input) {
+  padding-block: 6px;
+  gap: 6px;
+}
 
 /* Editing keeps the identity disclosure in one header row. Its full path and
    attributes scroll horizontally instead of displacing the live editor; the
@@ -1973,7 +1986,7 @@ i.paw-files-tree__disclosure {
 }
 .paw-files-app[data-editing] .paw-files-preview__id[open] > .paw-files-crumbs {
   box-sizing: border-box;
-  height: var(--paw-files-control-h);
+  height: var(--paw-files-identity-h);
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
@@ -1997,15 +2010,6 @@ i.paw-files-tree__disclosure {
   outline: 2px solid var(--paw-files-focus-line);
   outline-offset: -2px;
 }
-@container paw-files (max-width: 620px) {
-  .paw-files-app[data-editing] .paw-files-preview__id > summary {
-    min-height: max(44px, var(--paw-files-control-h));
-  }
-  .paw-files-app[data-editing] .paw-files-preview__id[open] > .paw-files-crumbs {
-    height: max(44px, var(--paw-files-control-h));
-  }
-}
-
 /* Portal-local Files aliases reuse semantic tokens. Radix owns collisions. */
 .paw-files-tools-trigger { flex: 0 0 44px; width: 44px; min-height: 44px; }
 .paw-files-tools-popover {

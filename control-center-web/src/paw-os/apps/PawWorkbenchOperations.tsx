@@ -223,6 +223,7 @@ export function PawWorkbenchTaskDialog({
               onRolledBack={onChanged}
               risk="R1"
               title={taskAction === 'reopen' ? '重新打开所选任务' : '完成所选任务'}
+              triggerVariant="secondary"
             />
           ) : null}
         </div>

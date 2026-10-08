@@ -63,6 +63,7 @@ export function ManagementMutationWorkflow<Context>({
   onRolledBack,
   risk,
   title,
+  triggerVariant = 'primary',
 }: {
   availability: MutationAvailability;
   description: string;
@@ -81,6 +82,8 @@ export function ManagementMutationWorkflow<Context>({
   onRolledBack?: (receipt: ManagementWorkReceipt) => void;
   risk: 'R1' | 'R2' | 'R3';
   title: string;
+  /** Visual priority of the direct action; R3 confirmation keeps its danger treatment. */
+  triggerVariant?: 'primary' | 'secondary';
 }) {
   const [stage, setStage] = useState<'idle' | 'preview' | 'approval' | 'receipt' | 'rolled-back'>('idle');
   const [pendingTriggerLabel, setPendingTriggerLabel] = useState<string | null>(null);
@@ -229,7 +232,7 @@ export function ManagementMutationWorkflow<Context>({
             }}
             preserveFocusWhileLoading
             size="small"
-            variant={declaredDangerous ? 'danger' : 'primary'}
+            variant={declaredDangerous ? 'danger' : triggerVariant}
           >
             {isWorking ? pendingTriggerLabel ?? triggerLabel : triggerLabel}
           </Button>
