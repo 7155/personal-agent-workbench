@@ -482,10 +482,10 @@ describe('PawOsFilesApp', () => {
     } finally { style.remove(); }
   });
 
-  it.each(['neutral-content', 'own-shell'])('returns tools focus after %s clicks within the actual negative-tabindex shell boundary', async (target) => {
+  it.each(['neutral-content', 'own-shell'])('returns tools focus after %s clicks within both actual negative-tabindex desktop and shell boundaries', async (target) => {
     const user = userEvent.setup();
     const transport = savedMetadataTransport(() => savedMetadataReceipt());
-    renderApp(transport, <section className="paw-window-shell" tabIndex={-1} aria-label="Files test window"><PawOsFilesApp /><div data-testid="neutral-content">Neutral content</div></section>);
+    renderApp(transport, <main className="paw-desktop-viewport" tabIndex={-1}><section className="paw-window-shell" tabIndex={-1} aria-label="Files test window"><PawOsFilesApp /><div data-testid="neutral-content">Neutral content</div></section></main>);
     await user.click(await screen.findByRole('treeitem', { name: '打开文件 notes.md' }));
     await user.click(await screen.findByRole('button', { name: '编辑文本' }));
     const editor = await screen.findByRole('textbox', { name: '编辑 notes.md' });
@@ -504,10 +504,11 @@ describe('PawOsFilesApp', () => {
   it('preserves explicit local negative-tabindex and other-window focus intent', async () => {
     const user = userEvent.setup();
     const transport = savedMetadataTransport(() => savedMetadataReceipt());
-    renderApp(transport, <>
+    renderApp(transport, <main className="paw-desktop-viewport" tabIndex={-1}>
       <section className="paw-window-shell" tabIndex={-1} aria-label="Files test window"><PawOsFilesApp /><div tabIndex={-1} data-testid="local-focus-target" onClick={(event) => event.currentTarget.focus()}><span>Local focus surface</span></div></section>
       <section className="paw-window-shell" tabIndex={-1} aria-label="Other test window" onPointerDown={(event) => event.currentTarget.focus()}><div data-testid="other-neutral">Other neutral content</div></section>
-    </>);
+      <button type="button" onClick={(event) => event.currentTarget.focus()}>Desktop control</button>
+    </main>);
     await user.click(await screen.findByRole('treeitem', { name: '打开文件 notes.md' }));
     await user.click(await screen.findByRole('button', { name: '编辑文本' }));
     const trigger = screen.getByRole('button', { name: '文件工具' });
@@ -522,6 +523,12 @@ describe('PawOsFilesApp', () => {
     await user.click(screen.getByTestId('other-neutral'));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: '文件工具' })).not.toBeInTheDocument());
     expect(screen.getByRole('region', { name: 'Other test window' })).toHaveFocus();
+    await user.click(trigger);
+    await screen.findByRole('dialog', { name: '文件工具' });
+    const desktopControl = screen.getByRole('button', { name: 'Desktop control' });
+    await user.click(desktopControl);
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '文件工具' })).not.toBeInTheDocument());
+    expect(desktopControl).toHaveFocus();
   });
 
   it('closes tools on a file switch, preserves the draft, and does not focus a replacement opener', async () => {

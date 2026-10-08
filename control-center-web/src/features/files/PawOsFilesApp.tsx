@@ -1041,12 +1041,18 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
                         // Explicit outside controls own their focus, including
                         // Save/discard and another file or window selection.
                         if (target instanceof Element) {
+                          const ownWindow = toolsTriggerRef.current?.closest('.paw-window-shell');
+                          const ownScope = ownWindow ?? toolsTriggerRef.current?.closest('.paw-files-app');
                           const outsideWindow = target.closest('.paw-window-shell');
-                          // The shell itself has tabIndex=-1 for window focus;
-                          // it does not turn every neutral descendant into a control.
-                          // Local negative-tabindex surfaces still own explicit focus.
+                          // Whole-window/desktop tabIndex=-1 containers do not
+                          // turn neutral descendants into local controls.
                           const outsideControl = target.closest('button, input, textarea, select, a[href], summary, [role="button"], [role="link"], [contenteditable="true"], [contenteditable=""], [tabindex]:not(.paw-window-shell)');
-                          if (outsideControl || outsideWindow && outsideWindow !== toolsTriggerRef.current?.closest('.paw-window-shell')) returnToolsFocusRef.current = false;
+                          const localControl = outsideControl && ownScope?.contains(outsideControl);
+                          // A direct explicit desktop control still owns its
+                          // click intent; never return focus from a dock/menu.
+                          const explicitControl = target.closest('button, input, textarea, select, a[href], summary, [role="button"], [role="link"], [contenteditable="true"], [contenteditable=""]');
+                          const externalControlIntent = explicitControl && !ownScope?.contains(target);
+                          if (localControl || externalControlIntent || outsideWindow && outsideWindow !== ownWindow) returnToolsFocusRef.current = false;
                         }
                       }}
                       onCloseAutoFocus={(event) => {
