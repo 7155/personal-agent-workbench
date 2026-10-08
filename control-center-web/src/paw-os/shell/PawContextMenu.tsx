@@ -160,8 +160,10 @@ export function PawContextMenu({
     }
   }
 
-  // Hidden until the measured clamp lands in the same pre-paint commit, so an
-  // edge menu never flashes at the pointer and then jumps.
+  // Keep the unmeasured box transparent and pointer-inactive until the clamp
+  // lands in the same pre-paint commit. visibility:hidden is inherited by
+  // items, and Chromium can retain that hidden child style past placement and
+  // reject both keyboard-entry calls even while the menu itself is visible.
   const style: CSSProperties = placement
     ? {
       left: placement.left,
@@ -169,10 +171,11 @@ export function PawContextMenu({
       '--paw-menu-origin': placement.origin,
       '--paw-menu-rise': `${placement.rise}px`,
     } as CSSProperties
-    : { left: x, top: y, visibility: 'hidden' };
+    : { left: x, top: y, opacity: 0, pointerEvents: 'none' };
 
   return (
     <div
+      aria-hidden={placed ? undefined : true}
       aria-label={ariaLabel}
       className="paw-context-menu"
       data-motion-active={motionActive}

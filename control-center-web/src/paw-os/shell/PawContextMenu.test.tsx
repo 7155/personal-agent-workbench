@@ -71,6 +71,28 @@ it('enters the original first item only after the measured menu becomes visible 
   expect(screen.getByRole('menuitem', { name: '原窗口' })).toHaveFocus();
 });
 
+it('keeps keyboard entry when native descendants retain their initial inherited visibility', () => {
+  let inheritedHidden = false;
+  const nativeFocus = HTMLElement.prototype.focus;
+  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function(this: HTMLElement) {
+    if (this.getAttribute('role') === 'menu') {
+      inheritedHidden ||= window.getComputedStyle(this).visibility === 'hidden';
+      return 220;
+    }
+    return 0;
+  });
+  // Real Chrome rejected both the initial call and the next-frame call while
+  // a child still inherited the menu's original visibility:hidden value.
+  vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(function(this: HTMLElement, options?: FocusOptions) {
+    if (inheritedHidden && this.closest('[role="menu"]')) return;
+    nativeFocus.call(this, options);
+  });
+  const action = vi.fn();
+  render(<PawContextMenu ariaLabel="原入口菜单" items={[{ id: 'original', label: '原首项', action }]} onClose={() => undefined} x={80} y={80} />);
+  expect(screen.getByRole('menuitem', { name: '原首项' })).toHaveFocus();
+  expect(action).not.toHaveBeenCalled();
+});
+
 
 it('places the resting layout box inside the viewport while the entrance transform scales its painted rectangle', () => {
   vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(375);

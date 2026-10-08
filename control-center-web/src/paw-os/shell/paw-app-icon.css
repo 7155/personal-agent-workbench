@@ -126,7 +126,9 @@
     stroke: CanvasText;
   }
   .paw-app-icon [data-paw-icon-art] [opacity] { opacity: 1; }
-  .paw-app-icon[data-paw-app-icon='room'] [data-paw-icon-art] circle {
+  /* Overlapping foreground shapes need a background edge in either system
+     palette. The drawing declares that role; every placement inherits it. */
+  .paw-app-icon [data-paw-icon-art] [data-paw-icon-separation] {
     stroke: Canvas;
     stroke-width: 1.5;
   }

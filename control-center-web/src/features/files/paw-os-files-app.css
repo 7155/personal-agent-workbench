@@ -2002,8 +2002,23 @@ i.paw-files-tree__disclosure {
   flex: 0 0 auto;
   max-width: 100%;
 }
+/* Attributes must fit as a group, rather than becoming a wider unbreakable
+   scroll target. Keep the reserved identity row and the original text size;
+   use its width for the values instead of decorative separators. */
 .paw-files-app[data-editing] .paw-files-preview__id[open] .paw-files-crumbs__meta {
   display: inline-flex;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: calc(100% - 1px);
+  flex-wrap: wrap;
+  gap: 2px 4px;
+  margin-left: 0;
+  padding-left: 0;
+  border-left: 0;
+  white-space: normal;
+}
+.paw-files-app[data-editing] .paw-files-preview__id[open] .paw-files-crumbs__meta > * + *::before {
+  content: none;
 }
 .paw-files-app[data-editing] .paw-files-preview__id[open] .paw-files-preview__actions {
   margin-left: 8px;

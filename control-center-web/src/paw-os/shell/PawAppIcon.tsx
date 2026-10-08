@@ -81,9 +81,9 @@ const APPROVED_ART: Record<PawBuiltinIdentityIconId, ReactNode> = {
     <path d="M18 28 q6 4 12 0" fill="none" stroke="#7A5AF8" strokeLinecap="round" strokeWidth="2.4" />
   </>,
   room: <>
-    <circle cx="19" cy="19" fill={PAW_ICON_PAPER} opacity=".96" r="8.5" />
-    <circle cx="29" cy="19" fill={PAW_ICON_PAPER} opacity=".78" r="8.5" />
-    <circle cx="24" cy="28.5" fill={PAW_ICON_PAPER} opacity=".62" r="8.5" />
+    <circle data-paw-icon-separation cx="19" cy="19" fill={PAW_ICON_PAPER} opacity=".96" r="8.5" />
+    <circle data-paw-icon-separation cx="29" cy="19" fill={PAW_ICON_PAPER} opacity=".78" r="8.5" />
+    <circle data-paw-icon-separation cx="24" cy="28.5" fill={PAW_ICON_PAPER} opacity=".62" r="8.5" />
   </>,
   browser: <>
     <circle cx="24" cy="24" fill="none" r="13.5" stroke={PAW_ICON_PAPER} strokeWidth="4" />

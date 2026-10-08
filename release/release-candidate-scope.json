@@ -63,7 +63,7 @@
     },
     "verification": {
       "description": "Regression checks for the included product changes.",
-      "pathCount": 123
+      "pathCount": 126
     },
     "voice_desktop": {
       "description": "App naming and desktop voice integration.",
@@ -111,7 +111,7 @@
     },
     "knowledge_runtime": {
       "description": "Knowledge parsing, local MinerU runtime configuration and ingestion regressions.",
-      "pathCount": 12
+      "pathCount": 13
     },
     "room_frontend": {
       "description": "Room partner windows, readable replies, sidebars and responsive layout.",
@@ -199,7 +199,7 @@
     },
     "paw_experience_20261007": {
       "description": "Frontend experience and bounded persistent Agent/knowledge capabilities; preserve existing execution owners.",
-      "pathCount": 95
+      "pathCount": 96
     },
     "architecture_recovery_20261008": {
       "description": "Transactional Knowledge projection recovery, evaluation-only history, explicit scheduler lifecycle and removal of private implementations without consumers; foreground and installed acceptance are recorded separately. Preserve known original Wake admissions and reconcile exact durable evidence without effect replay. Batch canonical retrieval authority and hydrate lexical-prefix candidates without changing scope or complete fallback; admission counts do not imply a scan budget.",
@@ -207,10 +207,10 @@
     }
   },
   "summary": {
-    "pathCount": 2234,
+    "pathCount": 2239,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1918
+      "keep_release": 1923
     },
     "groupCounts": {
       "local_docs": 121,
@@ -231,8 +231,8 @@
       "memory_lifecycle": 15,
       "pi1_experience_iteration": 38,
       "primary_assistant_iteration": 84,
-      "paw_experience_20261007": 95,
-      "verification": 123,
+      "paw_experience_20261007": 96,
+      "verification": 126,
       "voice_desktop": 19,
       "composition_refactor": 32,
       "portable_agent_ui": 8,
@@ -247,7 +247,7 @@
       "jev_integration": 10,
       "lab_frontend": 55,
       "second_brain": 24,
-      "knowledge_runtime": 12,
+      "knowledge_runtime": 13,
       "room_frontend": 21,
       "portable_guarded_acceptance": 14,
       "refactor_integration": 23,
@@ -15903,6 +15903,41 @@
       "disposition": "keep_release",
       "group": "verification",
       "reason": "Verify selected-task planning handoff, disclosed date navigation, keyboard dismissal and focus without executing model work."
+    },
+    {
+      "path": "control-center-web/src/features/files/files-tree-focus-intent.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Verify that late Files responses preserve newer path, selection and keyboard focus intents."
+    },
+    {
+      "path": "control-center-web/src/features/knowledge/knowledge-file-choice.test.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Verify native media file choice retains supported MIME and source ownership."
+    },
+    {
+      "path": "control-center-web/src/platform/knowledge-media.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "Keep shared finite media MIME classification in the existing HTTP and native Knowledge transports."
+    },
+    {
+      "path": "rag_ime/knowledge_library/media.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "knowledge_runtime",
+      "reason": "Decode bounded native audio segments and video frame samples through the existing Knowledge ingestion owner."
+    },
+    {
+      "path": "tests/test_knowledge_native_media.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Verify bounded native media ingestion, time provenance and canonical vector/asset readback."
     }
   ]
 }
