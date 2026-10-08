@@ -133,6 +133,63 @@ describe('PluginsFeature', () => {
     expect(transport.requests.some(({ request }) => request.pathId === 'agent.extensions.apply')).toBe(false);
   });
 
+  it.each([
+    { targetVersion: '1.0.0', targetLabel: 'v1.0.0' },
+    { targetVersion: undefined, targetLabel: '上一版本（具体版本未提供）' },
+    { targetVersion: '', targetLabel: '上一版本（具体版本未提供）' },
+    { targetVersion: '   ', targetLabel: '上一版本（具体版本未提供）' },
+  ])('shows the reviewed rollback versions without inventing a target ($targetVersion)', async ({ targetVersion, targetLabel }) => {
+    const user = userEvent.setup();
+    const transport = renderPlugins({
+      'agent.extensions.list': { ok: true, items: [{
+        id: 'paw-app-center-lifecycle-note', displayName: 'Lifecycle Note', version: '1.1.0', enabled: true,
+        rollbackAvailable: true, rollbackTarget: { version: '0.9.0', digest: 'older-inventory-target' },
+      }] },
+      'agent.extensions.preview': {
+        ok: true, previewToken: 'reviewed-rollback', payloadSha256: 'c'.repeat(64),
+        summary: {
+          action: 'rollback', pluginId: 'paw-app-center-lifecycle-note', displayName: 'Lifecycle Note',
+          version: '1.1.0', targetVersion, permissions: [], expectedEnabled: true,
+        },
+      },
+    }, '/plugins', true);
+    const card = await screen.findByRole('article', { name: 'Lifecycle Note Package' });
+    await user.click(within(card).getByText('管理与使用记录'));
+    await user.click(within(card).getByRole('button', { name: '恢复上一版本' }));
+    const approval = await screen.findByRole('region', { name: '待确认的插件更改' });
+    const fact = (label: string) => within(approval).getByText(label).nextElementSibling as HTMLElement;
+    expect(fact('当前版本')).toHaveTextContent('v1.1.0');
+    expect(fact('回退目标')).toHaveTextContent(targetLabel);
+    expect(approval).not.toHaveTextContent('v0.9.0');
+    expect(fact('需要的权限')).toHaveTextContent('无额外权限');
+    expect(fact('当前状态')).toHaveTextContent('已启用');
+    expect(transport.requests.find(({ request }) => request.pathId === 'agent.extensions.preview')?.request.body)
+      .toEqual({ action: 'rollback', pluginId: 'paw-app-center-lifecycle-note' });
+    const confirm = within(approval).getByRole('button', { name: '确认更改' });
+    expect(confirm).toBeEnabled();
+    await user.click(confirm);
+    await waitFor(() => expect(transport.requests.filter(({ request }) => request.pathId === 'agent.extensions.apply')
+      .map(({ request }) => request.body)).toEqual([{
+        previewToken: 'reviewed-rollback', payloadSha256: 'c'.repeat(64), confirmText: 'apply',
+      }]));
+  });
+
+  it.each(['install', 'update', 'enable', 'disable', 'uninstall'])('retains the reviewed version label for %s without presenting a rollback target', async (action) => {
+    const user = userEvent.setup();
+    renderPlugins({
+      'agent.extensions.proposals': { ok: true, items: [{
+        proposalId: 'reviewed-action', previewToken: 'reviewed-action-token', payloadSha256: 'd'.repeat(64),
+        summary: { action, pluginId: 'lifecycle-note', displayName: 'Lifecycle Note', version: '1.1.0', targetVersion: '1.0.0' },
+      }] },
+    }, '/plugins?view=proposals', true);
+    await user.click(await screen.findByRole('button', { name: /Lifecycle Note/ }));
+    const approval = await screen.findByRole('region', { name: '待确认的插件更改' });
+    expect(within(approval).getByText('版本').nextElementSibling).toHaveTextContent('v1.1.0');
+    expect(within(approval).queryByText('当前版本')).not.toBeInTheDocument();
+    expect(within(approval).queryByText('回退目标')).not.toBeInTheDocument();
+    expect(approval).not.toHaveTextContent('v1.0.0');
+  });
+
   it('explains known installed packages and preserves original fields in an explicit disclosure', async () => {
     const user = userEvent.setup();
     renderPlugins({ 'agent.extensions.list': { ok: true, items: [{

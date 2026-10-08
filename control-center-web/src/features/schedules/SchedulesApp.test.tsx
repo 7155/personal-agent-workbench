@@ -1,14 +1,16 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, type QueryClientConfig } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, expect, it } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
 import { createPreviewTransport } from '@/app/preview-control-transport';
+import { queryClient as productionQueryClient } from '@/app/query-client';
 import { TooltipProvider } from '@/components/primitives';
 import { SchedulesApp } from './SchedulesApp';
 import { memoryScheduleRows } from './schedule-model';
 import { isGithubPrUrl } from '@/features/planning/AgentWakeSchedules';
+import { memoryQueryKeys } from '@/features/memory/api';
 import { MockControlTransport } from '@/test/mock-transport';
 
 afterEach(cleanup);
@@ -19,18 +21,18 @@ function setup() {
   return transport;
 }
 
-function setupMemoryStatus(status: () => unknown | Promise<unknown>) {
+function setupMemoryStatus(status: () => unknown | Promise<unknown>, defaultOptions: QueryClientConfig['defaultOptions'] = { queries: { retry: false } }) {
   const transport = new MockControlTransport({ routes: {
     'agent.wakeSchedules.list': { ok: true, items: [] },
     'observability.evalSchedules.list': { schemaVersion: 'rag-ime.eval-schedule-list.v1', ok: true, items: [] },
     'configuration.settings': { settings: {} },
     'agent.memoryMaintenance.run': status,
   } });
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = new QueryClient({ defaultOptions });
   render(<QueryClientProvider client={client}><ControlTransportProvider transport={transport}><MemoryRouter><TooltipProvider><SchedulesApp /></TooltipProvider></MemoryRouter></ControlTransportProvider></QueryClientProvider>);
   const counts = () => Object.fromEntries(['agent.wakeSchedules.list', 'observability.evalSchedules.list', 'configuration.settings', 'agent.memoryMaintenance.run']
     .map((pathId) => [pathId, transport.requests.filter((call) => call.request.pathId === pathId).length]));
-  return { client, counts };
+  return { client, counts, transport };
 }
 
 it('keeps All pending while only memory status is still reading', async () => {
@@ -40,6 +42,7 @@ it('keeps All pending while only memory status is still reading', async () => {
   expect(Object.values(counts())).toEqual([1, 1, 1, 1]);
   expect(screen.getByRole('status')).toHaveTextContent('正在读取各类安排…');
   expect(screen.getByRole('button', { name: '刷新所有任务' })).toBeDisabled();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   expect(screen.queryByText('还没有任务安排')).not.toBeInTheDocument();
   const search = screen.getByRole('textbox', { name: '搜索定时任务' });
   fireEvent.change(search, { target: { value: '未发送的筛选草稿' } });
@@ -51,10 +54,10 @@ it('keeps All pending while only memory status is still reading', async () => {
   client.clear();
 });
 
-it('exposes a lone memory status failure and retries only that original source', async () => {
+it('retains the failed source retry node, loading focus and draft until the original query settles', async () => {
   let reads = 0;
   let resolve!: (value: unknown) => void;
-  const { client, counts } = setupMemoryStatus(() => {
+  const { client, counts, transport } = setupMemoryStatus(() => {
     reads += 1;
     if (reads === 1) return Promise.reject(new Error('原后台维护记录读取失败'));
     return new Promise((done) => { resolve = done; });
@@ -66,15 +69,138 @@ it('exposes a lone memory status failure and retries only that original source',
   expect(screen.getByRole('button', { name: '刷新所有任务' })).toBeEnabled();
   const search = screen.getByRole('textbox', { name: '搜索定时任务' });
   fireEvent.change(search, { target: { value: '失败后保留的筛选草稿' } });
-  fireEvent.click(within(alert).getByRole('button', { name: '重试' }));
+  const retry = within(alert).getByRole('button', { name: '重试' });
+  const label = retry.querySelector('.ui-button__label');
+  const user = userEvent.setup();
+  retry.focus();
+  await user.keyboard('{Enter}');
   await waitFor(() => expect(Object.values(counts())).toEqual([1, 1, 1, 2]));
+  expect(retry).toBeInTheDocument();
+  expect(screen.getByRole('alert')).toBe(alert);
+  expect(within(alert).getByRole('button', { name: '重试' })).toBe(retry);
+  expect(retry.querySelector('.ui-button__label')).toBe(label);
+  expect(retry).toHaveFocus();
+  expect(retry).toHaveAttribute('aria-busy', 'true');
+  expect(retry).toHaveAttribute('aria-disabled', 'true');
+  expect(retry.querySelector('.ui-button__progress')).toHaveAttribute('aria-hidden', 'true');
   expect(screen.getByRole('button', { name: '刷新所有任务' })).toBeDisabled();
   expect(search).toHaveValue('失败后保留的筛选草稿');
+  await user.keyboard('{Enter} ');
+  await user.click(retry);
+  expect(Object.values(counts())).toEqual([1, 1, 1, 2]);
+  for (const call of transport.requests.filter((call) => call.request.pathId === 'agent.memoryMaintenance.run')) {
+    expect(call.request.query).toEqual({ limit: 12 });
+    expect(call.request.signal).toBeInstanceOf(AbortSignal);
+  }
   await act(async () => resolve({ ok: true, runs: [] }));
   await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+  expect(retry).not.toBeInTheDocument();
+  expect(search).toHaveFocus();
   expect(screen.getByRole('button', { name: '刷新所有任务' })).toBeEnabled();
   expect(Object.values(counts())).toEqual([1, 1, 1, 2]);
   expect(search).toHaveValue('失败后保留的筛选草稿');
+  client.clear();
+});
+
+it('keeps the original retry through the production query retry attempt without extra activation', async () => {
+  let reads = 0;
+  let reject!: (reason: Error) => void;
+  let resolve!: (value: unknown) => void;
+  const { client, counts } = setupMemoryStatus(() => {
+    reads += 1;
+    if (reads <= 2) return Promise.reject(new Error('原后台维护记录读取失败'));
+    if (reads === 3) return new Promise((_done, fail) => { reject = fail; });
+    return new Promise((done) => { resolve = done; });
+  }, { queries: { ...productionQueryClient.getDefaultOptions().queries, retryDelay: 0 } });
+  const alert = await screen.findByRole('alert');
+  const retry = within(alert).getByRole('button', { name: '重试' });
+  expect(Object.values(counts())).toEqual([1, 1, 1, 2]);
+  const user = userEvent.setup();
+  retry.focus();
+  await user.keyboard('{Enter}');
+  await waitFor(() => expect(Object.values(counts())).toEqual([1, 1, 1, 3]));
+  expect(retry).toBeInTheDocument();
+  expect(retry).toHaveFocus();
+  await act(async () => reject(new Error('本次读取仍失败')));
+  await waitFor(() => expect(Object.values(counts())).toEqual([1, 1, 1, 4]));
+  expect(screen.getByRole('alert')).toBe(alert);
+  expect(alert).toHaveTextContent('原后台维护记录读取失败');
+  expect(within(alert).getByRole('button', { name: '重试' })).toBe(retry);
+  expect(retry).toHaveFocus();
+  expect(retry).toHaveAttribute('aria-busy', 'true');
+  expect(retry).toHaveAttribute('aria-disabled', 'true');
+  await user.keyboard('{Enter} ');
+  await user.click(retry);
+  expect(Object.values(counts())).toEqual([1, 1, 1, 4]);
+  await act(async () => resolve({ ok: true, runs: [] }));
+  await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+  expect(screen.getByRole('textbox', { name: '搜索定时任务' })).toHaveFocus();
+  expect(Object.values(counts())).toEqual([1, 1, 1, 4]);
+  client.clear();
+});
+
+it('keeps the retry usable after failure and preserves moved focus when recovery removes the notice', async () => {
+  let reads = 0;
+  let reject!: (reason: Error) => void;
+  let resolve!: (value: unknown) => void;
+  const { client, counts } = setupMemoryStatus(() => {
+    reads += 1;
+    if (reads === 1) return Promise.reject(new Error('原后台维护记录读取失败'));
+    if (reads === 2) return new Promise((_done, fail) => { reject = fail; });
+    return new Promise((done) => { resolve = done; });
+  });
+  const alert = await screen.findByRole('alert');
+  const retry = within(alert).getByRole('button', { name: '重试' });
+  const user = userEvent.setup();
+  retry.focus();
+  await user.keyboard('{Enter}');
+  await waitFor(() => expect(Object.values(counts())).toEqual([1, 1, 1, 2]));
+  expect(retry).toBeInTheDocument();
+  await act(async () => reject(new Error('本次读取仍失败')));
+  await waitFor(() => expect(alert).toHaveTextContent('本次读取仍失败'));
+  expect(within(alert).getByRole('button', { name: '重试' })).toBe(retry);
+  expect(retry).toHaveFocus();
+  expect(retry).not.toHaveAttribute('aria-busy');
+  expect(retry).not.toHaveAttribute('aria-disabled');
+  await user.keyboard('{Enter}');
+  await waitFor(() => expect(Object.values(counts())).toEqual([1, 1, 1, 3]));
+  const search = screen.getByRole('textbox', { name: '搜索定时任务' }) as HTMLInputElement;
+  fireEvent.change(search, { target: { value: '仍保留的筛选草稿' } });
+  search.setSelectionRange(2, 5);
+  const nextAction = screen.getByRole('button', { name: '安排新任务' });
+  nextAction.focus();
+  await act(async () => resolve({ ok: true, runs: [] }));
+  await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+  expect(nextAction).toHaveFocus();
+  expect(search).toHaveValue('仍保留的筛选草稿');
+  expect([search.selectionStart, search.selectionEnd]).toEqual([2, 5]);
+  expect(Object.values(counts())).toEqual([1, 1, 1, 3]);
+  client.clear();
+});
+
+it('does not cancel or restart the original cached source when retry is activated twice before pending renders', async () => {
+  let reads = 0;
+  let resolve!: (value: unknown) => void;
+  const { client, counts, transport } = setupMemoryStatus(() => {
+    reads += 1;
+    if (reads === 1) return { ok: true, runs: [] };
+    if (reads === 2) return Promise.reject(new Error('已缓存记录重新读取失败'));
+    return new Promise((done) => { resolve = done; });
+  });
+  await waitFor(() => expect(screen.getByRole('button', { name: '刷新所有任务' })).toBeEnabled());
+  await act(async () => { await client.refetchQueries({ queryKey: memoryQueryKeys.curationStatus() }); });
+  const alert = await screen.findByRole('alert');
+  const retry = within(alert).getByRole('button', { name: '重试' });
+  retry.focus();
+  act(() => { fireEvent.click(retry); fireEvent.click(retry); });
+  await waitFor(() => expect(retry).toHaveAttribute('aria-busy', 'true'));
+  expect(Object.values(counts())).toEqual([1, 1, 1, 3]);
+  expect(retry).toHaveFocus();
+  expect(transport.requests.filter((call) => call.request.pathId === 'agent.memoryMaintenance.run')[2].request.signal?.aborted).toBe(false);
+  await act(async () => resolve({ ok: true, runs: [] }));
+  await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+  expect(screen.getByRole('textbox', { name: '搜索定时任务' })).toHaveFocus();
+  expect(Object.values(counts())).toEqual([1, 1, 1, 3]);
   client.clear();
 });
 

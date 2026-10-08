@@ -16,6 +16,7 @@
 .schedule-app__overview { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; color: var(--color-text-secondary); font-size: 14px; }
 .schedule-app__overview strong { font-size: 16px; color: var(--color-text); font-variant-numeric: tabular-nums; }
 .schedule-app__separator { margin-inline: 14px; color: var(--color-border); }
+.schedule-app__retry { justify-self: start; }
 .schedule-app__list { border-top: 1px solid var(--color-border); }
 .schedule-app__row { display: flex; align-items: center; gap: 14px; width: 100%; min-width: 0; padding: 16px 8px; text-align: left; border: 0; border-bottom: 1px solid var(--color-border); background: transparent; color: inherit; cursor: pointer; transition: background 140ms; }
 .schedule-app__row:hover { background: var(--color-surface-subtle); }
@@ -56,6 +57,7 @@
   .schedule-app .observation-schedules__create > summary { min-height: 44px; }
   .schedule-app__nav button > svg { display: none; }
   .schedule-app__overview > .ui-button { min-height: 44px; }
+  .schedule-app .ui-button.schedule-app__retry { min-height: 40px; }
   .schedule-app__filters { padding-inline: 16px; }
   .schedule-app__content { padding: 16px; }
   .schedule-app__row { gap: 10px; flex-wrap: wrap; }

@@ -614,11 +614,16 @@
   transition: background-color 120ms var(--paw-terminal-ease), border-color 120ms var(--paw-terminal-ease);
 }
 .paw-terminal-create__actions button[type='submit'] {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   border-color: color-mix(in srgb, var(--paw-terminal-accent) 45%, transparent);
   background: var(--paw-terminal-accent-strong);
   color: #fff;
   box-shadow: 0 4px 14px color-mix(in srgb, var(--paw-terminal-accent) 24%, transparent);
 }
+.paw-terminal-create__busy { flex: 0 0 14px; visibility: hidden; }
+.paw-terminal-create__actions button[aria-busy='true'] .paw-terminal-create__busy { visibility: visible; }
 .paw-terminal-create__actions button:disabled { cursor: not-allowed; opacity: .45; }
 .paw-terminal-create__actions button:focus-visible { outline: 2px solid var(--paw-terminal-focus); outline-offset: 1px; }
 
@@ -1056,6 +1061,10 @@
   .paw-terminal-tab-main { min-width: 44px; }
   .paw-tab-close,
   .paw-terminal-tab-new { width: 44px; height: 44px; }
+  /* Keep the primary action and original close target at 44px. Compact
+     secondary controls leave room for the complete 88px selected tab. */
+  .paw-terminal-tab-new--cwd,
+  .paw-terminal-tabs-overflow { width: 40px; }
   .paw-terminal-app__toolbar:not([data-window-chrome]) { height: 48px; }
   .paw-window-titlebar[data-window-chrome='terminal-tabs'] { grid-template-columns: var(--paw-titlebar-lead, max-content) minmax(0, 1fr); column-gap: 4px; padding-inline: 4px; }
   .paw-window-titlebar[data-window-chrome='terminal-tabs'] .paw-window-title { display: none; }

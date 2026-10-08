@@ -138,8 +138,9 @@ export function PawOsTerminalApp() {
   const tabSwitcherToggleRef = useRef<HTMLButtonElement | null>(null);
   const tabSwitcherFirstItemRef = useRef<HTMLButtonElement | null>(null);
   const emptyCreateRef = useRef<HTMLButtonElement | null>(null);
+  const newCreateRef = useRef<HTMLButtonElement | null>(null);
   const initialLoadHandled = useRef(false);
-  const restoreTabFocusRef = useRef(false);
+  const closingTabFocusRef = useRef<string | null>(null);
   const restoreCwdCreateFocusRef = useRef(false);
   const selectedStatusRef = useRef<TerminalState>('running');
   const createShortcutRef = useRef<() => void>(() => undefined);
@@ -154,6 +155,9 @@ export function PawOsTerminalApp() {
   });
   const sessions = sessionsQuery.data?.items ?? emptySessions;
   const selected = sessions.find((item) => item.terminalId === selectedId) ?? null;
+  // Capture the handoff for a newly mounted xterm before the focus effect
+  // consumes it; its mount frame must not steal the surviving tab's focus.
+  const restoringClosedTabFocus = closingTabFocusRef.current !== null;
   const invalidate = async () => queryClient.invalidateQueries({ queryKey: terminalKeys.root });
 
   // Sessions created through this App all share the backend title "Terminal";
@@ -190,6 +194,7 @@ export function PawOsTerminalApp() {
       body: { terminalId },
     }),
     onSuccess: invalidate,
+    onError: () => { closingTabFocusRef.current = null; },
   });
 
   // The keyboard shortcut runs from inside the xterm key handler, which lives
@@ -226,15 +231,17 @@ export function PawOsTerminalApp() {
   // Closing a tab unmounts the focused control; hand focus to the surviving
   // selected tab, or to the empty-state create action when none survive.
   useEffect(() => {
-    if (!restoreTabFocusRef.current) return;
+    const closingId = closingTabFocusRef.current;
+    if (!closingId || close.isPending || sessions.some((item) => item.terminalId === closingId)) return;
+    if (sessions.length ? !selected : selectedId !== '') return;
     const nextFocus = sessions.length
-      ? terminalTabRefs.current.get(selectedId) ?? terminalTabRefs.current.get(sessions.at(-1)!.terminalId)
+      ? terminalTabRefs.current.get(selectedId)
       : emptyCreateRef.current;
     if (nextFocus) {
-      nextFocus.focus();
-      restoreTabFocusRef.current = false;
+      nextFocus.focus({ preventScroll: true });
+      if (document.activeElement === nextFocus) closingTabFocusRef.current = null;
     }
-  }, [selectedId, sessions]);
+  }, [close.isPending, selected, selectedId, sessions]);
 
   useEffect(() => {
     setCursor(0);
@@ -262,14 +269,25 @@ export function PawOsTerminalApp() {
         : next);
   }, []);
 
+  const revealSelectedTab = useCallback(() => {
+    const wrapper = terminalTabRefs.current.get(selectedId)?.closest<HTMLElement>('.paw-terminal-tab');
+    // The original close button is a sibling of tab-main, so scrolling only
+    // the main control can leave that button clipped behind the switcher.
+    if (wrapper && typeof wrapper.scrollIntoView === 'function') wrapper.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [selectedId]);
+
   useEffect(() => {
     const strip = tabStripRef.current;
     if (!strip) return;
+    const revealAndMeasure = () => {
+      revealSelectedTab();
+      measureTabStrip();
+    };
     measureTabStrip();
-    const observer = new ResizeObserver(measureTabStrip);
+    const observer = new ResizeObserver(revealAndMeasure);
     observer.observe(strip);
     return () => observer.disconnect();
-  }, [measureTabStrip, sessions.length]);
+  }, [measureTabStrip, revealSelectedTab, sessions.length]);
 
   useEffect(() => {
     if (!tabStrip.overflowing) setShowTabSwitcher(false);
@@ -308,14 +326,13 @@ export function PawOsTerminalApp() {
   // The tab strip scrolls locally; keep the selected identity visible even when
   // selection changes through keyboard navigation or session-list updates.
   useEffect(() => {
-    if (!selectedId) return;
-    const tab = terminalTabRefs.current.get(selectedId);
-    if (tab && typeof tab.scrollIntoView === 'function') tab.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-  }, [selectedId, sessions.length]);
+    revealSelectedTab();
+  }, [revealSelectedTab, sessions.length]);
 
   useEffect(() => {
     const host = terminalHostRef.current;
     if (!host || !selectedId) return;
+    const focusAtMount = document.activeElement;
     host.replaceChildren();
     const terminal = new Xterm({
       // SearchAddon uses registerDecoration for highlights and match counts.
@@ -405,7 +422,11 @@ export function PawOsTerminalApp() {
     const frame = window.requestAnimationFrame(() => {
       fitTerminal();
       if (restoreCwdCreateFocusRef.current) cwdCreateToggleRef.current?.focus();
-      else terminal.focus();
+      // A new PTY claims only unclaimed focus or its original create trigger.
+      // Search, cwd, tabs and other explicitly focused controls keep focus.
+      else if (!restoringClosedTabFocus
+        && (document.activeElement === document.body
+          || (document.activeElement === focusAtMount && document.activeElement === newCreateRef.current))) terminal.focus();
     });
 
     return () => {
@@ -621,7 +642,7 @@ export function PawOsTerminalApp() {
                 className="paw-tab-close"
                 disabled={close.isPending}
                 onClick={() => {
-                  restoreTabFocusRef.current = true;
+                  closingTabFocusRef.current = terminal.terminalId;
                   close.mutate(terminal.terminalId);
                 }}
                 title={`结束终端会话 ${label}`}
@@ -653,7 +674,7 @@ export function PawOsTerminalApp() {
               <List size={13} />
             </button>
           ) : null}
-          <button aria-busy={create.isPending || undefined} aria-label="新建终端" className="paw-terminal-tab-new" disabled={create.isPending} onClick={() => create.mutate({})} title="新建终端（⌘T / Ctrl+Shift+T）" type="button">
+          <button aria-busy={create.isPending || undefined} aria-label="新建终端" className="paw-terminal-tab-new" disabled={create.isPending} onClick={() => create.mutate({})} ref={newCreateRef} title="新建终端（⌘T / Ctrl+Shift+T）" type="button">
             {create.isPending ? <LoaderCircle className="ui-spin" size={13} /> : <Plus size={13} />}
           </button>
           <button
@@ -767,7 +788,7 @@ export function PawOsTerminalApp() {
                 {cwdInvalid ? <p className="paw-terminal-create__hint" role="alert">请输入以 / 开头的绝对路径。</p> : null}
                 {create.error ? <p className="paw-terminal-create__hint" role="alert">新建终端失败：{publicError(create.error)} 输入已保留，请修改目录后重试。</p> : null}
                 <div className="paw-terminal-create__actions">
-                  <button disabled={create.isPending || cwdInvalid} type="submit">{create.isPending ? '正在创建' : '新建终端'}</button>
+                  <button aria-busy={create.isPending || undefined} disabled={create.isPending || cwdInvalid} type="submit"><LoaderCircle aria-hidden="true" className={`paw-terminal-create__busy${create.isPending ? ' ui-spin' : ''}`} size={14} />新建终端</button>
                   <button onClick={closeCreateForm} type="button">取消</button>
                 </div>
               </form>
@@ -827,7 +848,7 @@ export function PawOsTerminalApp() {
                 <span aria-hidden className="paw-terminal-empty-glyph">❯<i /></span>
                 <p>还没有终端会话</p>
                 <p className="paw-terminal-console__empty-hint">新建一个 PAWOS 内嵌 PTY，直接在这里运行项目命令。</p>
-                <button aria-busy={create.isPending || undefined} disabled={create.isPending} onClick={() => create.mutate({})} ref={emptyCreateRef} type="button">{create.isPending ? <LoaderCircle className="ui-spin" size={14} /> : <Plus size={14} />}{create.isPending ? '正在创建' : '新建终端'}</button>
+                <button aria-busy={create.isPending || undefined} disabled={create.isPending} onClick={() => create.mutate({})} ref={emptyCreateRef} type="button">{create.isPending ? <LoaderCircle aria-hidden="true" className="ui-spin" size={14} /> : <Plus aria-hidden="true" size={14} />}新建终端</button>
               </div>
             )}
             {selected && selected.status !== 'running' ? (
@@ -839,7 +860,7 @@ export function PawOsTerminalApp() {
                     aria-busy={close.isPending && close.variables === selected.terminalId ? true : undefined}
                     disabled={close.isPending}
                     onClick={() => {
-                      restoreTabFocusRef.current = true;
+                      closingTabFocusRef.current = selected.terminalId;
                       close.mutate(selected.terminalId);
                     }}
                     type="button"

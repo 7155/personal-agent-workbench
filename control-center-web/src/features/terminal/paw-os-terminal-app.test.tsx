@@ -85,7 +85,7 @@ vi.mock('@xterm/xterm', () => ({
       this.onDataCallback = callback;
       return { dispose() {} };
     }
-    focus() {}
+    focus() { this.host?.querySelector<HTMLTextAreaElement>('textarea')?.focus(); }
     reset() { this.host?.replaceChildren(); }
     write(text: string) {
       const output = document.createElement('pre');
@@ -275,9 +275,14 @@ describe('PawOsTerminalApp', () => {
     expect(secondTab).toHaveAttribute('tabindex', '0');
     expect(firstTab).toHaveAttribute('tabindex', '-1');
 
+    await act(async () => { await new Promise<void>(resolve => window.requestAnimationFrame(() => resolve())); });
+    expect(screen.getByRole('textbox', { name: '终端输入' })).toHaveFocus();
+
     secondTab.focus();
     await user.keyboard('{ArrowLeft}');
     expect(firstTab).toHaveAttribute('aria-selected', 'true');
+    expect(firstTab).toHaveFocus();
+    await act(async () => { await new Promise<void>(resolve => window.requestAnimationFrame(() => resolve())); });
     expect(firstTab).toHaveFocus();
     await user.keyboard('{End}');
     expect(secondTab).toHaveAttribute('aria-selected', 'true');
@@ -291,6 +296,137 @@ describe('PawOsTerminalApp', () => {
 
     await user.click(within(tablist).getByRole('button', { name: '结束终端会话 Terminal Two' }));
     await waitFor(() => expect(within(tablist).getAllByRole('tab')).toHaveLength(1));
+  });
+
+  it.each(['empty', 'survivor'] as const)('waits for accepted close removal before restoring stable %s focus across query cache updates', async (destination) => {
+    const user = userEvent.setup();
+    const survivor = terminalSession('terminal-survivor', 'Survivor');
+    const closing = terminalSession('terminal-closing', 'Closing');
+    let sessions = destination === 'empty' ? [closing] : [survivor, closing];
+    let resolveClose!: (value: unknown) => void;
+    const closePending = new Promise((resolve) => { resolveClose = resolve; });
+    const transport = new MockControlTransport({ routes: {
+      'terminal.sessions.list': () => ({ schemaVersion: 'rag-ime.system-terminal.v1', ok: true, items: sessions }),
+      'terminal.session.read': (request: ControlRequest) => ({
+        schemaVersion: 'rag-ime.system-terminal.v1', ok: true,
+        terminal: sessions.find(item => item.terminalId === asRecord(request.body).terminalId) ?? closing,
+        cursor: 0, nextCursor: 0, truncated: false, text: '',
+      }),
+      'terminal.session.resize': { ok: true },
+      'terminal.session.close': () => closePending,
+    } });
+    const { queryClient } = renderTerminal(transport, <PawOsTerminalApp />);
+    await screen.findByRole('tab', { name: 'Closing' });
+    await screen.findByRole('textbox', { name: '终端输入' });
+    await user.click(screen.getByRole('button', { name: '结束终端会话 Closing' }));
+    expect(screen.getByRole('button', { name: '结束终端会话 Closing' })).toBeDisabled();
+
+    // A normal list/read projection changes array identity while the original
+    // close is pending. It must not consume return focus on the closing tab.
+    await act(async () => {
+      queryClient.setQueryData(['system-terminal'], {
+        schemaVersion: 'rag-ime.system-terminal.v1', ok: true,
+        items: sessions.map(item => item.terminalId === closing.terminalId
+          ? { ...item, status: 'exited', exitCode: 0, nextCursor: 1 }
+          : item),
+      });
+    });
+    // Await the actual cache projection commit before settling the close:
+    // the shell may exit while its owning close request is still pending.
+    await screen.findByRole('tab', { name: 'Closing 已退出（退出码 0）' });
+    await act(async () => { await new Promise<void>(resolve => window.requestAnimationFrame(() => resolve())); });
+    await act(async () => {
+      sessions = destination === 'empty' ? [] : [survivor];
+      resolveClose({ schemaVersion: 'rag-ime.system-terminal.v1', ok: true, terminal: { ...closing, status: 'closed' } });
+      await closePending;
+    });
+    const target = destination === 'empty'
+      ? await screen.findByRole('button', { name: '新建终端' })
+      : await screen.findByRole('tab', { name: 'Survivor' });
+    await waitFor(() => expect(target).toHaveFocus());
+    // Flush the actual mount frame: a surviving PTY must not take the return
+    // focus back, nor may an equal later list projection replay that focus.
+    await act(async () => { await new Promise<void>(resolve => window.requestAnimationFrame(() => resolve())); });
+    expect(target).toHaveFocus();
+    await act(async () => {
+      queryClient.setQueryData(['system-terminal'], {
+        schemaVersion: 'rag-ime.system-terminal.v1', ok: true,
+        items: sessions.map(item => ({ ...item, nextCursor: 2 })),
+      });
+    });
+    expect(target).toHaveFocus();
+    expect(transport.requests.filter(call => call.request.pathId === 'terminal.session.close')).toHaveLength(1);
+    expect(transport.requests.some(call => ['terminal.session.create', 'terminal.session.write'].includes(call.request.pathId))).toBe(false);
+  });
+
+  it('reveals the entire selected tab including its original close hit target', async () => {
+    const user = userEvent.setup();
+    const scrollIntoView = vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(() => undefined);
+    const first = terminalSession('terminal-one', 'Terminal');
+    const second = terminalSession('terminal-two', 'Terminal');
+    const transport = new MockControlTransport({ routes: {
+      'terminal.sessions.list': { ok: true, items: [first, second] },
+      'terminal.session.read': (request: ControlRequest) => ({ ok: true, terminal: asRecord(request.body).terminalId === first.terminalId ? first : second, cursor: 0, nextCursor: 0, text: '' }),
+      'terminal.session.resize': { ok: true },
+    } });
+    try {
+      renderTerminal(transport, <PawOsTerminalApp />);
+      const firstTab = await screen.findByRole('tab', { name: 'Terminal 1' });
+      await screen.findByRole('tab', { name: 'Terminal 2' });
+      scrollIntoView.mockClear();
+      await user.click(firstTab);
+      const wrapper = firstTab.closest('.paw-terminal-tab')!;
+      const originalClose = screen.getByRole('button', { name: '结束终端会话 Terminal 1' });
+      expect(wrapper).toContainElement(originalClose);
+      await waitFor(() => expect(scrollIntoView.mock.contexts).toContain(wrapper));
+      expect(scrollIntoView.mock.contexts).not.toContain(firstTab);
+    } finally { scrollIntoView.mockRestore(); }
+  });
+
+  it('does not replay a failed close focus handoff on a later independent list update', async () => {
+    const user = userEvent.setup();
+    const terminal = terminalSession('terminal-one', 'Terminal');
+    const transport = new MockControlTransport({ routes: {
+      'terminal.sessions.list': { ok: true, items: [terminal] },
+      'terminal.session.read': { ok: true, terminal, cursor: 0, nextCursor: 0, text: '' },
+      'terminal.session.resize': { ok: true },
+      'terminal.session.close': () => { throw new Error('close unavailable'); },
+    } });
+    const { queryClient } = renderTerminal(transport, <><button type="button">Other action</button><PawOsTerminalApp /></>);
+    await user.click(await screen.findByRole('button', { name: '结束终端会话 Terminal' }));
+    await screen.findByText('结束终端会话失败：close unavailable');
+    expect(screen.getByRole('tab', { name: 'Terminal' })).toHaveAttribute('aria-selected', 'true');
+    const otherAction = screen.getByRole('button', { name: 'Other action' });
+    await user.click(otherAction);
+    await act(async () => { queryClient.setQueryData(['system-terminal'], { ok: true, items: [] }); });
+    await screen.findByText('还没有终端会话');
+    expect(otherAction).toHaveFocus();
+    expect(transport.requests.filter(call => call.request.pathId === 'terminal.session.close')).toHaveLength(1);
+    expect(transport.requests.some(call => call.request.pathId === 'terminal.session.create')).toBe(false);
+  });
+
+  it('retains the original manual create name and draft while its request is pending', async () => {
+    const user = userEvent.setup();
+    const terminal = terminalSession('terminal-one', 'Terminal');
+    const transport = new MockControlTransport({ routes: {
+      'terminal.sessions.list': { ok: true, items: [terminal] },
+      'terminal.session.read': { ok: true, terminal, cursor: 0, nextCursor: 0, text: '' },
+      'terminal.session.resize': { ok: true },
+      'terminal.session.create': () => new Promise(() => undefined),
+    } });
+    renderTerminal(transport, <PawOsTerminalApp />);
+    await user.click(await screen.findByRole('button', { name: '在指定目录新建终端' }));
+    const form = screen.getByRole('form', { name: '在指定目录新建终端' });
+    const input = within(form).getByRole('textbox', { name: '新终端工作目录' });
+    await user.type(input, '/workspace/own');
+    const submit = within(form).getByRole('button', { name: '新建终端' });
+    await user.click(submit);
+    expect(submit).toHaveAccessibleName('新建终端');
+    expect(submit).toHaveAttribute('aria-busy', 'true');
+    expect(submit).toBeDisabled();
+    expect(input).toHaveValue('/workspace/own');
+    await user.click(submit);
+    expect(transport.requests.filter(call => call.request.pathId === 'terminal.session.create')).toHaveLength(1);
   });
 
   it('uses an action-oriented empty state without repeating Terminal App identity', async () => {
@@ -308,7 +444,10 @@ describe('PawOsTerminalApp', () => {
     expect(container.querySelector('.paw-terminal-console__empty > svg')).toBeNull();
     expect(screen.queryByText('PAWOS 终端')).not.toBeInTheDocument();
     expect(screen.getAllByRole('button')).toHaveLength(1);
-    expect(screen.getByRole('button', { name: /^(?:新建终端|正在创建)$/ })).toBeInTheDocument();
+    const createButton = screen.getByRole('button', { name: '新建终端' });
+    await waitFor(() => expect(createButton).toHaveAttribute('aria-busy', 'true'));
+    expect(createButton).toBeDisabled();
+    expect(createButton).toHaveAccessibleName('新建终端');
   });
 
   it('always creates the PAWOS embedded PTY and ignores a legacy external-terminal bridge', async () => {
@@ -339,6 +478,9 @@ describe('PawOsTerminalApp', () => {
     renderApp(transport, <PawOsTerminalApp />);
 
     expect(await screen.findByLabelText('终端输入输出')).toBeInTheDocument();
+    const terminalInput = await screen.findByRole('textbox', { name: '终端输入' });
+    await act(async () => { await new Promise<void>(resolve => window.requestAnimationFrame(() => resolve())); });
+    expect(terminalInput).toHaveFocus();
     expect(transport.requests.some((call) => call.request.pathId === 'terminal.session.create')).toBe(true);
     expect(calls).toEqual([]);
     expect(screen.queryByText('外部终端')).not.toBeInTheDocument();
@@ -682,6 +824,52 @@ describe('PawOsTerminalApp', () => {
     await user.keyboard('{Escape}');
     expect(consoleBands).not.toHaveAttribute('data-search');
     expect(screen.queryByRole('search')).not.toBeInTheDocument();
+  });
+
+  it.each(['search', 'cwd', 'other'] as const)('preserves explicit %s focus acquired before the initial xterm mount frame', async (control) => {
+    const terminal = terminalSession('terminal-one', 'Terminal');
+    const transport = new MockControlTransport({ routes: {
+      'terminal.sessions.list': { ok: true, items: [terminal] },
+      'terminal.session.read': { ok: true, terminal, cursor: 0, nextCursor: 0, text: '' },
+      'terminal.session.resize': { ok: true },
+    } });
+    const nativeFrame = window.requestAnimationFrame.bind(window);
+    const pendingFrames: FrameRequestCallback[] = [];
+    // Retain the actual scheduled mount work until the user has acquired a
+    // control, then execute it on a real animation frame; no timing guess.
+    const schedule = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => {
+      pendingFrames.push(callback);
+      return nativeFrame(() => undefined);
+    });
+    try {
+      renderTerminal(transport, <><button type="button">Other action</button><PawOsTerminalApp /></>);
+      const terminalInput = await screen.findByRole('textbox', { name: '终端输入' });
+      expect(pendingFrames).toHaveLength(1);
+      let target: HTMLElement;
+      if (control === 'search') {
+        fireEvent.click(screen.getByRole('button', { name: '搜索终端输出' }));
+        target = screen.getByRole('textbox', { name: '搜索终端输出' });
+      } else if (control === 'cwd') {
+        fireEvent.click(screen.getByRole('button', { name: '在指定目录新建终端' }));
+        target = screen.getByRole('textbox', { name: '新终端工作目录' });
+      } else {
+        target = screen.getByRole('button', { name: 'Other action' });
+        target.focus();
+      }
+      expect(target).toHaveFocus();
+      await act(async () => { await new Promise<void>(resolve => nativeFrame(timestamp => {
+        pendingFrames.splice(0).forEach(callback => callback(timestamp));
+        resolve();
+      })); });
+      expect(target).toHaveFocus();
+      if (control === 'search') {
+        await userEvent.setup().keyboard('{Escape}');
+        expect(screen.queryByRole('search')).not.toBeInTheDocument();
+        expect(terminalInput).toHaveFocus();
+      }
+      expect(xtermConstructorOptions).toHaveLength(1);
+      expect(transport.requests.some(call => call.request.pathId === 'terminal.session.write')).toBe(false);
+    } finally { schedule.mockRestore(); }
   });
 
   it('keeps the status band ordered by truth and never lets it leave the frame', async () => {
@@ -1032,11 +1220,11 @@ function renderApp(transport: MockControlTransport, child: React.ReactNode): voi
 
 function renderTerminal(transport: MockControlTransport, child: React.ReactNode) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  return { ...render(
     <QueryClientProvider client={queryClient}>
       <ControlTransportProvider transport={transport}>{child}</ControlTransportProvider>
     </QueryClientProvider>,
-  );
+  ), queryClient };
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
