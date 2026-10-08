@@ -84,7 +84,7 @@ export function PawWorkbenchTaskDialog({
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent className="paw-wb-operation-dialog">
+      <DialogContent className="paw-wb-operation-dialog paw-wb-operation-dialog--task">
         <DialogHeader>
           <div className="paw-wb-operation-dialog__heading"><ListChecks aria-hidden size={19} /></div>
           <DialogTitle>{selectedTaskId ? '编辑任务' : '添加任务'}</DialogTitle>
@@ -114,15 +114,14 @@ export function PawWorkbenchTaskDialog({
               value={detail}
             />
           </Field>
-          <dl className="paw-wb-operation-dialog__context">
+          <dl className="paw-wb-task-context">
             <div><dt>项目</dt><dd>{project}</dd></div>
             <div><dt>日期</dt><dd>{date}</dd></div>
-            <div><dt>Runtime revision</dt><dd>{runtimeRevision ?? '尚未同步'}</dd></div>
             {selectedTaskId ? <div><dt>当前状态</dt><dd><StatusBadge label={taskStatusLabel(taskStatus)} tone={taskStatusTone(taskStatus)} /></dd></div> : null}
           </dl>
           <ManagementMutationWorkflow
             availability={availability}
-            description="先由 Runtime 核对当前 revision，再保存并返回可撤销收据。"
+            description="保存后可以撤销本次更改。"
             disabled={!title.trim()}
             draftKey={JSON.stringify(draft)}
             mutationKey={['paw-workbench', 'planning', 'task-save']}

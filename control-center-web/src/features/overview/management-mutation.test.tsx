@@ -192,12 +192,19 @@ describe('ManagementMutationWorkflow feedback and confirmation', () => {
     expect(alert).not.toHaveTextContent('/api/internal');
     expect(within(alert).getByRole('button', { name: '交给 Trace Agent' })).toBeInTheDocument();
     expect(alert.parentElement).toHaveFocus();
+    const errorBody = alert.querySelector('.mgmt-notice__body');
+    const errorBodyText = errorBody?.textContent;
 
     const retry = screen.getByRole('button', { name: '重新尝试' });
     const retryLabel = retry.querySelector('.ui-button__label');
     expect(retry).toBe(trigger);
     retry.focus();
     await user.keyboard('{Enter}');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toBe(alert);
+    expect(alert).toHaveTextContent('正在重试');
+    expect(alert.querySelector('.mgmt-notice__body')).toBe(errorBody);
+    expect(errorBody).toHaveTextContent(errorBodyText!);
     expect(retry).toHaveAccessibleName('重新尝试');
     expect(screen.getByRole('button', { name: '重新尝试' })).toBe(retry);
     expect(retry.querySelector('.ui-button__label')).toBe(retryLabel);
@@ -212,6 +219,10 @@ describe('ManagementMutationWorkflow feedback and confirmation', () => {
 
     await act(async () => pendingRetryPreview.resolve(previewFixture('R1')));
     await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('status')).toBe(alert);
+    expect(alert).toHaveTextContent('正在保存');
+    expect(alert.querySelector('.mgmt-notice__body')).toBe(errorBody);
+    expect(errorBody).toHaveTextContent(errorBodyText!);
     expect(retry).toHaveAccessibleName('重新尝试');
     expect(screen.getByRole('button', { name: '重新尝试' })).toBe(retry);
     expect(retry.querySelector('.ui-button__label')).toBe(retryLabel);
@@ -224,9 +235,47 @@ describe('ManagementMutationWorkflow feedback and confirmation', () => {
     const receipt = await screen.findByRole('status');
     expect(receipt).toHaveTextContent('已保存');
     expect(receipt).toHaveFocus();
+    expect(alert).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '重新尝试' })).not.toBeInTheDocument();
     expect(onPreview).toHaveBeenCalledTimes(2);
     expect(onApply).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports the new retry failure and clears the old feedback at the authoritative next stage', async () => {
+    const user = userEvent.setup();
+    const firstRetry = deferred<ManagementWorkPreview<TestContext>>();
+    const nextRetry = deferred<ManagementWorkPreview<TestContext>>();
+    const onPreview = vi.fn()
+      .mockRejectedValueOnce(new Error('第一次未完成。'))
+      .mockImplementationOnce(() => firstRetry.promise)
+      .mockImplementationOnce(() => nextRetry.promise);
+    const onApply = vi.fn(async () => receiptFixture());
+    renderWorkflow({ onApply, onPreview, risk: 'R1', title: '保存设置' });
+    await user.click(screen.getByRole('button', { name: '保存设置' }));
+    const notice = await screen.findByRole('alert');
+    expect(notice).toHaveTextContent('第一次未完成。');
+    const retry = screen.getByRole('button', { name: '重新尝试' });
+    await user.click(retry);
+    expect(screen.getByRole('status')).toBe(notice);
+    expect(notice).toHaveTextContent('正在重试');
+    expect(notice).toHaveTextContent('第一次未完成。');
+
+    await act(async () => firstRetry.reject(new Error('第二次未完成。')));
+    expect(await screen.findByRole('alert')).toBe(notice);
+    expect(notice).toHaveTextContent('预览失败');
+    expect(notice).toHaveTextContent('第二次未完成。');
+    expect(notice).not.toHaveTextContent('第一次未完成。');
+    expect(notice.parentElement).toHaveFocus();
+    await user.click(retry);
+    expect(screen.getByRole('status')).toBe(notice);
+    expect(notice).toHaveTextContent('第二次未完成。');
+
+    await act(async () => nextRetry.resolve(previewFixture('R3')));
+    const previewPanel = (await screen.findByText('这次更改会永久移除内容')).closest('.mgmt-workflow__panel');
+    expect(previewPanel).toHaveFocus();
+    expect(notice).not.toBeInTheDocument();
+    expect(onPreview).toHaveBeenCalledTimes(3);
+    expect(onApply).not.toHaveBeenCalled();
   });
 });
 

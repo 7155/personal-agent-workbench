@@ -114,7 +114,19 @@ export function useWorkspaceTextEditor(file: FileIdentity | null, preview: Edita
     <div className="paw-files-editor__toolbar">
       {editing ? <>
         <span role="status">{draft?.busy === 'saving' ? '正在保存…' : changed ? '未保存的更改' : '与已读取版本一致'}</span>
-        <button disabled={Boolean(draft?.busy || draft?.needsCheck || draft?.disk || !changed || editable?.editable !== true)} onClick={() => void save()} title="保存文件（⌘S / Ctrl+S）" type="button">{draft?.busy === 'saving' ? '正在保存' : '保存文件'}</button>
+        <button
+          aria-busy={draft?.busy === 'saving' || undefined}
+          aria-disabled={draft?.busy === 'saving' || undefined}
+          disabled={Boolean(draft?.busy === 'reading' || draft?.needsCheck || draft?.disk || !changed || editable?.editable !== true)}
+          onClick={(event) => {
+            // Keep the pending action focusable, as Button's loading mode does.
+            // The owning draft also guards shortcuts and same-frame activation.
+            if (drafts.get(key)?.busy === 'saving') { event.preventDefault(); event.stopPropagation(); return; }
+            void save();
+          }}
+          title="保存文件（⌘S / Ctrl+S）"
+          type="button"
+        >保存文件</button>
         <button onClick={() => update(key, { editing: false })} type="button">预览草稿</button>
       </> : draft?.base ? <>
         <span>{changed ? '此文件有未保存草稿' : '已保留编辑内容'}</span>

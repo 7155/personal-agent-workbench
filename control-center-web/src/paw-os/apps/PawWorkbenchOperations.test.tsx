@@ -10,6 +10,30 @@ import { PawWorkbenchGoalDialog, PawWorkbenchTaskDialog } from './PawWorkbenchOp
 afterEach(cleanup);
 
 describe('PAWOS Workbench Planning operations', () => {
+  it('shows read-only project and date while keeping the hidden revision bound to task creation', async () => {
+    const user = userEvent.setup();
+    const transport = renderOperations({
+      planning: { runtimeRevision: 7, date: '2026-10-08', plan: { project: 'PAWOS' } },
+    });
+    const taskDialog = await screen.findByRole('dialog', { name: '添加任务' });
+    expect(within(taskDialog).getByText('项目', { selector: 'dt' })).toBeInTheDocument();
+    expect(within(taskDialog).getByText('PAWOS', { selector: 'dd' })).toBeInTheDocument();
+    expect(within(taskDialog).getByText('日期', { selector: 'dt' })).toBeInTheDocument();
+    expect(within(taskDialog).getByText('2026-10-08', { selector: 'dd' })).toBeInTheDocument();
+    expect(taskDialog).not.toHaveTextContent(/Runtime|revision/);
+    expect(within(taskDialog).getByText('保存后可以撤销本次更改。')).toBeInTheDocument();
+    await user.type(within(taskDialog).getByRole('textbox', { name: '任务标题' }), '公开测试任务');
+    await user.type(within(taskDialog).getByRole('textbox', { name: '完成说明' }), '核对公开结果');
+    await user.click(within(taskDialog).getByRole('button', { name: '创建任务' }));
+    await waitFor(() => expect(requestFor(transport, 'planning.mutation.preview')).toMatchObject({
+      body: { kind: 'task.save', expectedRuntimeRevision: 7, payload: { project: 'PAWOS', date: '2026-10-08', title: '公开测试任务', detail: '核对公开结果' } },
+    }));
+    await waitFor(() => expect(requestFor(transport, 'planning.task.save')).toMatchObject({
+      body: { project: 'PAWOS', date: '2026-10-08', title: '公开测试任务', detail: '核对公开结果', expectedRuntimeRevision: 7, previewToken: 'preview-task-save', payloadSha256: 'sha256:task' },
+    }));
+    expect(await within(taskDialog).findByText('已保存')).toBeInTheDocument();
+  });
+
   it('completes a selected task and undoes only through the receipt event id', async () => {
     const user = userEvent.setup();
     const transport = renderOperations({
