@@ -42,6 +42,8 @@
   font-size: 13px;
   line-height: 1.45;
   isolation: isolate;
+  container-name: paw-workbench;
+  container-type: size;
 }
 
 .paw-workbench *,
@@ -768,9 +770,10 @@
   display: grid;
   align-content: center;
   gap: 7px;
-  padding: 10px 12px 10px 15px;
-  /* Keep the semantic target rectangular; the rounded face paints separately. */
-  border: 1px solid transparent;
+  padding: 11px 13px 11px 16px;
+  /* Keep the semantic target rectangular; only the rounded face has a border.
+     A transparent semantic border gains a square color in forced colors. */
+  border: 0;
   border-radius: 0;
   background: transparent;
   color: var(--paw-wb-ink);
@@ -785,8 +788,7 @@
 .paw-workbench .paw-wb-task-node::before {
   content: '';
   position: absolute;
-  /* Absolute positioning starts at the padding edge, inside the 1px border. */
-  inset: -1px;
+  inset: 0;
   z-index: -1;
   pointer-events: none;
   border: 1px solid var(--paw-wb-line);
@@ -1422,4 +1424,20 @@
 
 @container paw-native-stage (max-width: 520px) {
   .paw-workbench .paw-wb-planning-tools__date input { font-size: 16px; }
+}
+
+/* In a short, narrow window the two-row toolbar cannot leave a usable graph
+   scrollport underneath it. Let the toolbar and plan scroll together while
+   the Workbench's primary chrome stays fixed. Every plan section stays in
+   the existing DOM; no control, draft or selection changes owner. */
+@container paw-workbench (max-width: 760px) and (max-height: 300px) {
+  .paw-workbench .paw-wb-planning {
+    display: block;
+    overflow: auto;
+    overscroll-behavior: contain;
+    scroll-padding-block: 16px;
+  }
+  .paw-workbench .paw-wb-orchestration {
+    overflow: visible;
+  }
 }

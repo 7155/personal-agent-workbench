@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-08T11:27:43.050633+00:00",
+  "generatedAt": "2026-10-08T12:25:57.066259+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "undo/paw-experience-20261007",
@@ -63,7 +63,7 @@
     },
     "verification": {
       "description": "Regression checks for the included product changes.",
-      "pathCount": 121
+      "pathCount": 122
     },
     "voice_desktop": {
       "description": "App naming and desktop voice integration.",
@@ -199,7 +199,7 @@
     },
     "paw_experience_20261007": {
       "description": "Frontend experience and bounded persistent Agent/knowledge capabilities; preserve existing execution owners.",
-      "pathCount": 94
+      "pathCount": 95
     },
     "architecture_recovery_20261008": {
       "description": "Transactional Knowledge projection recovery, evaluation-only history, explicit scheduler lifecycle and removal of private implementations without consumers; foreground and installed acceptance are recorded separately. Preserve known original Wake admissions and reconcile exact durable evidence without effect replay.",
@@ -207,10 +207,10 @@
     }
   },
   "summary": {
-    "pathCount": 2227,
+    "pathCount": 2229,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1911
+      "keep_release": 1913
     },
     "groupCounts": {
       "local_docs": 121,
@@ -231,8 +231,8 @@
       "memory_lifecycle": 15,
       "pi1_experience_iteration": 38,
       "primary_assistant_iteration": 84,
-      "paw_experience_20261007": 94,
-      "verification": 121,
+      "paw_experience_20261007": 95,
+      "verification": 122,
       "voice_desktop": 19,
       "composition_refactor": 32,
       "portable_agent_ui": 8,
@@ -15854,6 +15854,20 @@
       "disposition": "keep_release",
       "group": "product_integration",
       "reason": "Keep the Files editor usable in short windows while preserving saving, permission and conflict recovery."
+    },
+    {
+      "path": "control-center-web/src/features/files/workspace-text-draft-recovery.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Preserve unsaved Files drafts across reload/reopen with original Session/resource binding and no automatic write replay."
+    },
+    {
+      "path": "control-center-web/src/features/files/workspace-text-draft.ts",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "paw_experience_20261007",
+      "reason": "Preserve unsaved Files drafts across reload/reopen with original Session/resource binding and no automatic write replay."
     }
   ]
 }
