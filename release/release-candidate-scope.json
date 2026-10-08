@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-08T01:47:53.701084+00:00",
+  "generatedAt": "2026-10-08T02:55:57.921426+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "undo/paw-experience-20261007",
@@ -63,7 +63,7 @@
     },
     "verification": {
       "description": "Regression checks for the included product changes.",
-      "pathCount": 119
+      "pathCount": 120
     },
     "voice_desktop": {
       "description": "App naming and desktop voice integration.",
@@ -87,7 +87,7 @@
     },
     "trace_optimization": {
       "description": "Trace diagnosis and bounded optimization source, contracts and executable regressions.",
-      "pathCount": 61
+      "pathCount": 63
     },
     "scheduled_tasks": {
       "description": "Unified schedule management for Agent, Eval and Memory using their existing schedulers.",
@@ -103,7 +103,7 @@
     },
     "lab_frontend": {
       "description": "Lab workflow presentation backed by project and experiment receipts.",
-      "pathCount": 54
+      "pathCount": 55
     },
     "second_brain": {
       "description": "Local Markdown reading, source-backed diary, reviewed Obsidian updates and explicit Memory adoption; desktop acceptance recorded separately.",
@@ -207,10 +207,10 @@
     }
   },
   "summary": {
-    "pathCount": 2217,
+    "pathCount": 2221,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1901
+      "keep_release": 1905
     },
     "groupCounts": {
       "local_docs": 121,
@@ -232,20 +232,20 @@
       "pi1_experience_iteration": 38,
       "primary_assistant_iteration": 84,
       "paw_experience_20261007": 94,
-      "verification": 119,
+      "verification": 120,
       "voice_desktop": 19,
       "composition_refactor": 32,
       "portable_agent_ui": 8,
       "owner_boundaries": 15,
       "conversation_controls": 65,
       "durable_desktop_iteration": 28,
-      "trace_optimization": 61,
+      "trace_optimization": 63,
       "architecture_recovery_20261008": 10,
       "scheduled_tasks": 25,
       "session_full_access": 8,
       "mac_local_update_20261006": 8,
       "jev_integration": 10,
-      "lab_frontend": 54,
+      "lab_frontend": 55,
       "second_brain": 24,
       "knowledge_runtime": 12,
       "room_frontend": 21,
@@ -4866,6 +4866,20 @@
       "reason": "Include current main follow-up source and existing verification in the local update."
     },
     {
+      "path": "control-center-web/src/features/context-debug/model.test.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "trace_optimization",
+      "reason": "Preserve real omission receipts without dropping original complete-history diagnostics."
+    },
+    {
+      "path": "control-center-web/src/features/context-debug/model.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "trace_optimization",
+      "reason": "Preserve real omission receipts without dropping original complete-history diagnostics."
+    },
+    {
       "path": "control-center-web/src/features/conversation-ui/ATTRIBUTION.md",
       "status": "modified",
       "disposition": "keep_release",
@@ -5186,6 +5200,13 @@
       "group": "lab_frontend",
       "reason": "Lab workflow presentation backed by project and experiment receipts.",
       "status": "added"
+    },
+    {
+      "path": "control-center-web/src/features/eval-lab/api.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "lab_frontend",
+      "reason": "Distinguish legal unavailable evidence from readable payloads and retain read-only retry identity."
     },
     {
       "path": "control-center-web/src/features/eval-lab/control-request.test.ts",
@@ -7916,6 +7937,13 @@
       "disposition": "keep_release",
       "group": "main_followup_20261006",
       "reason": "Include current main follow-up source and existing verification in the local update."
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawContextTrace.test.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "verification",
+      "reason": "Verify synchronous keyboard closure and original context navigation through the shared Disclosure contract."
     },
     {
       "path": "control-center-web/src/paw-os/apps/PawContextTrace.tsx",
