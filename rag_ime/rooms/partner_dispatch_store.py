@@ -724,29 +724,6 @@ class AgentRoomPartnerDispatchStore:
             with self._changed:
                 self._changed.wait(timeout=min(remaining, 0.25))
 
-    def _update_status(
-        self,
-        child_dispatch_id: str,
-        *,
-        status: str,
-        now_ms: int | None,
-    ) -> dict[str, object]:
-        timestamp = _now_ms(now_ms)
-        with self._connect(immediate=True) as conn:
-            row = self._row(conn, child_dispatch_id)
-            if str(row["status"]) == "cancelled":
-                return _payload(row)
-            conn.execute(
-                """
-                UPDATE agent_room_partner_dispatches
-                SET status = ?, updated_at_ms = ?
-                WHERE child_dispatch_id = ?
-                """,
-                (status, timestamp, child_dispatch_id),
-            )
-            row = self._row(conn, child_dispatch_id)
-        self._notify()
-        return _payload(row)
 
     @staticmethod
     def _row(conn: sqlite3.Connection, child_dispatch_id: str) -> sqlite3.Row:

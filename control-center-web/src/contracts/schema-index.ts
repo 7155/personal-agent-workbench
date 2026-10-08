@@ -13910,6 +13910,34 @@ export const contractSchemas = {
         "type": "integer",
         "minimum": 0
       },
+      "truncation": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Display bounds after complete evaluation-only pagination and run grouping. total remains the full run count; aggregate run statistics include all eligible tasks.",
+        "required": [
+          "runLimit",
+          "taskLimit",
+          "omittedRunCount",
+          "omittedTaskCount"
+        ],
+        "properties": {
+          "runLimit": {
+            "const": 500
+          },
+          "taskLimit": {
+            "const": 500
+          },
+          "omittedRunCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "omittedTaskCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Task rows omitted only within returned runs; does not count tasks in omitted runs."
+          }
+        }
+      },
       "pathSearches": {
         "type": "array",
         "maxItems": 32,

@@ -2006,7 +2006,7 @@ function PawSessionWorkspaceBody({
             {workspaceRecord && evaluationSnapshot ? (
               <div className="paw-session-workspace__snapshot-notice">
                 <ShieldCheck size={16} />
-                <span><strong>真实评测记录，只读</strong><small>对话、Tool 回执与结果来自冻结 JSONL；不能继续提问、改写、分支或删除。</small></span>
+                <span><strong>评测记录，只读</strong><small>仅展示已保存的对话、Tool 回执与结果；此处不会继续执行。</small></span>
               </div>
             ) : null}
             {workspaceRecord && !evaluationSnapshot ? (

@@ -2578,19 +2578,6 @@ def _is_base_completion_model(model_id: str, model_info: dict[str, Any]) -> bool
     return architecture == "qwen3forcausallm" and model_type == "qwen3"
 
 
-def _build_mlx_prompt(
-    *,
-    current_input: str,
-    recent_context: str,
-    max_candidates: int,
-    request_type: str = PREDICTION_REQUEST_GENERIC,
-    rime_candidates: tuple[str, ...] = (),
-    stream_first_candidate: bool = False,
-) -> str:
-    return (
-        f"{_stable_prompt_prefix()}"
-        f"{_build_mlx_dynamic_prompt(current_input=current_input, recent_context=recent_context, max_candidates=max_candidates, request_type=request_type, rime_candidates=rime_candidates, stream_first_candidate=stream_first_candidate)}"
-    )
 
 
 def _stable_prompt_prefix() -> str:
@@ -3195,33 +3182,6 @@ def _logprob_at(logprobs: Any, token_id: int) -> float | None:
         return None
 
 
-def _candidate_scores_for_texts(
-    candidates: list[str],
-    raw_scores: Any,
-    *,
-    source: str,
-) -> list[dict[str, Any]]:
-    by_text: dict[str, dict[str, Any]] = {}
-    if isinstance(raw_scores, list):
-        for item in raw_scores:
-            if not isinstance(item, dict):
-                continue
-            text = compact_whitespace(str(item.get("text") or ""))
-            if text and text not in by_text:
-                by_text[text] = dict(item)
-    result: list[dict[str, Any]] = []
-    for rank, text in enumerate(candidates, start=1):
-        item = dict(by_text.get(text) or {})
-        item.update(
-            {
-                "text": text,
-                "rank": rank,
-                "source": source,
-                "mode": source,
-            }
-        )
-        result.append(item)
-    return result
 
 
 def _array_to_list(value: Any) -> list[Any]:

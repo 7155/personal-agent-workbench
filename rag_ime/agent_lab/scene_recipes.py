@@ -317,7 +317,7 @@ class AgentLabSceneRecipeStore:
         ledger = Path(__file__).resolve().parents[2] / "eval/interview-metrics/agent-experiments.v1.json"
         # Use the same public owner as the Lab page, including its fresh ledger
         # overlay. A stale imported DB alone must not hide the current candidate.
-        return EvalLabProjection(self.db_path, source_ledger_path=ledger).list_runs()["experiments"]
+        return EvalLabProjection(self.db_path, source_ledger_path=ledger).list_experiments()
 
     def _candidate(self, experiment_id: str) -> dict[str, object]:
         result: dict[str, object] = {

@@ -10,6 +10,8 @@ export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant;
   size?: ButtonSize;
   loading?: boolean;
+  /** Keep loading focusable; activation is blocked and explicit disabled still wins. */
+  preserveFocusWhileLoading?: boolean;
   leadingIcon?: ReactNode;
   trailingIcon?: ReactNode;
 };
@@ -21,6 +23,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     disabled,
     leadingIcon,
     loading = false,
+    onClick,
+    preserveFocusWhileLoading = false,
     size = 'medium',
     trailingIcon,
     type = 'button',
@@ -37,10 +41,15 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       className={cn('ui-button', className)}
       data-size={size}
       data-variant={variant}
-      disabled={disabled || loading}
-      aria-busy={loading || undefined}
+      disabled={disabled || (loading && !preserveFocusWhileLoading)}
       data-motion-active={motionActive}
       {...props}
+      aria-busy={preserveFocusWhileLoading && loading ? true : 'aria-busy' in props ? props['aria-busy'] : loading || undefined}
+      aria-disabled={preserveFocusWhileLoading && loading ? true : props['aria-disabled']}
+      onClick={loading ? (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      } : onClick}
     >
       <span className="ui-button__icon" aria-hidden="true" data-loading={loading || undefined}>
         {leadingIcon ? <>

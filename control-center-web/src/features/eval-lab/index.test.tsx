@@ -5,8 +5,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
 import { previewEvalLabEvidence, previewEvalLabRuns } from '@/app/preview-eval-lab-data';
 import { PawOsDesktopProvider, type PawOsWindowRequest } from '@/features/paw-os/surface-context';
-import { MockControlTransport } from '@/test/mock-transport';
+import { MockControlTransport, type MockControlTransportOptions } from '@/test/mock-transport';
 import type { ControlRequest } from '@/platform/transport';
+import { controlRoute } from '@/platform/routes';
+import { evalLabQueryKeys, type EvalLabEvidenceResponse } from './api';
 import { LegacyEvalLabFeature as EvalLabFeature } from './index';
 
 vi.mock('@/paw-os/apps/PawRoomWorkspace', () => ({
@@ -299,6 +301,223 @@ function renderAnswerEvidenceOverview(data: ReturnType<typeof r6AnswerEvidenceRe
 }
 
 describe('Agent Lab', () => {
+  describe('history read feedback', () => {
+    const emptyRuns = {
+      schemaVersion: 'rag-ime.eval-lab-run-list.v1', ok: true,
+      total: 0, items: [], experiments: [], experimentTotal: 0,
+    };
+    const emptyEvidence = {
+      schemaVersion: 'rag-ime.eval-lab-evidence.v1', ok: true,
+      source: { available: true, label: '只读历史目录', runCount: 0, sessionCount: 0, transcriptCount: 0, transcriptBytes: 0 },
+      runs: [], total: 0,
+    };
+    const sourceRun = (previewEvalLabEvidence() as unknown as EvalLabEvidenceResponse).runs[0]!;
+    const sourceOnlyEvidence = {
+      ...emptyEvidence, total: 1, runs: [sourceRun],
+      source: { ...emptyEvidence.source, runCount: 1, sessionCount: sourceRun.sessionCount, transcriptCount: sourceRun.transcriptCount, transcriptBytes: sourceRun.transcriptBytes },
+    };
+
+    function renderHistory(routes: MockControlTransportOptions['routes'] = {}, initialPage: 'overview' | 'sessions' = 'sessions') {
+      const transport = new MockControlTransport({ routes: {
+        'agent.eval-lab.runs': emptyRuns,
+        'agent.eval-lab.evidence': emptyEvidence,
+        'agent.rooms.list': { ok: true, items: [] },
+        'agent.roles.list': { items: [] },
+        ...routes,
+      } });
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      render(<QueryClientProvider client={client}><ControlTransportProvider transport={transport}><EvalLabFeature initialPage={initialPage} /></ControlTransportProvider></QueryClientProvider>);
+      return { transport, client };
+    }
+
+    function expectOnlyHistoryReads(transport: MockControlTransport) {
+      expect(transport.requests.every(({ request }) => [
+        'agent.eval-lab.runs', 'agent.eval-lab.evidence', 'agent.rooms.list', 'agent.roles.list',
+      ].includes(request.pathId))).toBe(true);
+    }
+
+    it.each([true, false])('shows a real empty catalog with the existing next entry (available=%s)', async (available) => {
+      const { transport } = renderHistory({ 'agent.eval-lab.evidence': { ...emptyEvidence, source: { ...emptyEvidence.source, available } } });
+      expect(await screen.findByText('还没有可查看的运行记录')).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: '对话与证据' })).toHaveAttribute('aria-selected', 'true');
+      expect(screen.getAllByRole('button', { name: '新建评测' })).toHaveLength(1);
+      expect(screen.queryByText('还没有实验')).toBeNull();
+      expect(screen.queryByRole('heading', { name: '所有测试轮次与证据' })).toBeNull();
+      expectOnlyHistoryReads(transport);
+    });
+
+    it.each(['empty', 'failed'])('shows independent source history when the Session directory is %s', async (directory) => {
+      const { transport } = renderHistory({
+        'agent.eval-lab.runs': directory === 'failed' ? () => { throw new Error('目录暂时断开'); } : emptyRuns,
+        'agent.eval-lab.evidence': sourceOnlyEvidence,
+      });
+      expect(await screen.findByRole('heading', { name: '所有测试轮次与证据' })).toBeInTheDocument();
+      expect(screen.getByText(sourceRun.title)).toBeInTheDocument();
+      expect(screen.queryByText('还没有可查看的运行记录')).toBeNull();
+      if (directory === 'failed') expect(await screen.findByText('还没读取到评测结果')).toBeInTheDocument();
+      expectOnlyHistoryReads(transport);
+    });
+
+    it('shows no viewable runs when saved configurations and a valid empty catalog have no run records', async () => {
+      const { transport } = renderHistory({ 'agent.eval-lab.runs': {
+        ...emptyRuns, experiments: response.experiments, experimentTotal: 1,
+      } });
+      expect(await screen.findByText('还没有可查看的运行记录')).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: '所有测试轮次与证据' })).toBeNull();
+      expect(screen.getAllByRole('button', { name: '新建评测' })).toHaveLength(1);
+      expectOnlyHistoryReads(transport);
+    });
+
+    it('keeps empty-history navigation and one feedback state through every tab and keyboard round trip', async () => {
+      const { transport } = renderHistory();
+      await screen.findByText('还没有可查看的运行记录');
+      const labels = ['实验工作区', '实验结果', '方案路径', '实验详情', '对话与证据', '实验记录'];
+      const navigation = screen.getByRole('tablist', { name: 'Agent Lab 页面' });
+      const tabs = labels.map((name) => screen.getByRole('tab', { name }));
+      const user = userEvent.setup();
+      function expectSelected(index: number) {
+        expect(screen.getByRole('tablist', { name: 'Agent Lab 页面' })).toBe(navigation);
+        tabs.forEach((tab, tabIndex) => {
+          expect(screen.getByRole('tab', { name: labels[tabIndex] })).toBe(tab);
+          expect(tab).toHaveAttribute('aria-selected', String(tabIndex === index));
+          expect(tab).toHaveAttribute('tabindex', tabIndex === index ? '0' : '-1');
+        });
+        expect(tabs[index]).toHaveFocus();
+        expect(document.querySelectorAll('.ui-empty-state')).toHaveLength(1);
+        expect(screen.getByRole('heading', { name: index === 4 ? '还没有可查看的运行记录' : '还没有实验' })).toBeInTheDocument();
+        expect(screen.getAllByRole('button', { name: '新建评测' })).toHaveLength(1);
+      }
+      tabs[4]!.focus();
+      for (const [key, index] of [
+        ['{Home}', 0], ['{ArrowRight}', 1], ['{ArrowRight}', 2], ['{ArrowDown}', 3],
+        ['{ArrowRight}', 4], ['{ArrowRight}', 5], ['{ArrowRight}', 0], ['{End}', 5], ['{ArrowLeft}', 4],
+      ] as const) {
+        await user.keyboard(key);
+        expectSelected(index);
+      }
+      for (const index of [0, 1, 2, 3, 4, 5, 4]) {
+        await user.click(tabs[index]!);
+        expectSelected(index);
+      }
+      expectOnlyHistoryReads(transport);
+      expect(transport.requests.every(({ request }) => controlRoute(request.pathId).method === 'GET')).toBe(true);
+      expect(transport.requests.filter(({ request }) => request.pathId === 'agent.eval-lab.runs')).toHaveLength(1);
+      expect(transport.requests.filter(({ request }) => request.pathId === 'agent.eval-lab.evidence')).toHaveLength(1);
+    });
+
+    it('shows initial source loading with no other records, then settles to empty', async () => {
+      let finish!: (value: typeof emptyEvidence) => void;
+      const held = new Promise<typeof emptyEvidence>((resolve) => { finish = resolve; });
+      const { transport } = renderHistory({ 'agent.eval-lab.evidence': () => held });
+      expect(await screen.findByText('正在读取研究盘里的历史运行…')).toHaveAttribute('role', 'status');
+      expect(screen.queryByText('还没有可查看的运行记录')).toBeNull();
+      await act(async () => { finish(emptyEvidence); });
+      expect(await screen.findByText('还没有可查看的运行记录')).toBeInTheDocument();
+      expectOnlyHistoryReads(transport);
+    });
+
+    it('keeps a first source error through the existing refresh and clears it only after success', async () => {
+      let reads = 0;
+      let finish!: (value: typeof emptyEvidence) => void;
+      const held = new Promise<typeof emptyEvidence>((resolve) => { finish = resolve; });
+      const { transport } = renderHistory({ 'agent.eval-lab.evidence': () => {
+        if (++reads === 1) throw new Error('证据目录暂时断开');
+        return held;
+      } });
+      const error = await screen.findByText(/历史运行目录暂时不可读：/);
+      expect(error).toHaveAttribute('role', 'alert');
+      const errorText = error.textContent;
+      const refresh = screen.getByRole('button', { name: '刷新' });
+      refresh.focus();
+      await userEvent.setup().keyboard('{Enter}');
+      await waitFor(() => expect(refresh).toHaveAttribute('aria-busy', 'true'));
+      expect(screen.getByRole('button', { name: '刷新' })).toBe(refresh);
+      expect(error).toBeInTheDocument();
+      expect(error.textContent).toBe(errorText);
+      expect(refresh).toHaveFocus();
+      await userEvent.setup().click(refresh);
+      expect(reads).toBe(2);
+      await act(async () => { finish(emptyEvidence); });
+      await waitFor(() => expect(error).not.toBeInTheDocument());
+      expect(await screen.findByText('还没有可查看的运行记录')).toBeInTheDocument();
+      expectOnlyHistoryReads(transport);
+    });
+
+    it('retains the original focused retry button while the first failed directory read is pending', async () => {
+      let reads = 0;
+      let finish!: (value: typeof emptyRuns) => void;
+      const held = new Promise<typeof emptyRuns>((resolve) => { finish = resolve; });
+      const { transport } = renderHistory({ 'agent.eval-lab.runs': () => {
+        if (++reads === 1) throw new Error('回执服务暂时断开');
+        return held;
+      } });
+      const retry = await screen.findByRole('button', { name: '重新读取实验' });
+      const error = retry.closest('[role="alert"]')!;
+      const errorText = error.textContent;
+      const label = retry.textContent;
+      const size = retry.getAttribute('data-size');
+      retry.focus();
+      await userEvent.setup().keyboard('{Enter}');
+      await waitFor(() => expect(reads).toBe(2));
+      expect(screen.getByRole('button', { name: '重新读取实验' })).toBe(retry);
+      expect(retry).toHaveAttribute('aria-busy', 'true');
+      expect(retry).toHaveFocus();
+      expect(retry.textContent).toBe(label);
+      expect(retry).toHaveAttribute('data-size', size);
+      expect(error.textContent).toBe(errorText);
+      await userEvent.setup().click(retry);
+      await userEvent.setup().click(screen.getByRole('button', { name: '刷新' }));
+      expect(reads).toBe(2);
+      await act(async () => { finish(emptyRuns); });
+      await waitFor(() => expect(error).not.toBeInTheDocument());
+      expect(await screen.findByText('还没有可查看的运行记录')).toBeInTheDocument();
+      expectOnlyHistoryReads(transport);
+    });
+
+    it('keeps stale records, the selected tab and the search draft through failure and manual recovery', async () => {
+      let reads = 0;
+      let finish!: (value: typeof response) => void;
+      const held = new Promise<typeof response>((resolve) => { finish = resolve; });
+      const { transport, client } = renderHistory({
+        'agent.eval-lab.runs': () => {
+          reads += 1;
+          if (reads === 1) return response;
+          if (reads === 2) throw new Error('更新暂时断开');
+          return held;
+        },
+        'agent.eval-lab.evidence': sourceOnlyEvidence,
+      }, 'overview');
+      await userEvent.setup().click(await screen.findByRole('tab', { name: '对话与证据' }));
+      const tab = screen.getByRole('tab', { name: '对话与证据' });
+      const search = await screen.findByRole('textbox', { name: '搜索运行' });
+      await userEvent.setup().type(search, '未提交搜索');
+      const selection = (search as HTMLInputElement).selectionStart;
+      await act(async () => { await client.refetchQueries({ queryKey: evalLabQueryKeys.runs }); });
+      const retry = await screen.findByRole('button', { name: '重新读取实验' });
+      expect(screen.getByText('更新暂时失败，仍显示上次读取的实验')).toBeInTheDocument();
+      expect(screen.getByText('EnterpriseOps CSM')).toBeInTheDocument();
+      expect(tab).toHaveAttribute('aria-selected', 'true');
+      expect(search).toHaveFocus();
+      expect(search).toHaveValue('未提交搜索');
+      expect((search as HTMLInputElement).selectionStart).toBe(selection);
+      await userEvent.setup().click(retry);
+      await waitFor(() => expect(retry).toHaveAttribute('aria-busy', 'true'));
+      expect(screen.getByRole('textbox', { name: '搜索运行' })).toBe(search);
+      expect(search).toHaveValue('未提交搜索');
+      expect(screen.getByText('EnterpriseOps CSM')).toBeInTheDocument();
+      await act(async () => { finish(response); });
+      await waitFor(() => expect(screen.queryByText('更新暂时失败，仍显示上次读取的实验')).toBeNull());
+      expect(screen.getByRole('tab', { name: '对话与证据' })).toBe(tab);
+      expect(tab).toHaveAttribute('aria-selected', 'true');
+      expect(screen.getByRole('textbox', { name: '搜索运行' })).toBe(search);
+      expect(search).toHaveValue('未提交搜索');
+      expect((search as HTMLInputElement).selectionStart).toBe(selection);
+      expect(reads).toBe(3);
+      expect(transport.requests.filter(({ request }) => request.pathId === 'agent.eval-lab.evidence')).toHaveLength(1);
+      expectOnlyHistoryReads(transport);
+    });
+  });
+
   it('shows PAW selfboot measurements as their own project instead of hiding them', async () => {
     const experiment = {
       ...response.experiments[0],
@@ -1795,6 +2014,28 @@ describe('Agent Lab', () => {
     expect(screen.getByText('trace:candidate-run')).toBeInTheDocument();
     await userEvent.setup().click(screen.getByRole('button', { name: '打开检查对话' }));
     expect(await screen.findByLabelText('Agent Lab Room workspace')).toHaveAttribute('data-room-id', 'room-reviewed-candidate');
+  });
+
+  it.each([false, true])('reports only an explicit historical display bound, retaining original v1 reads (%s)', async (bounded) => {
+    const transport = new MockControlTransport({ routes: {
+      'agent.eval-lab.runs': { ...response, total: bounded ? 502 : response.total,
+        ...(bounded ? { truncation: { runLimit: 500, taskLimit: 500, omittedRunCount: 501, omittedTaskCount: 2 } } : {}),
+      },
+      'agent.eval-lab.evidence': { schemaVersion: 'rag-ime.eval-lab-evidence.v1', ok: true, source: { available: false, label: 'none', runCount: 0, sessionCount: 0, transcriptCount: 0, transcriptBytes: 0 }, runs: [], total: 0 },
+      'agent.rooms.list': { ok: true, items: [] },
+    } });
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ControlTransportProvider transport={transport}><EvalLabFeature initialPage="sessions" /></ControlTransportProvider></QueryClientProvider>);
+    if (bounded) {
+      const notice = await screen.findByText(/历史目录显示 1 \/ 502 次运行/);
+      expect(notice).toHaveAttribute('role', 'status');
+      expect(notice).toHaveTextContent('另有 501 次运行未在本页列出');
+      expect(notice).toHaveTextContent('已显示运行内另有 2 条任务明细未列出');
+      expect(notice).toHaveTextContent('运行汇总仍按全部可读评测任务计算');
+    } else {
+      await screen.findByText('EnterpriseOps CSM');
+      expect(screen.queryByText(/历史目录显示/)).toBeNull();
+    }
+    expect(transport.requests.some(({ request }) => ['agent.rooms.create', 'agent.room.message', 'agent.session.prompt'].includes(request.pathId))).toBe(false);
   });
 
   it('opens Golden preparation before any evaluation data exists without creating a Room', async () => {

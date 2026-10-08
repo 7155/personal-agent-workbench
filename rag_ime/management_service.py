@@ -5910,18 +5910,8 @@ def _event_ids_from_provenance(value: object) -> list[int]:
     return event_ids
 
 
-def _event_refs_from_provenance(value: object) -> list[dict[str, object]]:
-    return [
-        _canonical_reference("event", str(event_id))
-        for event_id in _event_ids_from_provenance(value)
-    ]
 
 
-def _provenance_events_visible(
-    conn: sqlite3.Connection,
-    value: object,
-) -> bool:
-    return _event_ids_visible(conn, _event_ids_from_provenance(value))
 
 
 def _event_ids_visible(
@@ -6071,28 +6061,8 @@ def _json_mapping(value: object) -> dict[str, object]:
     return dict(parsed) if isinstance(parsed, dict) else {}
 
 
-def _memory_evidence_source_channel(
-    transport_source: str,
-    *,
-    agent_captured: bool,
-) -> str:
-    if agent_captured:
-        return "agent_capture"
-    normalized = compact_whitespace(transport_source).lower()
-    if "voice" in normalized or "asr" in normalized:
-        return "voice"
-    return "input_method"
 
 
-def _memory_disposition_label(value: str) -> str:
-    return {
-        "pending": "等待每日整理",
-        "remember": "已判定值得保留",
-        "not_for_memory": "已从长期记忆排除",
-        "needs_review": "需要再次判断",
-        "consolidated": "已整理进长期记忆",
-        "expired": "已过期",
-    }.get(value, value)
 
 
 def _string_list_value(value: object) -> list[str]:

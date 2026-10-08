@@ -59,6 +59,15 @@ class AgentLabSceneRecipeStoreTests(unittest.TestCase):
         with sqlite_connection(self.db_path) as conn:
             return conn.execute("SELECT count(*) FROM agent_lab_scene_recipe_events").fetchone()[0]
 
+    def test_default_recipe_catalog_does_not_read_session_history(self) -> None:
+        from rag_ime.agent_sessions import AgentSessionStore
+        from rag_ime.eval_lab import EvalLabProjection
+
+        store = AgentLabSceneRecipeStore(self.db_path)
+        with patch.object(EvalLabProjection, "list_runs", side_effect=AssertionError("recipe must only read experiment catalog")), patch.object(AgentSessionStore, "list", side_effect=AssertionError("no Session directory")), patch.object(AgentSessionStore, "runtime_binding", side_effect=AssertionError("no Session binding reads")):
+            state = store.get_state(SCENE)
+        self.assertTrue(state["candidate"]["available"])
+
     def test_upgrade_preserves_immutable_v1_binding_receipt_and_revision_zero_rollback(self) -> None:
         old_path = Path(self.tmp.name) / "old.sqlite"
         legacy = copy.deepcopy(recipes._BUILTIN_VERSION)

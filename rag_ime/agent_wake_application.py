@@ -96,7 +96,7 @@ class AgentWakeApplicationService:
             ),
             "ok": True,
             "schedulerActive": bool(
-                self.scheduler and self.scheduler.enabled
+                self.scheduler and self.scheduler.active
             ),
             "items": items,
         }

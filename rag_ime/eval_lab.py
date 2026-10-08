@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 import json
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, cast
 
 from .agent_sessions import AgentSessionStore
 from .agent_lab.experiments import AgentLabExperimentStore
@@ -23,36 +23,49 @@ class EvalLabProjection:
 
     def list_runs(self) -> dict[str, object]:
         grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
-        for session in self.sessions.list(include_archived=True, limit=500):
-            if session.get("evaluationSnapshot") is not True:
-                continue
-            binding = self.sessions.runtime_binding(str(session["id"]))
-            metadata = binding.get("metadata") if isinstance(binding, Mapping) else None
-            snapshot = (
-                metadata.get("evaluationSnapshot")
-                if isinstance(metadata, Mapping)
-                else None
+        before_updated_at_ms: int | None = None
+        before_id: str | None = None
+        while True:
+            page = self.sessions.list_evaluation_page(
+                include_archived=True, limit=500,
+                before_updated_at_ms=before_updated_at_ms, before_id=before_id,
             )
-            if not isinstance(snapshot, Mapping):
-                continue
-            run_id = str(snapshot.get("runId") or "").strip()
-            if not run_id:
-                continue
-            grouped[run_id].append(
-                {"session": dict(session), "snapshot": dict(snapshot)}
-            )
+            for record in cast(list[dict[str, Any]], page["items"]):
+                snapshot = record["snapshot"]
+                if not isinstance(snapshot, Mapping):
+                    continue
+                run_id = str(snapshot.get("runId") or "").strip()
+                if run_id:
+                    grouped[run_id].append(record)
+            if not page["hasMore"]:
+                break
+            before_updated_at_ms = cast(int, page["nextBeforeUpdatedAtMs"])
+            before_id = cast(str, page["nextBeforeId"])
 
         items = [self._run_payload(run_id, records) for run_id, records in grouped.items()]
         items.sort(key=lambda item: (-int(item["updatedAtMs"]), str(item["runId"])))
-        experiments = self._experiments_with_source_ledger()
+        total = len(items)
+        items = items[:500]
+        omitted_tasks = 0
+        for item in items:
+            tasks = cast(list[dict[str, object]], item["tasks"])
+            omitted_tasks += max(0, len(tasks) - 500)
+            item["tasks"] = tasks[:500]
+        experiments = self.list_experiments()
         payload: dict[str, object] = {
             "schemaVersion": "rag-ime.eval-lab-run-list.v1",
             "ok": True,
             "items": items,
-            "total": len(items),
+            "total": total,
             "experiments": experiments,
             "experimentTotal": len(experiments),
         }
+        if total > len(items) or omitted_tasks:
+            payload["truncation"] = {
+                "runLimit": 500, "taskLimit": 500,
+                "omittedRunCount": total - len(items),
+                "omittedTaskCount": omitted_tasks,
+            }
         path_searches = self._path_searches_with_source_ledger()
         payload["pathSearches"] = path_searches
         payload["pathSearchTotal"] = len(path_searches)
@@ -154,7 +167,7 @@ class EvalLabProjection:
         projections.sort(key=lambda item: (-int(item["generatedAtMs"]), str(item["searchId"])))
         return projections[:32]
 
-    def _experiments_with_source_ledger(self) -> list[dict[str, object]]:
+    def list_experiments(self) -> list[dict[str, object]]:
         """Prefer the checked-in public ledger while retaining DB revisions.
 
         The ledger is read-only here; explicit import remains the persistence

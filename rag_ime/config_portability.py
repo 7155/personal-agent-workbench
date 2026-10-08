@@ -422,9 +422,6 @@ def restore_portable_backup(
     }
 
 
-def _configuration_payload(payload: Mapping[str, object]) -> dict[str, object]:
-    config, _source = _configuration_payload_with_source(payload)
-    return config
 
 
 def _configuration_hash(config: Mapping[str, object]) -> str:
@@ -708,8 +705,6 @@ def _provider_metadata(support_directory: Path) -> dict[str, object]:
     }
 
 
-def _rime_configuration_files(root: Path) -> list[Path]:
-    return _rime_configuration_selection(root)[0]
 
 
 def _rime_configuration_selection(root: Path) -> tuple[list[Path], list[str]]:

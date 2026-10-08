@@ -691,8 +691,6 @@ def _first_json_object(text: str) -> object:
     return None
 
 
-def _character_f1(actual: str, expected: str) -> float:
-    return _character_scores(actual, expected)[2]
 
 
 def _character_scores(actual: str, expected: str) -> tuple[float, float, float]:

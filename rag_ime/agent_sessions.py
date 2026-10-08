@@ -715,6 +715,71 @@ class AgentSessionStore:
         array-shaped API for internal callers; this page-shaped method is the
         listing seam used by the HTTP application service.
         """
+        page = self._list_page_rows(
+            include_archived=include_archived, include_internal=include_internal,
+            limit=limit, before_updated_at_ms=before_updated_at_ms, before_id=before_id,
+            surface_kind=surface_kind, owner_app_id=owner_app_id, surface_key=surface_key,
+            projection_only=projection_only,
+        )
+        rows = cast(list[sqlite3.Row], page["items"])
+        page["items"] = (
+            [_session_directory_payload(row) for row in rows]
+            if projection_only
+            else [_session_payload(row, _joined_runtime_binding(row)) for row in rows]
+        )
+        return page
+
+    def list_evaluation_page(
+        self,
+        *,
+        include_archived: bool = False,
+        include_internal: bool = False,
+        limit: int = 100,
+        before_updated_at_ms: int | None = None,
+        before_id: str | None = None,
+        surface_kind: str | None = None,
+        owner_app_id: str = "",
+        surface_key: str = "",
+    ) -> dict[str, object]:
+        """Page evaluation Sessions before LIMIT, with only their joined snapshot.
+
+        This internal Lab reader shares the ordinary directory's filters and
+        cursor. Raw runtime-binding metadata is never a public Session field.
+        """
+        page = self._list_page_rows(
+            include_archived=include_archived, include_internal=include_internal,
+            limit=limit, before_updated_at_ms=before_updated_at_ms, before_id=before_id,
+            surface_kind=surface_kind, owner_app_id=owner_app_id, surface_key=surface_key,
+            evaluation_only=True,
+        )
+        records: list[dict[str, object]] = []
+        for row in cast(list[sqlite3.Row], page["items"]):
+            try:
+                metadata = json.loads(str(row["runtime_binding_metadata_json"] or "{}"))
+            except (ValueError, TypeError):
+                metadata = {}
+            snapshot = metadata.get("evaluationSnapshot") if isinstance(metadata, Mapping) else None
+            records.append({
+                "session": _session_payload(row, _joined_runtime_binding(row)),
+                "snapshot": dict(snapshot) if isinstance(snapshot, Mapping) else None,
+            })
+        page["items"] = records
+        return page
+
+    def _list_page_rows(
+        self,
+        *,
+        include_archived: bool = False,
+        include_internal: bool = False,
+        limit: int = 100,
+        before_updated_at_ms: int | None = None,
+        before_id: str | None = None,
+        surface_kind: str | None = None,
+        owner_app_id: str = "",
+        surface_key: str = "",
+        projection_only: bool = False,
+        evaluation_only: bool = False,
+    ) -> dict[str, object]:
         bounded_limit = max(1, min(int(limit), 500))
         if surface_kind is None or not str(surface_kind).strip():
             if str(owner_app_id or "").strip() or str(surface_key or "").strip():
@@ -732,6 +797,8 @@ class AgentSessionStore:
                 )
             )
         clauses = [] if include_archived else ["s.status <> 'archived'"]
+        if evaluation_only:
+            clauses.append("s.evaluation_snapshot = 1")
         if not include_internal:
             clauses.extend(
                 [
@@ -769,14 +836,6 @@ class AgentSessionStore:
             ).fetchall()
         has_more = len(rows) > bounded_limit
         page_rows = rows[:bounded_limit]
-        items = (
-            [_session_directory_payload(row) for row in page_rows]
-            if projection_only
-            else [
-                _session_payload(row, _joined_runtime_binding(row))
-                for row in page_rows
-            ]
-        )
         next_updated_at_ms = (
             int(page_rows[-1]["updated_at_ms"])
             if has_more and page_rows
@@ -792,7 +851,7 @@ class AgentSessionStore:
             else None
         )
         return {
-            "items": items,
+            "items": page_rows,
             "hasMore": has_more,
             "nextBeforeUpdatedAtMs": next_updated_at_ms,
             "nextBeforeId": next_id,

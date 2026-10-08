@@ -686,8 +686,6 @@ def _governed_visible_event_ids(
     return visible
 
 
-def _timeline_requested(query: HybridRagQuery) -> bool:
-    return _timeline_intent_for_query(query).requested
 
 
 def _recent_timeline_requested(

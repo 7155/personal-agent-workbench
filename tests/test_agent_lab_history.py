@@ -3,9 +3,10 @@ from __future__ import annotations
 import copy
 import json
 import tempfile
+import threading
 import unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from rag_ime.agent_lab.history import history_collections
 from rag_ime.agent_lab.project_application import AgentLabProjectApplication
@@ -28,6 +29,26 @@ class LabHistoryImportTests(unittest.TestCase):
     def request(self, collection, request_id="once"):
         return {"action": "import_history", "expectedRevision": 0, "clientRequestId": request_id,
                 "input": {key: collection[key] for key in ("sceneId", "sourceHash")}}
+
+    def test_product_history_composition_uses_narrow_public_catalog_without_execution(self):
+        from rag_ime.agent_service import AgentService
+        from rag_ime.eval_lab import EvalLabProjection
+
+        projection = EvalLabProjection(Path(self.temporary.name) / "lab.sqlite",
+                                       source_ledger_path=Path(__file__).parents[1] / "eval/interview-metrics/agent-experiments.v1.json")
+        # Exercise the actual lazy composition method without booting Runtime.
+        service = AgentService.__new__(AgentService)
+        service.sessions = projection.sessions
+        service.session_application = self.sessions
+        service.eval_lab = projection
+        service._eval_lab_project_lock = threading.Lock()
+        service._eval_lab_project_application = None
+        with patch.object(service, "_knowledge_resource", return_value=None), patch("rag_ime.agent_lab.project_application.AgentLabProjectApplication") as application, patch.object(projection, "list_runs", side_effect=AssertionError("history only reads catalog")):
+            first = service._lab_project_application()
+            self.assertIs(service._lab_project_application(), first)
+            self.assertEqual(application.call_args.kwargs["read_experiments"](), projection.list_experiments())
+        application.assert_called_once()
+        self.sessions.create_in_transaction.assert_not_called()
 
     def test_six_existing_scenarios_preserve_exact_evidence_without_model_calls(self):
         collections = history_collections(self.records)

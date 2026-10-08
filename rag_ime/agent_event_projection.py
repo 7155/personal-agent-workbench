@@ -605,23 +605,6 @@ def _public_turn_failure(
     }
 
 
-def _completed_message_failed(
-    event: AgentEventEnvelope,
-) -> bool:
-    message = event.payload.get("message")
-    if not isinstance(message, Mapping):
-        return False
-    if str(message.get("status") or "").lower() == "failed":
-        return True
-    blocks = message.get("blocks")
-    return isinstance(blocks, list) and any(
-        isinstance(block, Mapping)
-        and (
-            str(block.get("status") or "").lower() == "failed"
-            or str(block.get("type") or "").lower() == "error"
-        )
-        for block in blocks
-    )
 
 
 def runtime_event_metrics(
@@ -861,22 +844,6 @@ def _public_room_message(
     return public
 
 
-def _public_token_usage(
-    value: object,
-) -> dict[str, int] | None:
-    if not isinstance(value, Mapping):
-        return None
-    keys = ("input", "output", "cacheRead", "cacheWrite", "totalTokens")
-    if not any(
-        isinstance(value.get(key), (int, float))
-        and not isinstance(value.get(key), bool)
-        for key in keys
-    ):
-        return None
-    return {
-        key: max(0, _signed_integer(value.get(key), default=0))
-        for key in keys
-    }
 
 
 def _room_scalar_projection(

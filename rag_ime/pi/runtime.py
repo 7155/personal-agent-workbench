@@ -4361,59 +4361,6 @@ class PiRuntimeHostManager:
                     else f"{message}; completion cancel failed: {cancel_error}"
                 )
 
-    def _retire_timed_out_host(
-        self,
-        client: PiRuntimeHostClient,
-        *,
-        requested_by: str,
-        error: PiRuntimeError,
-    ) -> None:
-        """Fence a Host that stopped answering before an RPC boundary.
-
-        A timed-out RPC has no trustworthy completion boundary: the Host may
-        still emit a late response after the caller has returned. Reusing it
-        also leaves its durable process row registered, so the next request
-        either hangs behind the same process or cannot admit a replacement.
-        The cancellation kill gate gives this failure a durable receipt;
-        stopping the client then drains its reader threads and lets the normal
-        Host-exit path fault resident Sessions.
-        """
-
-        message = redact_runtime_text(str(error))
-        with self._lifecycle_lock:
-            with self._lock:
-                if self._client is not client:
-                    return
-                self._status = "stopping"
-                self._last_error = message
-            receipt: dict[str, object] | None = None
-            kill_error = ""
-            try:
-                receipt = self._kill_gate.request_kill(
-                    client.host_identity,
-                    request_kind="cancel_timeout",
-                    requested_by=requested_by,
-                    reason=message,
-                    now_ms=int(time.time() * 1000),
-                )
-            except Exception as exc:  # pragma: no cover - defensive local cleanup
-                kill_error = redact_runtime_text(str(exc))
-            finally:
-                # request_kill is bounded and may return while the process is
-                # only acknowledged. stop() completes the local teardown and
-                # marks both the process row and any receipt terminal.
-                client.stop()
-            with self._lock:
-                if receipt is not None:
-                    self._last_kill_receipt = dict(
-                        self._kill_gate.receipt(str(receipt["killReceiptId"]))
-                    )
-                self._status = "faulted"
-                self._last_error = (
-                    message
-                    if not kill_error
-                    else f"{message}; Runtime Host kill receipt failed: {kill_error}"
-                )
 
     def cancel_completion(self, request_id: str) -> bool:
         try:

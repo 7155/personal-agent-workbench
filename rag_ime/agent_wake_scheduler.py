@@ -9,7 +9,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
-from threading import Event, Lock, Thread
+from threading import Event, Lock, RLock, Thread
 from typing import Iterator
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -827,6 +827,8 @@ class AgentWakeScheduler:
         self.max_parallel = max(1, min(int(max_parallel), 4))
         self._stop = Event()
         self._notify = Event()
+        self._closed = Event()
+        self._lifecycle_lock = RLock()
         self._terminal_observer: Callable[
             [AgentEventEnvelope, Mapping[str, object]], None
         ] | None = None
@@ -837,12 +839,30 @@ class AgentWakeScheduler:
         self._maintenance_lock = Lock()
         self._maintenance_future: Future[object] | None = None
         self._thread: Thread | None = None
-        if self.enabled:
+        self._started = False
+
+    @property
+    def active(self) -> bool:
+        with self._lifecycle_lock:
+            return bool(self._thread and self._thread.is_alive() and not self._stop.is_set())
+
+    def start(self) -> None:
+        """Start automatic admission only after the execution owner is ready."""
+        with self._lifecycle_lock:
+            if not self.enabled or self._started or self._stop.is_set():
+                return
+            self._started = True
             self._thread = Thread(target=self._run, name="agent-wake-scheduler", daemon=True)
-            self._thread.start()
+            try:
+                self._thread.start()
+            except BaseException:
+                if self._thread.ident is None:
+                    self._thread = None
+                    self._started = False
+                raise
 
     def wake(self) -> None:
-        if self.enabled:
+        if self.active:
             self._notify.set()
 
     def bind_terminal_observer(
@@ -872,15 +892,20 @@ class AgentWakeScheduler:
             self.wake()
 
     def run_due_once(self, *, now_ms: int | None = None) -> int:
-        claims = self.store.claim_due(
-            now_ms=now_ms,
-            limit=self.max_parallel,
-            max_active=self.max_parallel,
-        )
-        self._submit_maintenance(now_ms)
-        for claim in claims:
-            self._executor.submit(self._dispatch_safely, claim)
-        return len(claims)
+        with self._lifecycle_lock:
+            if self._stop.is_set() or (self.enabled and not self._started):
+                return 0
+            # Disabled pollers retain the explicit manual tick used by the
+            # owning Runtime and offline callers. Closing fences both paths.
+            claims = self.store.claim_due(
+                now_ms=now_ms,
+                limit=self.max_parallel,
+                max_active=self.max_parallel,
+            )
+            self._submit_maintenance(now_ms)
+            for claim in claims:
+                self._executor.submit(self._dispatch_safely, claim)
+            return len(claims)
 
     def _submit_maintenance(self, now_ms: int | None) -> None:
         callback = self.on_tick
@@ -895,11 +920,20 @@ class AgentWakeScheduler:
             self._maintenance_future = self._executor.submit(callback, now_ms)
 
     def close(self) -> None:
-        self._stop.set()
-        self._notify.set()
-        if self._thread is not None:
-            self._thread.join(timeout=3)
-        self._executor.shutdown(wait=True, cancel_futures=False)
+        with self._lifecycle_lock:
+            closing = self._stop.is_set()
+            self._stop.set()
+            self._notify.set()
+            thread = self._thread
+        if closing:
+            self._closed.wait()
+            return
+        try:
+            if thread is not None:
+                thread.join(timeout=3)
+            self._executor.shutdown(wait=True, cancel_futures=False)
+        finally:
+            self._closed.set()
 
     def _run(self) -> None:
         while not self._stop.is_set():
@@ -915,6 +949,16 @@ class AgentWakeScheduler:
 
     def _dispatch_safely(self, claim: Mapping[str, object]) -> None:
         try:
+            if self._stop.is_set():
+                # Only queued, not-yet-entered dispatch is deferred. Admitted
+                # callbacks drain with their dependencies still available;
+                # their unknown effects are never replayed here.
+                self.store.defer(
+                    str(claim.get("runId") or ""),
+                    reason="Gateway is closing before scheduled dispatch",
+                    delay_ms=5_000,
+                )
+                return
             self.dispatch(claim)
         except Exception as exc:
             try:

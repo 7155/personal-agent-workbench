@@ -151,6 +151,20 @@ export function LegacyEvalLabFeature({ initialPage = 'workspace' }: { initialPag
   // transcript, a report-only receipt, or a controlled fixture. Load the
   // bounded catalog up front so that status is not inferred from titles.
   const sourceEvidence = useEvalLabEvidenceCatalog(true);
+  const runItems = runs.data?.items ?? [];
+  const experiments = runs.data?.experiments ?? [];
+  const evidenceRunCount = sourceEvidence.data?.runs.length ?? 0;
+  const hasSessionRecords = runItems.length > 0 || evidenceRunCount > 0 || ownedRooms.length > 0;
+  const hasRecords = hasSessionRecords || experiments.length > 0;
+  // A first refetch clears Query's error before it settles. Retain only the
+  // presentation so its recovery control stays mounted; Query owns pending.
+  const [lastRunsError, setLastRunsError] = useState(runs.error);
+  const [lastEvidenceError, setLastEvidenceError] = useState(sourceEvidence.error);
+  useEffect(() => { if (!runs.isFetching) setLastRunsError(runs.error); }, [runs.error, runs.isFetching]);
+  useEffect(() => { if (!sourceEvidence.isFetching) setLastEvidenceError(sourceEvidence.error); }, [sourceEvidence.error, sourceEvidence.isFetching]);
+  const runsError = runs.error ?? (runs.isFetching ? lastRunsError : null);
+  const evidenceError = sourceEvidence.error ?? (sourceEvidence.isFetching ? lastEvidenceError : null);
+  const directoryEmpty = !runs.isLoading && !runsError && Boolean(runs.data) && !hasRecords;
 
   function showGolden(startNew = false) {
     setGoldenStartNew(startNew);
@@ -340,7 +354,7 @@ export function LegacyEvalLabFeature({ initialPage = 'workspace' }: { initialPag
           {transport.kind === 'mock' ? <span className="eval-lab__source-badge eval-lab__source-badge--mock">示例数据</span> : null}
           <Button onClick={() => showGolden()} variant="secondary">继续评测集</Button>
           <Button leadingIcon={<ClipboardList size={15} />} onClick={() => showGolden(true)} variant="primary">新建评测</Button>
-          <Button leadingIcon={<RefreshCw size={15} />} loading={runs.isFetching || sourceEvidence.isFetching} onClick={() => { void runs.refetch(); void sourceEvidence.refetch(); }} variant="secondary">
+          <Button leadingIcon={<RefreshCw size={15} />} loading={runs.isFetching || sourceEvidence.isFetching} onClick={() => { void runs.refetch(); void sourceEvidence.refetch(); }} preserveFocusWhileLoading variant="secondary">
             刷新
           </Button>
         </div>
@@ -350,18 +364,26 @@ export function LegacyEvalLabFeature({ initialPage = 'workspace' }: { initialPag
       <TraceLabContext experiment={page === 'workspace' ? activeWorkspaceExperiment(runs.data?.experiments ?? [], selectedExperimentId) : activeProjectExperiment(runs.data?.experiments ?? [], selectedExperimentId)} />
 
       {runs.isLoading ? <div aria-live="polite" className="eval-lab__state" role="status">正在读取评测回执…</div> : null}
-      {runs.error ? (
+      {runsError ? (
         <div aria-live="assertive" className="eval-lab__error" role="alert">
           <strong>{runs.data ? '更新暂时失败，仍显示上次读取的实验' : '还没读取到评测结果'}</strong>
           <span>{runs.data ? '当前页面和未提交设置已保留。重新连接后，读取最新回执。' : '请确认本机服务正在运行，再重新读取。已经保存的实验不会丢失。'}</span>
-          <Button size="small" loading={runs.isFetching} onClick={() => void runs.refetch()}>重新读取实验</Button>
-          <details><summary>查看技术信息</summary><code>{publicErrorText(runs.error)}</code></details>
+          <Button size="small" loading={runs.isFetching} onClick={() => void runs.refetch()} preserveFocusWhileLoading>重新读取实验</Button>
+          <details><summary>查看技术信息</summary><code>{publicErrorText(runsError)}</code></details>
         </div>
       ) : null}
-      {!runs.isLoading && !runs.error && runs.data && runs.data.items.length === 0 && runs.data.experiments.length === 0 ? (
+      {!runs.isLoading && runs.data?.truncation ? (
+        <p className="eval-lab__lede" role="status">
+          {`历史目录显示 ${runs.data.items.length} / ${runs.data.total} 次运行。`}
+          {runs.data.truncation.omittedRunCount ? `另有 ${runs.data.truncation.omittedRunCount} 次运行未在本页列出。` : ''}
+          {runs.data.truncation.omittedTaskCount ? `已显示运行内另有 ${runs.data.truncation.omittedTaskCount} 条任务明细未列出。` : ''}
+          运行汇总仍按全部可读评测任务计算。
+        </p>
+      ) : null}
+      {page !== 'sessions' && directoryEmpty ? (
         <EmptyState icon={ClipboardList} title="还没有实验" description="点击“新建评测”，从真实资料起草题目，审核标准并校准评审后，开始对照实验。" />
       ) : null}
-      {!runs.isLoading && runs.data && (runs.data.items.length > 0 || runs.data.experiments.length > 0 || ownedRooms.length > 0) ? (
+      {recordsOpen || hasRecords ? (
         <>
           {recordsOpen ? <nav aria-label="Agent Lab 页面" className="eval-lab__pages" role="tablist">
             {EVAL_LAB_PAGES.map(([key, label], index) => (
@@ -379,8 +401,8 @@ export function LegacyEvalLabFeature({ initialPage = 'workspace' }: { initialPag
             ))}
           </nav> : null}
           <section aria-label={recordsOpen ? undefined : '评测批次列表'} aria-labelledby={recordsOpen ? `${id}-${page}-tab` : undefined} className="eval-lab__runs" id={`${id}-records-panel`} role={recordsOpen ? 'tabpanel' : undefined}>
-            {page === 'workspace' && runs.data.experiments.length ? (() => {
-              const experiment = activeWorkspaceExperiment(runs.data.experiments, selectedExperimentId);
+            {page === 'workspace' && experiments.length ? (() => {
+              const experiment = activeWorkspaceExperiment(experiments, selectedExperimentId);
               if (!experiment) return <EmptyState icon={FlaskConical} title="还没有可运行的垂直实验" description="新建评测后，固定任务与基线即可进入实验工作区。" />;
               const evidenceRuns = matchingEvidenceRuns(sourceEvidence.data, experiment);
               const rooms = matchingExperimentRooms(ownedRooms, experiment);
@@ -402,28 +424,28 @@ export function LegacyEvalLabFeature({ initialPage = 'workspace' }: { initialPag
                 onDiscuss={() => { if (pendingDispatch) showOwnedRoom(pendingDispatch.room, roomPersonas, 'workspace'); else void createOptimizationRoom(experiment, undefined, experiment.experimentId, 'workspace'); }}
                 onStart={(setup) => createCandidateRoom(experiment, setup)}
                 onCreateEvaluation={() => showGolden(true)}
-                results={<ExperimentWorkspaceResults desktop={desktop} evidenceCatalog={sourceEvidence.data} evidenceError={Boolean(sourceEvidence.error)} evidenceLoading={sourceEvidence.isLoading} experiment={experiment} linkedRuns={matchingRuns(experiment, runs.data.items)} />}
+                results={<ExperimentWorkspaceResults desktop={desktop} evidenceCatalog={sourceEvidence.data} evidenceError={Boolean(evidenceError)} evidenceLoading={sourceEvidence.isLoading} experiment={experiment} linkedRuns={matchingRuns(experiment, runItems)} />}
                 room={<AgentLabRoomDeck activeRoomId={activeRoomId} error={roomCatalogError} onRoomUpdated={(updated) => { setOwnedRooms((current) => mergeAgentLabRooms([updated], current)); void runs.refetch(); void sourceEvidence.refetch(); }} onSelect={setActiveRoomId} personas={roomPersonas} rooms={rooms} />}
                 roomCount={rooms.length}
                 scene={candidateLabel(experiment)}
-                selector={<ExperimentWorkspacePicker experiments={runs.data.experiments} onSelect={setSelectedExperimentId} selectedId={experiment.experimentId} />}
+                selector={<ExperimentWorkspacePicker experiments={experiments} onSelect={setSelectedExperimentId} selectedId={experiment.experimentId} />}
                 title={projectTitleForExperiment(experiment)}
               />;
             })() : null}
-            {page === 'workspace' && !runs.data.experiments.length ? <EmptyState icon={FlaskConical} title="还没有实验配置" description="已有运行可在对话与证据中核对。点击新建评测，定义任务与基线。" /> : null}
-            {page === 'overview' && runs.data.experiments.length ? (
-              <ExperimentMatrix evidenceCatalog={sourceEvidence.data} evidenceLoading={sourceEvidence.isLoading} experiments={runs.data.experiments} onOpenExperiment={(experimentId) => { setSelectedExperimentId(experimentId); setPage('details'); }} />
+            {page === 'workspace' && !experiments.length && !runs.isLoading && !directoryEmpty ? <EmptyState icon={FlaskConical} title="还没有实验配置" description="已有运行可在对话与证据中核对。点击新建评测，定义任务与基线。" /> : null}
+            {page === 'overview' && experiments.length ? (
+              <ExperimentMatrix evidenceCatalog={sourceEvidence.data} evidenceLoading={sourceEvidence.isLoading} experiments={experiments} onOpenExperiment={(experimentId) => { setSelectedExperimentId(experimentId); setPage('details'); }} />
             ) : null}
-            {(page === 'overview' || page === 'details') && !runs.data.experiments.length ? <EmptyState icon={FlaskConical} title="还没有已关联的实验结果" description="已有运行仍可在对话与证据中查看；建立评测集后，才能保存有明确基线的实验比较。" action={<Button onClick={() => setPage('sessions')}>查看已有运行</Button>} /> : null}
-            {page === 'paths' && runs.data.pathSearches?.length ? <OptimalPathPanel searches={runs.data.pathSearches} /> : null}
-            {page === 'paths' && !runs.data.pathSearches?.length ? <EmptyState icon={GitBranch} title="还没有可比较的方案路径" description="先新建评测并运行至少一个新方案，这里会显示每一步为何保留或淘汰。" /> : null}
-            {page === 'details' && runs.data.experiments.length ? (
+            {(page === 'overview' || page === 'details') && !experiments.length && !runs.isLoading && !directoryEmpty ? <EmptyState icon={FlaskConical} title="还没有已关联的实验结果" description="已有运行仍可在对话与证据中查看；建立评测集后，才能保存有明确基线的实验比较。" action={<Button onClick={() => setPage('sessions')}>查看已有运行</Button>} /> : null}
+            {page === 'paths' && runs.data?.pathSearches?.length ? <OptimalPathPanel searches={runs.data.pathSearches} /> : null}
+            {page === 'paths' && !runs.data?.pathSearches?.length && !runs.isLoading && !directoryEmpty ? <EmptyState icon={GitBranch} title="还没有可比较的方案路径" description="先新建评测并运行至少一个新方案，这里会显示每一步为何保留或淘汰。" /> : null}
+            {page === 'details' && experiments.length ? (
               <section aria-label="Agent Lab 实验" className="eval-lab__experiments">
                 {sourceEvidence.isLoading ? <p className="eval-lab__evidence-loading" role="status">正在读取可回溯的原始运行…</p> : null}
-                {sourceEvidence.error ? <p className="eval-lab__evidence-error" role="alert">原始运行证据暂时不可读：{publicErrorText(sourceEvidence.error)}</p> : null}
-                <ProjectExperimentPicker experiments={runs.data.experiments} selectedId={selectedExperimentId} onSelect={setSelectedExperimentId} />
-                {activeProjectExperiment(runs.data.experiments, selectedExperimentId) ? (() => {
-                  const experiment = activeProjectExperiment(runs.data.experiments, selectedExperimentId)!;
+                {evidenceError ? <p className="eval-lab__evidence-error" role="alert">原始运行证据暂时不可读：{publicErrorText(evidenceError)}</p> : null}
+                <ProjectExperimentPicker experiments={experiments} selectedId={selectedExperimentId} onSelect={setSelectedExperimentId} />
+                {activeProjectExperiment(experiments, selectedExperimentId) ? (() => {
+                  const experiment = activeProjectExperiment(experiments, selectedExperimentId)!;
                   return <ExperimentSection
                     desktop={desktop}
                     evidenceCatalog={sourceEvidence.data}
@@ -436,8 +458,8 @@ export function LegacyEvalLabFeature({ initialPage = 'workspace' }: { initialPag
                 })() : null}
               </section>
             ) : null}
-            {page === 'story' && runs.data.experiments.length ? <StoryDeck experiments={runs.data.experiments} onSelect={setSelectedExperimentId} selectedId={selectedExperimentId} /> : null}
-            {page === 'sessions' && (runs.data.items.length || sourceEvidence.data || ownedRooms.length) ? (
+            {page === 'story' && experiments.length ? <StoryDeck experiments={experiments} onSelect={setSelectedExperimentId} selectedId={selectedExperimentId} /> : null}
+            {page === 'sessions' ? (
               <section aria-label="真实 Session runs" className="eval-lab__session-runs">
                 <AgentLabRoomDeck
                   activeRoomId={activeRoomId}
@@ -457,15 +479,15 @@ export function LegacyEvalLabFeature({ initialPage = 'workspace' }: { initialPag
                     <h2>查看每轮对话、工具调用和验收报告</h2>
                     <p>打开任意任务，可以核对 Agent 收到什么、做了哪些操作、最终输出什么，以及自动验收为何通过或失败。原始记录只读；内部推理、隐藏标准答案和凭据不会显示。</p>
                   </div>
-                  <span>{runs.data.items.length} 个回执{sourceEvidence.data?.source.runCount ? ` · ${sourceEvidence.data.source.runCount} 个历史批次` : ''}</span>
+                  <span>{runItems.length} 个回执{sourceEvidence.data?.source.runCount ? ` · ${sourceEvidence.data.source.runCount} 个历史批次` : ''}</span>
                 </header>
                 {sourceEvidence.isLoading ? <p className="eval-lab__evidence-loading" role="status">正在读取研究盘里的历史运行…</p> : null}
-                {sourceEvidence.error ? <p className="eval-lab__evidence-error" role="alert">历史运行目录暂时不可读：{publicErrorText(sourceEvidence.error)}</p> : null}
-                {sourceEvidence.data ? <SourceEvidenceCatalog catalog={sourceEvidence.data} /> : null}
-                {runs.data.items.map((run) => <EvalRunSection desktop={desktop} key={run.runId} run={run} roomAction={roomAction} onCreateRoom={() => void createOptimizationRoom(fallbackExperiment(run), run, run.runId)} />)}
+                {evidenceError ? <p className="eval-lab__evidence-error" role="alert">历史运行目录暂时不可读：{publicErrorText(evidenceError)} 可使用上方“刷新”重新读取。</p> : null}
+                {sourceEvidence.data && evidenceRunCount > 0 ? <SourceEvidenceCatalog catalog={sourceEvidence.data} /> : null}
+                {runItems.map((run) => <EvalRunSection desktop={desktop} key={run.runId} run={run} roomAction={roomAction} onCreateRoom={() => void createOptimizationRoom(fallbackExperiment(run), run, run.runId)} />)}
+                {!runs.isLoading && !runsError && !sourceEvidence.isLoading && !evidenceError && !hasSessionRecords ? <EmptyState icon={ClipboardList} title="还没有可查看的运行记录" description="点击“新建评测”，完成一次实验后，这里会按任务展示只读对话、工具调用和验收结果。" /> : null}
               </section>
             ) : null}
-            {page === 'sessions' && !runs.data.items.length && !sourceEvidence.data && !sourceEvidence.isLoading && !ownedRooms.length ? <EmptyState icon={ClipboardList} title="还没有可查看的运行记录" description="完成一次实验后，这里会按任务展示只读对话、工具调用和验收结果。" /> : null}
           </section>
         </>
       ) : null}
