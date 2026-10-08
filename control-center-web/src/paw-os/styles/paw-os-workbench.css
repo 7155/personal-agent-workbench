@@ -1234,6 +1234,42 @@
 .paw-wb-operation-dialog .mgmt-workflow { padding: 14px; border: 1px solid var(--paw-wb-line); border-radius: 12px; background: var(--paw-wb-surface); }
 .paw-wb-operation-dialog .mgmt-workflow[data-confirmation='direct'] { border-block: 1px solid var(--paw-wb-line); }
 
+/* Task forms end in one action row; each transaction keeps its own feedback. */
+.paw-wb-task-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--paw-wb-line);
+}
+.paw-wb-operation-dialog--task .paw-wb-task-actions > .mgmt-workflow {
+  flex: 1 1 168px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.paw-wb-operation-dialog--task .paw-wb-task-actions > .mgmt-workflow:has(.mgmt-workflow__panel, .mgmt-workflow__feedback, .mgmt-workflow__receipt) {
+  flex-basis: 100%;
+}
+.paw-wb-operation-dialog--task .paw-wb-task-actions .mgmt-workflow[data-stage='idle'] .mgmt-workflow__heading {
+  display: grid;
+  gap: var(--space-2);
+}
+.paw-wb-operation-dialog--task .paw-wb-task-actions .mgmt-workflow[data-stage='idle'] .mgmt-workflow__heading > .ui-button {
+  width: 100%;
+}
+.paw-wb-task-actions__hint {
+  flex: 1 0 100%;
+  margin: 0;
+  color: var(--paw-wb-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 /* Three motions, all bounded, all retired by the reduced-motion block below:
    the plan assembling itself (node arrival), real dependency flow (edge march
    plus one packet), and a working pane settling into the window. Everything

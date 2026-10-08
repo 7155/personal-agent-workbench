@@ -64,6 +64,7 @@ export function ManagementMutationWorkflow<Context>({
   risk,
   title,
   triggerVariant = 'primary',
+  presentation = 'standard',
 }: {
   availability: MutationAvailability;
   description: string;
@@ -84,6 +85,8 @@ export function ManagementMutationWorkflow<Context>({
   title: string;
   /** Visual priority of the direct action; R3 confirmation keeps its danger treatment. */
   triggerVariant?: 'primary' | 'secondary';
+  /** Compact action entry; authoritative preview, errors and results remain visible. */
+  presentation?: 'standard' | 'action';
 }) {
   const [stage, setStage] = useState<'idle' | 'preview' | 'approval' | 'receipt' | 'rolled-back'>('idle');
   const [pendingTriggerLabel, setPendingTriggerLabel] = useState<string | null>(null);
@@ -202,9 +205,15 @@ export function ManagementMutationWorkflow<Context>({
         ? '正在撤销更改'
         : '';
 
+  const showHeading = presentation === 'standard' || requiresConfirmation || stage !== 'idle'
+    || Boolean(displayedPreviewError) || !['available', 'checking'].includes(availability.state);
+
   return (
     <div
       className="mgmt-workflow"
+      aria-label={presentation === 'action' ? title : undefined}
+      role={presentation === 'action' ? 'group' : undefined}
+      data-presentation={presentation === 'action' ? presentation : undefined}
       data-availability={availability.state}
       data-confirmation={requiresConfirmation ? 'dangerous' : 'direct'}
       data-stage={stage}
@@ -213,11 +222,11 @@ export function ManagementMutationWorkflow<Context>({
         {liveStatus}
       </span>
       <div className="mgmt-workflow__heading">
-        <div>
+        {showHeading ? <div>
           {requiresConfirmation ? <span className="mgmt-workflow__risk">{riskLabel(effectiveRisk)}</span> : null}
           <strong>{title}</strong>
-          <p>{description}</p>
-        </div>
+          {presentation === 'standard' || requiresConfirmation ? <p>{description}</p> : null}
+        </div> : null}
         {stage === 'idle' && (availability.state === 'available' || availability.state === 'checking') ? (
           <Button
             ref={triggerRef}

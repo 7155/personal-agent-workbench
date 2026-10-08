@@ -90,8 +90,8 @@ const APPROVED_ART: Record<PawBuiltinIdentityIconId, ReactNode> = {
     <path d="M30.5 14.5 L27 27 17.5 33.5 21 21 z" fill={PAW_ICON_PAPER} />
   </>,
   terminal: <>
-    <path d="M13 15.5 l9 8.5 -9 8.5" fill="none" stroke="#30D158" strokeLinecap="round" strokeLinejoin="round" strokeWidth="4.2" />
-    <rect fill="#E9F7EE" height="3.8" rx="1.9" width="10.5" x="26" y="31" />
+    <path data-paw-icon-foreground d="M13 15.5 l9 8.5 -9 8.5" fill="none" stroke="#30D158" strokeLinecap="round" strokeLinejoin="round" strokeWidth="4.2" />
+    <rect data-paw-icon-foreground fill="#E9F7EE" height="3.8" rx="1.9" width="10.5" x="26" y="31" />
   </>,
   files: <>
     <path d="M9 16.5 a2.5 2.5 0 0 1 2.5-2.5 h8.6 l3.6 4.5 h13.8 a2.5 2.5 0 0 1 2.5 2.5 V33 a4 4 0 0 1-4 4 H13 a4 4 0 0 1-4-4 z" fill={PAW_ICON_PAPER} />
@@ -101,7 +101,7 @@ const APPROVED_ART: Record<PawBuiltinIdentityIconId, ReactNode> = {
     <rect fill={PAW_ICON_PAPER} height="4.6" opacity=".96" rx="2.3" width="14" x="11" y="12.5" />
     <rect fill={PAW_ICON_PAPER} height="4.6" opacity=".8" rx="2.3" width="20" x="11" y="21.7" />
     <rect fill={PAW_ICON_PAPER} height="4.6" opacity=".64" rx="2.3" width="24" x="11" y="30.9" />
-    <circle cx="38.5" cy="33.2" fill="#FFD9CF" r="3" />
+    <circle data-paw-icon-foreground cx="38.5" cy="33.2" fill="#FFD9CF" r="3" />
   </>,
   memory: <>
     <circle cx="24" cy="24" fill="none" r="13.5" stroke={PAW_ICON_PAPER} strokeWidth="3.6" />
@@ -123,9 +123,9 @@ const APPROVED_ART: Record<PawBuiltinIdentityIconId, ReactNode> = {
     <path d="M24 9 37.5 16.8 v14.4 L24 39 10.5 31.2 V16.8 z" fill="none" stroke={PAW_ICON_PAPER} strokeLinejoin="round" strokeWidth="3.4" />
     <path d="M24 24.5 V39 M24 24.5 11.2 17.2 M24 24.5 36.8 17.2" fill="none" stroke={PAW_ICON_PAPER} strokeLinejoin="round" strokeWidth="3.4" />
   </>,
-  'system-monitor': <path d="M9 27.5 h7.5 l3-9.5 5 16.5 3.6-11 H39" fill="none" stroke="#30D158" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3.6" />,
+  'system-monitor': <path data-paw-icon-foreground d="M9 27.5 h7.5 l3-9.5 5 16.5 3.6-11 H39" fill="none" stroke="#30D158" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3.6" />,
   'trace-agent': <><path d="M12 33 22 24 29 28 37 14" fill="none" stroke={PAW_ICON_PAPER} strokeLinecap="round" strokeLinejoin="round" strokeWidth="3.2" /><circle cx="12" cy="33" fill={PAW_ICON_PAPER} r="3.5" /><circle cx="22" cy="24" fill={PAW_ICON_PAPER} r="3.5" /><path d="M29 14 h8 v8" fill="none" stroke={PAW_ICON_PAPER} strokeLinecap="round" strokeLinejoin="round" strokeWidth="3.2" /></>,
-  'eval-lab': <><path d="M18 10 h12 M21 10 v12 l-8 13 a3 3 0 0 0 2.6 4.5 h16.8 A3 3 0 0 0 35 35 l-8-13 V10" fill="none" stroke={PAW_ICON_PAPER} strokeLinecap="round" strokeLinejoin="round" strokeWidth="3.4" /><path d="M16 31 h16" stroke="#FFE0A8" strokeLinecap="round" strokeWidth="3" /></>,
+  'eval-lab': <><path d="M18 10 h12 M21 10 v12 l-8 13 a3 3 0 0 0 2.6 4.5 h16.8 A3 3 0 0 0 35 35 l-8-13 V10" fill="none" stroke={PAW_ICON_PAPER} strokeLinecap="round" strokeLinejoin="round" strokeWidth="3.4" /><path data-paw-icon-foreground d="M16 31 h16" stroke="#FFE0A8" strokeLinecap="round" strokeWidth="3" /></>,
   'system-settings': <>
     <circle cx="24" cy="24" fill="none" r="6.6" stroke={PAW_ICON_PAPER} strokeWidth="3.6" />
     <path d="M24 8.5 v5.4 M24 34.1 v5.4 M8.5 24 h5.4 M34.1 24 h5.4 M13.2 13.2 l3.8 3.8 M31 31 l3.8 3.8 M34.8 13.2 31 17 M17 31 l-3.8 3.8" stroke={PAW_ICON_PAPER} strokeLinecap="round" strokeWidth="3.6" />

@@ -762,7 +762,6 @@
   .paw-desktop-root .paw-launchpad,
   .paw-desktop-root .paw-wayfinder-work,
   .paw-desktop-root .paw-window-shell .paw-window { border: 1px solid CanvasText; }
-  .paw-desktop-root .paw-app-icon { forced-color-adjust: auto; }
 }
 
 /* Wayfinder desktop icons ---------------------------------------------------

@@ -24,11 +24,37 @@ const approvedAssets: ReadonlyArray<{ appId: PawIdentityIconId; symbol: string; 
 ];
 
 describe('PAWOS approved App identity icons', () => {
+  it.each([
+    ['terminal', 'path[stroke="#30D158"], rect[fill="#E9F7EE"]', 2],
+    ['system-monitor', 'path[stroke="#30D158"]', 1],
+    ['project-workbench', 'circle[fill="#FFD9CF"]', 1],
+    ['eval-lab', 'path[stroke="#FFE0A8"]', 1],
+  ] as const)('keeps %s foreground marks distinct from glyph cutouts in the contrast palette', (appId, selector, count) => {
+    const { container, getByRole } = render(<PawAppIcon appId={appId} size={16} title="原应用身份" />);
+    const icon = getByRole('img', { name: '原应用身份' });
+    const foreground = [...container.querySelectorAll(`[data-paw-icon-art] ${selector.split(', ').join(', [data-paw-icon-art] ')}`)];
+    expect(foreground).toHaveLength(count);
+    foreground.forEach((mark) => expect(mark).toHaveAttribute('data-paw-icon-foreground'));
+    expect(icon).toHaveAttribute('width', '16');
+    expect(icon).toHaveAttribute('height', '16');
+    expect(icon).toHaveAttribute('focusable', 'false');
+  });
+
+  it('keeps inset detail separate from the foreground role without redrawing the original identity', () => {
+    const { container } = render(<><PawAppIcon appId="agent" /><PawAppIcon appId="knowledge" /><PawAppIcon appId="files" /></>);
+    const inset = [...container.querySelectorAll('[data-paw-app-icon="agent"] circle, [data-paw-app-icon="knowledge"] [stroke="#1FA54A"], [data-paw-app-icon="files"] [fill="#F5A623"]:not([data-paw-icon-tile])')];
+    expect(inset).toHaveLength(3);
+    inset.forEach((mark) => expect(mark).not.toHaveAttribute('data-paw-icon-foreground'));
+    expect(inset[0]).toHaveAttribute('r', '5.2');
+    expect(inset[1]).toHaveAttribute('d', 'M24 13.5 V36');
+    expect(inset[2]).toHaveAttribute('height', '3');
+  });
+
   it('keeps the built-in Apps and the Room collaboration identity on the approved wall', () => {
     const { container } = render(<>{approvedAssets.map(({ appId }) => <PawAppIcon appId={appId} key={appId} />)}</>);
     const icons = [...container.querySelectorAll<SVGElement>('[data-paw-app-icon]')];
 
-    expect(pawOsAppRegistry).toHaveLength(16);
+    expect(pawOsAppRegistry).toHaveLength(15);
     expect(pawApps.map((app) => app.id)).not.toContain('room');
     expect(icons).toHaveLength(14);
     for (const asset of approvedAssets) {

@@ -108,4 +108,26 @@
 
 @media (forced-colors: active) {
   .paw-app-icon { forced-color-adjust: auto; }
+
+  /* System colours keep the tile, positive glyph and inset detail distinct
+     while leaving the user's forced palette in control. */
+  .paw-app-icon [data-paw-icon-tile] {
+    fill: Canvas;
+    stroke: CanvasText;
+    stroke-width: 1;
+  }
+  .paw-app-icon [data-paw-icon-sheen] { display: none; }
+  .paw-app-icon [data-paw-icon-art] [fill]:not([fill='none']) { fill: Canvas; }
+  .paw-app-icon [data-paw-icon-art] [stroke]:not([stroke='none']) { stroke: Canvas; }
+  .paw-app-icon [data-paw-icon-art] :is([fill='var(--paw-icon-paper)'], [data-paw-icon-foreground][fill]:not([fill='none'])) {
+    fill: CanvasText;
+  }
+  .paw-app-icon [data-paw-icon-art] :is([stroke='var(--paw-icon-paper)'], [data-paw-icon-foreground][stroke]:not([stroke='none'])) {
+    stroke: CanvasText;
+  }
+  .paw-app-icon [data-paw-icon-art] [opacity] { opacity: 1; }
+  .paw-app-icon[data-paw-app-icon='room'] [data-paw-icon-art] circle {
+    stroke: Canvas;
+    stroke-width: 1.5;
+  }
 }

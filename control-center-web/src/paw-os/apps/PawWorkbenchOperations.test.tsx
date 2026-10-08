@@ -94,7 +94,7 @@ describe('PAWOS Workbench Planning operations', () => {
     });
 
     expect(await screen.findByRole('heading', { name: '编辑任务' })).toBeInTheDocument();
-    const action = screen.getByText('完成所选任务', { selector: 'strong' }).closest('.mgmt-workflow');
+    const action = screen.getByRole('group', { name: '完成所选任务' });
     expect(action).not.toBeNull();
     await user.click(within(action as HTMLElement).getByRole('button', { name: '完成所选任务' }));
 
@@ -129,7 +129,7 @@ describe('PAWOS Workbench Planning operations', () => {
       selectedTask: { id: 'task-8', title: '已完成任务', status: 'completed' },
     });
 
-    const action = screen.getByText('重新打开所选任务', { selector: 'strong' }).closest('.mgmt-workflow');
+    const action = screen.getByRole('group', { name: '重新打开所选任务' });
     expect(action).not.toBeNull();
     await user.click(within(action as HTMLElement).getByRole('button', { name: '重新打开所选任务' }));
     await waitFor(() => expect(requestFor(transport, 'planning.task.action')).toMatchObject({

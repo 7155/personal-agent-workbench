@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { FilePlus2, Flag, ListChecks } from 'lucide-react';
+import { FilePlus2, Flag } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useControlTransport } from '@/app/control-transport';
 import {
@@ -86,9 +86,8 @@ export function PawWorkbenchTaskDialog({
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent className="paw-wb-operation-dialog paw-wb-operation-dialog--task">
         <DialogHeader>
-          <div className="paw-wb-operation-dialog__heading"><ListChecks aria-hidden size={19} /></div>
           <DialogTitle>{selectedTaskId ? '编辑任务' : '添加任务'}</DialogTitle>
-          <DialogDescription>{selectedTaskId ? '修改内容后保存，也可以单独更新完成状态。' : '写下一个可执行、完成后能核对结果的下一步。'}</DialogDescription>
+          <DialogDescription className="mgmt-sr-only">{selectedTaskId ? '修改内容后保存，也可以单独更新完成状态。' : '写下一个可执行、完成后能核对结果的下一步。'}</DialogDescription>
         </DialogHeader>
         <div className="paw-wb-operation-dialog__form">
           <Field
@@ -119,6 +118,7 @@ export function PawWorkbenchTaskDialog({
             <div><dt>日期</dt><dd>{date}</dd></div>
             {selectedTaskId ? <div><dt>当前状态</dt><dd><StatusBadge label={taskStatusLabel(taskStatus)} tone={taskStatusTone(taskStatus)} /></dd></div> : null}
           </dl>
+          <div className="paw-wb-task-actions" role="group" aria-label="任务操作">
           <ManagementMutationWorkflow
             availability={availability}
             description="保存后可以撤销本次更改。"
@@ -166,6 +166,7 @@ export function PawWorkbenchTaskDialog({
               preview.payloadSha256,
             )}
             onRolledBack={onChanged}
+            presentation="action"
             risk="R1"
             title={selectedTaskId ? '保存任务修改' : '创建任务'}
           />
@@ -221,11 +222,14 @@ export function PawWorkbenchTaskDialog({
                 );
               }}
               onRolledBack={onChanged}
+              presentation="action"
               risk="R1"
               title={taskAction === 'reopen' ? '重新打开所选任务' : '完成所选任务'}
               triggerVariant="secondary"
             />
           ) : null}
+          <p className="paw-wb-task-actions__hint">保存后可以撤销本次更改。</p>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

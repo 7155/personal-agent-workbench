@@ -24,7 +24,7 @@ import {
   Wrench,
   X,
 } from 'lucide-react';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '@/components/primitives';
 import { useControlTransport } from '@/app/control-transport';
 import { useMotionActivity } from '@/design/motion';
@@ -106,6 +106,26 @@ const FILE_FAMILY: Record<string, string> = {
   diff: 'diff', patch: 'diff',
 };
 
+// Reveal the actual focused descendant, rather than its wider copy-action
+// wrapper. Keep all corrections local to the crumbs' horizontal client box.
+export function nextFileCrumbScrollLeft(owner: {
+  left: number; width: number; offsetWidth: number; clientLeft: number;
+  clientWidth: number; scrollWidth: number; scrollLeft: number;
+}, target: { left: number; right: number }): number {
+  const scale = owner.width / owner.offsetWidth;
+  if (!Object.values(owner).every(Number.isFinite) || !Number.isFinite(target.left) || !Number.isFinite(target.right)
+    || !(scale > 0) || !(owner.clientWidth > 0)) return owner.scrollLeft;
+  const left = owner.left + owner.clientLeft * scale;
+  const right = left + owner.clientWidth * scale;
+  const gap = target.right - target.left >= right - left
+    ? target.left - left
+    : target.left < left ? target.left - left : target.right > right ? target.right - right : 0;
+  // Chromium can quantize scrollLeft: round away from zero so fractional gaps
+  // cannot leave the focused button partially clipped after the correction.
+  const delta = gap < 0 ? Math.floor(gap / scale) : Math.ceil(gap / scale);
+  return Math.max(0, Math.min(owner.scrollWidth - owner.clientWidth, owner.scrollLeft + delta));
+}
+
 export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } = {}) {
   const transport = useControlTransport();
   const motionActive = useMotionActivity();
@@ -156,6 +176,7 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
   const treeRef = useRef<HTMLElement | null>(null);
   const workspaceRef = useRef<HTMLDivElement | null>(null);
   const backButtonRef = useRef<HTMLButtonElement | null>(null);
+  const crumbFocusFrameRef = useRef<number | null>(null);
   // Whether this App currently holds keyboard focus. A focusout that names no
   // new target means the focused element was hidden, not that someone moved
   // away, so the flag survives exactly the case the layout swap creates.
@@ -398,6 +419,32 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
       return visibleTreeNodes[0]?.path ?? '';
     });
   }, [selectedFile, visibleTreeNodes]);
+
+  const cancelCrumbFocusReveal = useCallback(() => {
+    if (crumbFocusFrameRef.current !== null) cancelAnimationFrame(crumbFocusFrameRef.current);
+    crumbFocusFrameRef.current = null;
+  }, []);
+  const revealFocusedCrumb = useCallback((event: FocusEvent<HTMLElement>) => {
+    cancelCrumbFocusReveal();
+    const owner = event.currentTarget;
+    const target = event.target;
+    if (!(target instanceof HTMLElement) || target === owner) return;
+    const identity = currentIdentityRef.current;
+    // Measure once after native focus reveal, before the next paint. A newer
+    // focus/file intent wins; never promote focus or move any vertical reader.
+    crumbFocusFrameRef.current = requestAnimationFrame(() => {
+      crumbFocusFrameRef.current = null;
+      if (!owner.isConnected || !target.isConnected || !owner.contains(target)
+        || document.activeElement !== target || currentIdentityRef.current !== identity) return;
+      const rect = owner.getBoundingClientRect();
+      const next = nextFileCrumbScrollLeft({
+        left: rect.left, width: rect.width, offsetWidth: owner.offsetWidth, clientLeft: owner.clientLeft,
+        clientWidth: owner.clientWidth, scrollWidth: owner.scrollWidth, scrollLeft: owner.scrollLeft,
+      }, target.getBoundingClientRect());
+      if (next !== owner.scrollLeft) owner.scrollLeft = next;
+    });
+  }, [cancelCrumbFocusReveal]);
+  useEffect(() => cancelCrumbFocusReveal, [cancelCrumbFocusReveal]);
 
   // The App opens as rail + reader with the rail as the working object: once
   // the first listing lands, keyboard focus starts on the tree so ↑/↓/→/Enter
@@ -999,7 +1046,9 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
                     event.preventDefault();
                     setExpandedIdentityKey(identityExpanded ? '' : identityKey);
                   }}><h2 title={pathName(selectedFile.path)}>{pathName(selectedFile.path)}</h2><ChevronRight size={14} aria-hidden="true" /></summary>
-                  <small className="paw-files-crumbs" title={selectedFile.path} role="group" aria-label="文件路径与属性" tabIndex={editor.editing ? 0 : undefined}>
+                  <small className="paw-files-crumbs" onFocus={identityExpanded ? revealFocusedCrumb : undefined} onBlur={(event) => {
+                    if (!event.currentTarget.contains(event.relatedTarget)) cancelCrumbFocusReveal();
+                  }} title={selectedFile.path} role="group" aria-label="文件路径与属性" tabIndex={editor.editing ? 0 : undefined}>
                     {selectedCrumbs.length ? selectedCrumbs.map((crumb) => (
                       <button
                         aria-label={`在目录树中定位 ${crumb.label}`}

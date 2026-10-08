@@ -16,7 +16,7 @@ type TestContext = { value: string };
 afterEach(cleanup);
 
 describe('ManagementMutationWorkflow feedback and confirmation', () => {
-  it('runs a reversible operation directly, prevents duplicate requests, and announces completion', async () => {
+  it.each(['standard', 'action'] as const)('runs a reversible %s operation directly, prevents duplicate requests, and announces completion', async (presentation) => {
     const user = userEvent.setup();
     const pendingPreview = deferred<ManagementWorkPreview<TestContext>>();
     const pendingApply = deferred<ManagementWorkReceipt>();
@@ -27,8 +27,13 @@ describe('ManagementMutationWorkflow feedback and confirmation', () => {
     const onApply = vi.fn(() => pendingApply.promise);
     const onRollback = vi.fn(() => pendingRollback.promise);
 
-    renderWorkflow({ onApply, onPreview, onRollback, risk: 'R2', title: '保存设置' });
+    renderWorkflow({ onApply, onPreview, onRollback, risk: 'R2', title: '保存设置', presentation });
 
+    if (presentation === 'action') {
+      const action = screen.getByRole('group', { name: '保存设置' });
+      expect(within(action).queryByText('保存设置', { selector: 'strong' })).not.toBeInTheDocument();
+      expect(within(action).queryByText('保存当前页面中的更改。')).not.toBeInTheDocument();
+    }
     const trigger = screen.getByRole('button', { name: '保存设置' });
     trigger.focus();
     await user.keyboard('{Enter}');
@@ -117,12 +122,12 @@ describe('ManagementMutationWorkflow feedback and confirmation', () => {
     expect(await screen.findByRole('status')).toHaveFocus();
   });
 
-  it('uses the server preview as the authority and confirms an R3 escalation', async () => {
+  it.each(['standard', 'action'] as const)('uses the server preview as the authority and confirms an R3 escalation for %s presentation', async (presentation) => {
     const user = userEvent.setup();
     const onApply = vi.fn(async () => receiptFixture());
     const onPreview = vi.fn(async () => previewFixture('R3'));
 
-    renderWorkflow({ onApply, onPreview, risk: 'R1', title: '保存设置' });
+    renderWorkflow({ presentation, onApply, onPreview, risk: 'R1', title: '保存设置' });
     await user.click(screen.getByRole('button', { name: '保存设置' }));
 
     const previewPanel = (await screen.findByText('这次更改会永久移除内容')).closest('.mgmt-workflow__panel');
@@ -141,12 +146,12 @@ describe('ManagementMutationWorkflow feedback and confirmation', () => {
     expect(receipt).toHaveTextContent('更改已记录');
   });
 
-  it('locks navigation while applying, focuses a recoverable error, and returns focus to retry', async () => {
+  it.each(['standard', 'action'] as const)('locks navigation while applying, focuses a recoverable error, and returns focus to retry for %s presentation', async (presentation) => {
     const user = userEvent.setup();
     const pendingApply = deferred<ManagementWorkReceipt>();
     const onApply = vi.fn(() => pendingApply.promise);
 
-    renderWorkflow({
+    renderWorkflow({ presentation,
       onApply,
       onPreview: async () => previewFixture('R3'),
       risk: 'R3',
@@ -183,7 +188,7 @@ describe('ManagementMutationWorkflow feedback and confirmation', () => {
     expect(screen.getByRole('button', { name: '查看影响' })).toHaveFocus();
   });
 
-  it('keeps the original retry name and focus through held preview and apply after a sanitized failure', async () => {
+  it.each(['standard', 'action'] as const)('keeps the original retry name and focus through held preview and apply after a sanitized failure for %s presentation', async (presentation) => {
     const user = userEvent.setup();
     const pendingRetryPreview = deferred<ManagementWorkPreview<TestContext>>();
     const pendingRetryApply = deferred<ManagementWorkReceipt>();
@@ -192,7 +197,7 @@ describe('ManagementMutationWorkflow feedback and confirmation', () => {
       .mockImplementationOnce(() => pendingRetryPreview.promise);
     const onApply = vi.fn(() => pendingRetryApply.promise);
 
-    renderWorkflow({ onApply, onPreview, risk: 'R1', title: '保存设置' });
+    renderWorkflow({ presentation, onApply, onPreview, risk: 'R1', title: '保存设置' });
     const trigger = screen.getByRole('button', { name: '保存设置' });
     await user.click(trigger);
 
@@ -251,7 +256,7 @@ describe('ManagementMutationWorkflow feedback and confirmation', () => {
     expect(onApply).toHaveBeenCalledTimes(1);
   });
 
-  it('reports the new retry failure and clears the old feedback at the authoritative next stage', async () => {
+  it.each(['standard', 'action'] as const)('reports the new retry failure and clears the old feedback at the authoritative next stage for %s presentation', async (presentation) => {
     const user = userEvent.setup();
     const firstRetry = deferred<ManagementWorkPreview<TestContext>>();
     const nextRetry = deferred<ManagementWorkPreview<TestContext>>();
@@ -260,7 +265,7 @@ describe('ManagementMutationWorkflow feedback and confirmation', () => {
       .mockImplementationOnce(() => firstRetry.promise)
       .mockImplementationOnce(() => nextRetry.promise);
     const onApply = vi.fn(async () => receiptFixture());
-    renderWorkflow({ onApply, onPreview, risk: 'R1', title: '保存设置' });
+    renderWorkflow({ presentation, onApply, onPreview, risk: 'R1', title: '保存设置' });
     await user.click(screen.getByRole('button', { name: '保存设置' }));
     const notice = await screen.findByRole('alert');
     expect(notice).toHaveTextContent('第一次未完成。');
@@ -329,6 +334,7 @@ function renderWorkflow({
   risk,
   title,
   triggerVariant,
+  presentation = 'standard',
 }: {
   onApply: (preview: ManagementWorkPreview<TestContext>) => Promise<ManagementWorkReceipt>;
   onPreview: () => Promise<ManagementWorkPreview<TestContext>>;
@@ -339,6 +345,7 @@ function renderWorkflow({
   risk: 'R1' | 'R2' | 'R3';
   title: string;
   triggerVariant?: 'primary' | 'secondary';
+  presentation?: 'standard' | 'action';
 }) {
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   return render(
@@ -354,6 +361,7 @@ function renderWorkflow({
         risk={risk}
         title={title}
         triggerVariant={triggerVariant}
+        presentation={presentation}
       />
     </QueryClientProvider>,
   );

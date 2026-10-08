@@ -6,7 +6,7 @@ import { ControlTransportProvider } from '@/app/control-transport';
 import { TooltipProvider } from '@/components/primitives';
 import type { ControlRequest } from '@/platform/transport';
 import { MockControlTransport, type MockRouteHandler } from '@/test/mock-transport';
-import { PawOsFilesApp } from './PawOsFilesApp';
+import { PawOsFilesApp, nextFileCrumbScrollLeft } from './PawOsFilesApp';
 import { MotionActivityBoundary } from '@/design/motion';
 import { PawWindowFrame } from '@/paw-os/shell/PawWindowLayer';
 import filesCss from './paw-os-files-app.css?raw';
@@ -628,6 +628,63 @@ describe('PawOsFilesApp', () => {
     expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.workspace.save')).toBe(false);
     input.focus();
     expect(input).toHaveFocus();
+  });
+
+  it('reveals the original nested path action horizontally without moving or submitting its draft', async () => {
+    const user = userEvent.setup();
+    const transport = savedMetadataTransport(() => savedMetadataReceipt());
+    renderApp(transport, <PawOsFilesApp />);
+    await user.click(await screen.findByRole('treeitem', { name: '打开文件 notes.md' }));
+    await user.click(await screen.findByRole('button', { name: '编辑文本' }));
+    const input = await screen.findByRole('textbox', { name: '编辑 notes.md' }) as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: 'original unsaved draft' } });
+    input.setSelectionRange(3, 8); input.scrollTop = 120;
+    await user.click(screen.getByRole('heading', { name: 'notes.md', level: 2 }).closest('summary')!);
+    const owner = screen.getByRole('group', { name: '文件路径与属性' });
+    const path = within(owner).getByRole('button', { name: '复制文件路径' });
+    expect(path.parentElement).toHaveClass('paw-files-preview__actions');
+    Object.defineProperties(owner, {
+      offsetWidth: { configurable: true, value: 119 }, clientWidth: { configurable: true, value: 119 },
+      clientLeft: { configurable: true, value: 0 }, scrollWidth: { configurable: true, value: 468 },
+    });
+    vi.spyOn(owner, 'getBoundingClientRect').mockReturnValue({ left: 293.16, right: 412.16, width: 119 } as DOMRect);
+    vi.spyOn(path, 'getBoundingClientRect').mockReturnValue({ left: 380.4490625, right: 424.4490625, width: 44 } as DOMRect);
+    owner.scrollLeft = 273; owner.scrollTop = 7;
+    const frames: FrameRequestCallback[] = [];
+    const request = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((frame) => { frames.push(frame); return frames.length; });
+    const cancel = vi.spyOn(window, 'cancelAnimationFrame');
+    try {
+      path.focus();
+      expect(path).toHaveFocus();
+      expect(owner.scrollLeft).toBe(273);
+      act(() => frames.shift()?.(0));
+      expect(owner.scrollLeft).toBe(286); // Chromium integer rounding must fully cover the 12.289px gap.
+      expect(owner.scrollTop).toBe(7);
+      expect(path).toHaveFocus();
+      expect(screen.getByRole('textbox', { name: '编辑 notes.md' })).toBe(input);
+      expect([input.value, input.selectionStart, input.selectionEnd, input.scrollTop]).toEqual(['original unsaved draft', 3, 8, 120]);
+      const content = within(owner).getByRole('button', { name: '复制编辑内容' });
+      vi.spyOn(content, 'getBoundingClientRect').mockReturnValue({ left: 292.8, right: 336.8, width: 44 } as DOMRect);
+      await user.tab({ shift: true });
+      expect(content).toHaveFocus();
+      act(() => frames.shift()?.(1));
+      expect(owner.scrollLeft).toBe(285);
+      expect(owner.scrollTop).toBe(7);
+      owner.scrollLeft = 286;
+      input.focus(); path.focus();
+      const cancelledOnBlur = frames.shift()!;
+      input.focus();
+      expect(cancel).toHaveBeenCalled();
+      act(() => cancelledOnBlur(2));
+      expect(owner.scrollLeft).toBe(286); // A later editor intent wins over the captured path focus.
+      path.focus();
+      const pending = frames.shift()!;
+      cleanup();
+      expect(cancel).toHaveBeenCalled();
+      act(() => pending(3));
+      expect(owner.scrollLeft).toBe(286);
+      expect(transport.requests.some(({ request: r }) => r.pathId === 'agent.session.workspace.save')).toBe(false);
+    } finally { request.mockRestore(); cancel.mockRestore(); }
   });
 
   it.each(['notes.md', 'alias.md'])('syncs the saved byte count for %s without refreshing or counting a newer draft', async (name) => {
@@ -1892,3 +1949,25 @@ function scopedFilesTransport(sessionList: MockRouteHandler = scopedSessions()) 
     },
   } });
 }
+
+// Geometry seam only: these receipts do not emulate native focus scrolling or hit testing.
+describe('file crumb focus reveal bounds', () => {
+  const owner = { left: 293.16, width: 119, offsetWidth: 119, clientLeft: 0, clientWidth: 119, scrollWidth: 468, scrollLeft: 273 };
+  it.each([
+    ['right fractional gap', { left: 380.4490625, right: 424.4490625 }, 286],
+    ['reverse Tab fractional gap', { left: 292.8, right: 336.8 }, 272],
+    ['already fully visible', { left: 300, right: 344 }, 273],
+    ['exact viewport width', { left: 300, right: 419 }, 280],
+    ['wider than viewport keeps the leading edge reachable', { left: 300, right: 480 }, 280],
+    ['left scroll limit', { left: -1000, right: -956 }, 0],
+    ['right scroll limit', { left: 1000, right: 1044 }, 349],
+  ])('%s', (_name, target, expected) => { expect(nextFileCrumbScrollLeft(owner, target)).toBe(expected); });
+  it('converts visual scale and client borders into horizontal CSS scroll units', () => {
+    expect(nextFileCrumbScrollLeft({ ...owner, left: 100, width: 242, offsetWidth: 121, clientLeft: 1 }, { left: 310, right: 342 })).toBe(274);
+  });
+  it('does nothing for hidden, disconnected-sized or nonfinite layout', () => {
+    expect(nextFileCrumbScrollLeft({ ...owner, clientWidth: 0 }, { left: 300, right: 344 })).toBe(273);
+    expect(nextFileCrumbScrollLeft({ ...owner, width: 0 }, { left: 300, right: 344 })).toBe(273);
+    expect(nextFileCrumbScrollLeft(owner, { left: NaN, right: 344 })).toBe(273);
+  });
+});
