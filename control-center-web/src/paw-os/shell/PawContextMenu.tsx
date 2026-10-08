@@ -86,9 +86,36 @@ export function PawContextMenu({
 
   const placed = placement !== null;
   useLayoutEffect(() => {
-    if (placed) menuRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
-    // The browser rejects focus on the hidden pre-measurement commit. Focus
-    // once when visible; a resize must not return it to the first item.
+    if (!placed) return;
+    const menu = menuRef.current;
+    const target = menu?.querySelector<HTMLButtonElement>('button:not(:disabled)');
+    if (!menu || !target) return;
+    const entry = document.activeElement;
+    target.focus({ preventScroll: true });
+    if (document.activeElement === target || document.activeElement !== entry) return;
+    // Chromium may reject even the measured commit while its native style is
+    // still hidden. Give that same entry intent one natural rendering frame,
+    // without polling or resetting keyboard selection on later resizes.
+    let changedIntent = false;
+    const trackIntent = (event: FocusEvent) => {
+      if (event.target !== entry) changedIntent = true;
+    };
+    document.addEventListener('focusin', trackIntent, true);
+    let frame: number | null = window.requestAnimationFrame(() => {
+      frame = null;
+      document.removeEventListener('focusin', trackIntent, true);
+      if (changedIntent || document.activeElement !== entry || menuRef.current !== menu
+        || !menu.isConnected || !target.isConnected || !menu.contains(target) || target.disabled) return;
+      const visible = (element: HTMLElement) => {
+        const style = window.getComputedStyle(element);
+        return style.visibility !== 'hidden' && style.visibility !== 'collapse' && style.display !== 'none';
+      };
+      if (visible(menu) && visible(target)) target.focus({ preventScroll: true });
+    });
+    return () => {
+      if (frame !== null) window.cancelAnimationFrame(frame);
+      document.removeEventListener('focusin', trackIntent, true);
+    };
   }, [placed]);
 
   useEffect(() => {

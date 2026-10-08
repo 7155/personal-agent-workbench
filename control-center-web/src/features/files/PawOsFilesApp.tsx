@@ -141,6 +141,8 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
   const [homePath, setHomePath] = useState('');
   const [location, setLocation] = useState<{ requestKey: string; path: string; selectedPath: string } | null>(null);
   const [locationInput, setLocationInput] = useState('');
+  const locationInputEditRef = useRef(0);
+  const locationInputSyncRef = useRef(0);
   const [locationLoading, setLocationLoading] = useState(false);
   const [locationError, setLocationError] = useState('');
   const directoryGenerationRef = useRef(0);
@@ -182,6 +184,8 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
   // away, so the flag survives exactly the case the layout swap creates.
   const holdsFocusRef = useRef(false);
   const pendingFocusPathRef = useRef('');
+  const pendingFocusIntentRef = useRef<Element | null>(null);
+  const locationFocusIntentRef = useRef<Element | null>(null);
   const typeaheadRef = useRef({ text: '', at: 0 });
   const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? null;
   const roots = useMemo(() => location?.requestKey === requestedKey ? [location.path]
@@ -258,8 +262,10 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
       ? { title: '文件夹暂时无法读取', detail: '检查路径后重试，或从主目录重新打开。' }
       : { title: '选择要检查的文件', detail: '从目录树打开文件，也可以在地址栏输入任意文件或文件夹路径。' };
 
-  const openLocation = useCallback(async (path: string, manual = true, association = '') => {
+  const openLocation = useCallback(async (path: string, manual = true, association = '', focusIntent: Element | null = document.activeElement) => {
     const generation = ++locationGenerationRef.current;
+    const inputEdit = locationInputEditRef.current;
+    const focusInputValue = focusIntent === locationFieldRef.current ? locationFieldRef.current?.value : undefined;
     if (manual) manualLocationRef.current = true;
     setLocationLoading(true); setLocationError('');
     try {
@@ -267,11 +273,14 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
       if (generation !== locationGenerationRef.current) return;
       if (!isRecord(response) || response.ok !== true || typeof response.path !== 'string' || !response.path.startsWith('/') || response.path.includes('\0')) throw new Error('目录服务返回了无法识别的数据。');
       workspaceListing(response);
+      locationInputSyncRef.current = inputEdit;
       if (typeof response.homePath === 'string') setHomePath(response.homePath);
       if (manual) {
+        locationFocusIntentRef.current = locationInputEditRef.current !== inputEdit || focusIntent === locationFieldRef.current && locationFieldRef.current?.value !== focusInputValue ? null : focusIntent;
         setSessionSelection({ requestKey: requestedKey, sessionId: association });
         setLocation({ requestKey: requestedKey, path: response.path, selectedPath: typeof response.selectedPath === 'string' ? response.selectedPath : '' });
-        setLocationInput(response.path); setTreeRevealed(true); sidebar.setCollapsed(false);
+        if (locationInputEditRef.current === inputEdit) setLocationInput(response.path);
+        setTreeRevealed(true); sidebar.setCollapsed(false);
       } else setHomePath(response.path);
     } catch (error) {
       if (generation === locationGenerationRef.current) setLocationError(publicError(error, '文件夹读取失败。'));
@@ -284,15 +293,20 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
   }, [transport]);
   useEffect(() => {
     manualLocationRef.current = false;
-    if (requested.path.startsWith('/') || requested.path.startsWith('~/')) void openLocation(requested.path, true, requested.sessionId);
+    if (requested.path.startsWith('/') || requested.path.startsWith('~/')) void openLocation(requested.path, true, requested.sessionId, null);
     return () => { locationGenerationRef.current += 1; };
     // Absolute deep links can be opened even when their Session is gone.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestedKey]);
-  useEffect(() => { if (roots[0]) setLocationInput(roots[0]); }, [roots.join('\0')]);
+  useEffect(() => {
+    // A canonical location may change the actual tree/Session while a newer
+    // address draft remains in the field. Both sync paths share this boundary.
+    if (roots[0] && locationInputEditRef.current === locationInputSyncRef.current) setLocationInput(roots[0]);
+  }, [roots.join('\0')]);
 
   const loadSessions = useCallback(async () => {
     const requestGeneration = ++sessionsGenerationRef.current;
+    const inputEdit = locationInputEditRef.current;
     setSessionsLoading(true);
     setSessionError('');
     try {
@@ -303,6 +317,7 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
       if (requestGeneration !== sessionsGenerationRef.current) return;
       const next = sessionItems(response, { includeAppOwned: true });
       setSessions(next);
+      if (!manualLocationRef.current) locationInputSyncRef.current = inputEdit;
       const activeId = isRecord(response) && typeof response.activeSessionId === 'string'
         ? response.activeSessionId
         : '';
@@ -403,7 +418,7 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
       setSelectedFile(null);
       setPreview(null);
       setPreviewError('');
-      pendingFocusPathRef.current = path;
+      queueTreeFocus(path, independent ? locationFocusIntentRef.current : null);
       return;
     }
     setSelectedFile({ path, name: pathName(path), kind: 'file', sessionId: selectedSessionId });
@@ -454,13 +469,9 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
   useEffect(() => {
     if (initialTreeFocusDone.current || !visibleTreeNodes.length) return;
     initialTreeFocusDone.current = true;
-    const active = document.activeElement;
-    if (active instanceof HTMLElement) {
-      const ownShell = treeRef.current?.closest('.paw-window-shell') ?? null;
-      const activeShell = active.closest('.paw-window-shell');
-      if (activeShell && activeShell !== ownShell) return;
-      if (active.matches('input, textarea, select, [contenteditable="true"]')) return;
-    }
+    // A queued explicit location owns its own handoff. Otherwise only promote
+    // neutral body/own-shell focus; menus and controls retain the user's intent.
+    if (pendingFocusPathRef.current || !canFocusTree()) return;
     const node = treeItemRefs.current.get(visibleTreeNodes[0]?.path ?? '');
     if (!node || window.getComputedStyle(node).display === 'none') return;
     setTreeFocusPath(visibleTreeNodes[0]?.path ?? '');
@@ -577,6 +588,24 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
     if (file) void loadPreview(file);
   }
 
+  function queueTreeFocus(path: string, intent: Element | null = document.activeElement): void {
+    pendingFocusPathRef.current = path;
+    pendingFocusIntentRef.current = intent;
+  }
+
+  function canFocusTree(intent: Element | null = null): boolean {
+    const active = document.activeElement;
+    const ownShell = treeRef.current?.closest('.paw-window-shell');
+    if (ownShell && !ownShell.hasAttribute('data-active')) return false;
+    if (active === document.body || active === document.documentElement || active === ownShell) return true;
+    // The exact original navigation control can hand off after a late listing.
+    // A newer menu, field, control or window selection must never be borrowed.
+    if (!intent || active !== intent) return false;
+    const ownApp = treeRef.current?.closest('.paw-files-app');
+    const ownTools = locationFieldRef.current?.closest('.paw-files-tools-popover');
+    return Boolean(ownApp?.contains(active) || ownTools?.contains(active));
+  }
+
   function focusTreeItem(path: string): void {
     setTreeFocusPath(path);
     treeItemRefs.current.get(path)?.focus();
@@ -590,7 +619,7 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
   function goBackToTree(): void {
     if (!selectedFile) return;
     sidebar.setCollapsed(false);
-    pendingFocusPathRef.current = selectedFile.path;
+    queueTreeFocus(selectedFile.path);
     setSelectedFile(null);
   }
 
@@ -617,7 +646,7 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
       return next;
     });
     void loadDirectory(path);
-    pendingFocusPathRef.current = path;
+    queueTreeFocus(path);
     if (treeHidden()) {
       sidebar.setCollapsed(false);
       setSelectedFile(null);
@@ -687,11 +716,15 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
     if (!path) return;
     if (selectedFile && treeHidden()) {
       pendingFocusPathRef.current = '';
+      pendingFocusIntentRef.current = null;
       return;
     }
     const node = treeItemRefs.current.get(path);
     if (!node) return;
     pendingFocusPathRef.current = '';
+    const intent = pendingFocusIntentRef.current;
+    pendingFocusIntentRef.current = null;
+    if (!canFocusTree(intent)) return;
     setTreeFocusPath(path);
     node.focus();
   });
@@ -843,7 +876,7 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
       <form className="paw-files-location" onSubmit={(event) => { event.preventDefault(); void openLocation(locationInput); }}>
         <button type="button" aria-label="打开主目录" onClick={() => void openLocation('')}><Home size={14} /></button>
         <button type="button" aria-label="上一级文件夹" disabled={!roots[0] || roots[0] === '/'} onClick={() => void openLocation(roots[0]?.replace(/\/[^/]+\/?$/, '') || '/')}><ArrowUp size={14} /></button>
-        <input ref={locationFieldRef} aria-label="文件或文件夹路径" value={locationInput} onChange={(event) => setLocationInput(event.target.value)} placeholder="输入路径，如 ~/Documents 或 /Volumes" spellCheck={false} />
+        <input ref={locationFieldRef} aria-label="文件或文件夹路径" value={locationInput} onChange={(event) => { locationInputEditRef.current += 1; setLocationInput(event.target.value); }} placeholder="输入路径，如 ~/Documents 或 /Volumes" spellCheck={false} />
         <button type="submit" disabled={locationLoading} aria-label="打开路径">{locationLoading ? <LoaderCircle className="ui-spin" size={14} /> : <ChevronRight size={14} />}</button>
       </form>
   );
@@ -858,6 +891,7 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
           aria-label="选择文件所属 Session"
           onChange={(event) => {
             manualLocationRef.current = true; locationGenerationRef.current += 1;
+            locationInputSyncRef.current = locationInputEditRef.current;
             setLocationLoading(false); setLocationError(''); setLocation(null);
             setSessionSelection({ requestKey: requestedKey, sessionId: event.target.value });
             if (!event.target.value) void openLocation('');

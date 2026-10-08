@@ -1992,6 +1992,12 @@ i.paw-files-tree__disclosure {
   overscroll-behavior-x: contain;
   scrollbar-width: thin;
 }
+/* Preserve a whole final target when flex geometry exceeds the scrollbar's
+   integer extent by a fraction of a CSS pixel. */
+.paw-files-app[data-editing] .paw-files-preview__id[open] > .paw-files-crumbs::after {
+  content: '';
+  flex: 0 0 1px;
+}
 .paw-files-app[data-editing] .paw-files-preview__id[open] .paw-files-crumbs__segment {
   flex: 0 0 auto;
   max-width: 100%;

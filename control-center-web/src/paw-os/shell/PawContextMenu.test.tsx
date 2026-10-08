@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { MotionActivityBoundary } from '@/design/motion';
 import { PawContextMenu } from './PawContextMenu';
@@ -111,4 +111,108 @@ it.each([360, 375])('reveals the same focused item after shrinking the viewport 
   expect(menu.style.top).toBe('48px');
   fireEvent(window, new Event('resize')); expect(scroll).toHaveBeenCalledTimes(1);
   expect(action).not.toHaveBeenCalled();
+});
+
+// Model actual native rejection after inline placement until one natural RAF.
+function rejectedMenu() {
+  let visible = false; let id = 0;
+  const frames = new Map<number, FrameRequestCallback>();
+  const request = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => { frames.set(++id, callback); return id; });
+  const cancel = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((frame) => { frames.delete(frame); });
+  const nativeFocus = HTMLElement.prototype.focus;
+  const focus = vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(function(this: HTMLElement, options?: FocusOptions) {
+    if (!visible && this.closest('[role="menu"]')) return;
+    nativeFocus.call(this, options);
+  });
+  const nativeStyle = window.getComputedStyle;
+  vi.spyOn(window, 'getComputedStyle').mockImplementation((element, pseudo) => {
+    const style = nativeStyle.call(window, element, pseudo);
+    return !visible && element.getAttribute('role') === 'menu'
+      ? new Proxy(style, { get: (target, name) => name === 'visibility' ? 'hidden' : Reflect.get(target, name, target) }) : style;
+  });
+  const opener = document.createElement('button'); opener.textContent = '原入口'; document.body.append(opener); opener.focus();
+  const action = vi.fn(); const close = vi.fn();
+  const view = render(<PawContextMenu ariaLabel="自然帧菜单" items={[
+    { id: 'disabled', label: '不可用项', disabled: true, action },
+    { id: 'first', label: '原首项', action }, { id: 'last', label: '原末项', action },
+  ]} onClose={close} x={80} y={80} />);
+  return { opener, action, close, view, request, cancel, focus, frames,
+    first: screen.getByRole('menuitem', { name: '原首项' }), last: screen.getByRole('menuitem', { name: '原末项' }),
+    show: () => { visible = true; },
+    frame: () => act(() => { const queued = [...frames.values()]; frames.clear(); queued.forEach((callback) => callback(16)); }),
+    dispose: () => opener.remove(),
+  };
+}
+
+it('recovers native-rejected initial focus once on the next visible natural frame, retaining keyboard navigation', () => {
+  const t = rejectedMenu();
+  try {
+    expect(t.opener).toHaveFocus();
+    t.show(); t.frame(); expect(t.first).toHaveFocus(); expect(t.request).toHaveBeenCalledTimes(1); expect(t.focus).toHaveBeenLastCalledWith({ preventScroll: true });
+    expect(t.frames.size).toBe(0);
+    fireEvent.keyDown(t.first, { key: 'End' }); expect(t.last).toHaveFocus();
+    fireEvent(window, new Event('resize')); expect(t.last).toHaveFocus();
+    fireEvent.keyDown(t.last, { key: 'Home' }); expect(t.first).toHaveFocus();
+    fireEvent.keyDown(t.first, { key: 'ArrowDown' }); expect(t.last).toHaveFocus();
+    fireEvent.keyDown(t.last, { key: 'Escape' }); expect(t.close).toHaveBeenCalledWith('keyboard');
+    expect(t.action).not.toHaveBeenCalled(); expect(t.request).toHaveBeenCalledTimes(1);
+  } finally { t.dispose(); }
+});
+
+it('does not poll or retry when its single fallback frame remains natively hidden', () => {
+  const t = rejectedMenu();
+  try { t.frame(); expect(t.opener).toHaveFocus(); expect(t.request).toHaveBeenCalledTimes(1); expect(t.frames.size).toBe(0);
+    t.show(); t.frame(); expect(t.opener).toHaveFocus();
+  } finally { t.dispose(); }
+});
+
+it.each(['external-button', 'input', 'own-input', 'own-item'] as const)('preserves newer %s focus before the fallback frame', (intent) => {
+  const t = rejectedMenu(); const target = intent === 'own-item' ? t.last : document.createElement(intent === 'input' || intent === 'own-input' ? 'input' : 'button');
+  if (intent === 'own-input') t.first.closest('[role="menu"]')?.append(target);
+  else if (intent !== 'own-item') document.body.append(target);
+  try { t.show(); target.focus(); t.frame(); expect(target).toHaveFocus(); expect(t.first).not.toHaveFocus(); expect(t.action).not.toHaveBeenCalled(); }
+  finally { if (intent !== 'own-item') target.remove(); t.dispose(); }
+});
+
+it('does not borrow the opener again after a newer input intent returns focus to it', () => {
+  const t = rejectedMenu(); const input = document.createElement('input'); document.body.append(input);
+  try { input.addEventListener('focusin', (event) => event.stopPropagation());
+    t.show(); input.focus(); t.opener.focus(); t.frame(); expect(t.opener).toHaveFocus(); expect(t.first).not.toHaveFocus(); }
+  finally { input.remove(); t.dispose(); }
+});
+
+it('cancels the queued native frame when the menu closes before it', () => {
+  const t = rejectedMenu();
+  try { t.view.unmount(); expect(t.cancel).toHaveBeenCalledTimes(1); expect(t.frames.size).toBe(0); t.show(); t.frame(); expect(t.opener).toHaveFocus(); }
+  finally { t.dispose(); }
+});
+
+it('does not focus a detached original target or a replacement menu', () => {
+  const t = rejectedMenu();
+  try { t.first.remove(); t.show(); t.frame(); expect(t.opener).toHaveFocus(); t.view.unmount();
+    render(<PawContextMenu ariaLabel="新菜单" items={[{ id: 'new', label: '新首项', action: t.action }]} onClose={t.close} x={80} y={80} />);
+    expect(screen.getByRole('menuitem', { name: '新首项' })).toHaveFocus(); t.frame(); expect(screen.getByRole('menuitem', { name: '新首项' })).toHaveFocus();
+  } finally { t.dispose(); }
+});
+
+it('keeps successful immediate native focus without scheduling a fallback frame', () => {
+  const request = vi.spyOn(window, 'requestAnimationFrame'); const focus = vi.spyOn(HTMLElement.prototype, 'focus');
+  render(<PawContextMenu ariaLabel="立即菜单" items={[{ id: 'first', label: '立即首项', action: vi.fn() }]} onClose={() => undefined} x={80} y={80} />);
+  expect(screen.getByRole('menuitem', { name: '立即首项' })).toHaveFocus(); expect(request).not.toHaveBeenCalled();
+  expect(focus).toHaveBeenCalledExactlyOnceWith({ preventScroll: true });
+});
+
+it.each(['hidden', 'collapse', 'display-none'] as const)('does not focus while the fallback computed menu remains %s', (state) => {
+  const t = rejectedMenu();
+  try {
+    t.show(); const menu = screen.getByRole('menu');
+    if (state === 'display-none') menu.style.display = 'none'; else menu.style.visibility = state;
+    t.frame(); expect(t.opener).toHaveFocus(); expect(t.frames.size).toBe(0); expect(t.request).toHaveBeenCalledTimes(1);
+  } finally { t.dispose(); }
+});
+
+it('does not substitute another item when the original fallback target becomes disabled', () => {
+  const t = rejectedMenu();
+  try { (t.first as HTMLButtonElement).disabled = true; t.show(); t.frame(); expect(t.opener).toHaveFocus(); expect(t.last).not.toHaveFocus(); }
+  finally { t.dispose(); }
 });
