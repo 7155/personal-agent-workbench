@@ -261,7 +261,9 @@
       "release_scope": 1,
       "refactor_verification": 66,
       "startup_failure_diagnostics": 2
-    }
+    },
+    "unclassifiedPathCount": 0,
+    "otherWorkNotInReleasePathCount": 0
   },
   "items": [
     {
