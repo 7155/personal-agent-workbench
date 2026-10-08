@@ -245,7 +245,7 @@ class SqliteDenseIndex:
 
     def replace_document(self, document_id: str, chunks: Sequence[dict[str, Any]]) -> None:
         records: list[tuple[str, str, str, str, str]] = []
-        text_indexes = [index for index, chunk in enumerate(chunks) if not chunk.get("image_path")]
+        text_indexes = [index for index, chunk in enumerate(chunks) if not chunk.get("image_path") and not chunk.get("audio_path")]
         image_indexes = [index for index, chunk in enumerate(chunks) if chunk.get("image_path")]
         texts = [str(chunks[index].get("content") or "") for index in text_indexes]
         embed_many = getattr(self.provider, "embed_many", None)
@@ -267,6 +267,16 @@ class SqliteDenseIndex:
             if len(image_vectors) != len(image_indexes):
                 raise RuntimeError("image encoder returned an unexpected batch size")
             for index, vector in zip(image_indexes, image_vectors):
+                vectors[index] = vector
+        audio_indexes = [index for index, chunk in enumerate(chunks) if chunk.get("audio_path")]
+        if audio_indexes:
+            embed_audio = getattr(self.provider, "embed_audio", None)
+            if not getattr(self.provider, "supports_audio", False) or not callable(embed_audio):
+                raise RuntimeError("audio projection requires a native audio embedding provider")
+            audio_vectors = embed_audio([str(chunks[index]["audio_path"]) for index in audio_indexes], batch_size=1)
+            if len(audio_vectors) != len(audio_indexes) or any(not vector for vector in audio_vectors):
+                raise RuntimeError("audio encoder returned an unexpected batch size")
+            for index, vector in zip(audio_indexes, audio_vectors):
                 vectors[index] = vector
         dimensions = {len(vector) for vector in vectors if vector}
         if len(dimensions) > 1 or any(not all(math.isfinite(value) for value in vector) for vector in vectors):

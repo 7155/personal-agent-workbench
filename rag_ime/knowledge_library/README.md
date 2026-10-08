@@ -83,9 +83,42 @@ OCR transcription. Text/caption chunks remain separately searchable.
 There are at most 64 visual units per document; PDF page rendering uses a
 1024-pixel maximum side. Document metadata reports truncation. These limits
 bound local indexing cost and do not establish recognition accuracy on real
-papers. Audio/video intake is not supported by this worker even though the
-model itself supports those modalities. Other embedding profiles retain the
-existing text/OCR/MinerU path.
+papers. Other embedding profiles retain the existing text/OCR/MinerU path.
+
+### Local audio and video intake
+
+With an EmbeddingGemma 2 profile and local `ffmpeg` / `ffprobe` on PATH, the
+same import/job/asset/chunk/dense owners accept WAV, MP3, FLAC, OGG, M4A,
+MP4, MOV, WebM and MKV. Inputs are forced through container demuxers with local
+file/pipe protocols; playlists, remote sources and command strings are not
+media inputs. Each subprocess has a 30-second deadline, each produced asset
+has a 4 MiB limit, and video frames have the same 20-million-pixel input limit
+and 1024-pixel output-side limit as images. No new package or model is fetched.
+
+Audio is decoded into mono 16 kHz PCM16 segments of at most 30 seconds and
+encoded by the actual audio tower in the shared vector space. The first audio
+request upgrades the existing lazy model to include audio; text/image-only
+use keeps the smaller footprint. Loading all towers increases memory cost.
+Video is sampled every 10 seconds into image vectors, with its audio track
+segmented separately when the profile supports audio. These are frame and
+sound evidence, not a native temporal-video embedding or an ASR/OCR transcript.
+Frame timestamps are requested seek offsets, not certified presentation
+timestamps; short events between samples can be missed.
+
+There are at most 64 media units per document, split into 32 frames / 32 audio
+segments when both streams are indexed. Otherwise the single lane may use all
+64. Metadata reports omitted audio and each truncated lane; unprocessed tails
+are never represented as fully indexed. Original source bytes and hashes
+remain authoritative. Each hit and source block keeps the time offset/range,
+asset hash and existing read path; audio assets use the existing binary
+readback endpoint. A missing audio encoder fails audio import explicitly;
+model/encoding failures produce failed media jobs rather than searchable
+source-label substitutes. Cancellation is checked between bounded subprocesses.
+
+The audio capability changes the EmbeddingGemma 2 provider fingerprint. Use the
+existing preview/apply/rebuild path to switch; older vectors are not reused
+under the new fingerprint. This source capability and local sandbox checks do
+not enable a user profile or prove installed/browser playback acceptance.
 
 Changing this profile still requires the normal embedding preview/apply and
 explicit base rebuild. Merely downloading the model does not switch an active

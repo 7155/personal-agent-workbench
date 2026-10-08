@@ -105,6 +105,7 @@ import {
 import { KnowledgeDocumentViewer, KnowledgeJobsPanel, KnowledgeMaterialsPanel, type KnowledgeUploadItem } from './document-workspace';
 import { KnowledgeGraphPanel } from './knowledge-graph';
 import { knowledgeBlockKindLabel, publicKnowledgeText } from './public-copy';
+import { knowledgeMediaKind, knowledgeMediaLocationLabel, knowledgeMediaPositionLabel } from './structured-reading';
 import { useKnowledgeReadingContext, type KnowledgeReadingController } from './reading-context';
 import { usePawOsAppActive, usePawOsAppCompact, usePawOsAppIdentity } from '@/features/paw-os/surface-context';
 import { usePageVisibility } from '@/platform/use-page-visibility';
@@ -1069,7 +1070,7 @@ function KnowledgeSearchPanel({ base, reading, onOpenHit, transport }: { base: D
           }}>
             {hits.map((hit, index) => (
               <button aria-selected={selected?.id === hit.id} data-selected={selected?.id === hit.id || undefined} key={hit.id} onClick={() => { reading.update((current) => ({ ...current, search: { ...current.search, selectedId: hit.id } })); setDetailOpen(true); }} ref={(node) => { resultRefs.current[index] = node; }} role="option" tabIndex={selected?.id === hit.id ? 0 : -1} type="button">
-                <span><strong>{hit.documentName}</strong><small>{hitRankLabel(hit, index)} · {hit.title} · {citationLabel(hit)}{hit.diagnostics.graphRank === null ? '' : ' · 图谱关联'}</small><small>{hit.excerpt || '没有可显示的摘录'}</small></span>
+                <span><strong>{hit.documentName}</strong><small>{hitRankLabel(hit, index)} · {hit.title} · {citationLabel(hit)}{hit.diagnostics.graphRank === null ? '' : ' · 图谱关联'}</small><small>{mediaHitDescription(hit) ?? (hit.excerpt || '没有可显示的摘录')}</small></span>
                 <b data-level={relevanceLevel(hit.score)}>{relevanceLabel(hit.score)}</b>
               </button>
             ))}
@@ -1124,7 +1125,8 @@ function KnowledgeHitDetail({ baseId, hit, onOpen, rank, transport }: { baseId: 
     <article className="knowledge-search__detail">
       <span>{hit.documentName}</span>
       <h3>{hit.title}</h3>
-      <p>{hit.excerpt || '这个段落没有可显示的摘录。'}</p>
+      <p>{mediaHitDescription(hit) ?? (hit.excerpt || '这个段落没有可显示的摘录。')}</p>
+      {mediaHitDescription(hit) ? <Disclosure summary="检索片段原文"><p>{hit.excerpt || '这个段落没有可显示的摘录。'}</p></Disclosure> : null}
       <dl>
         <div><dt>位置</dt><dd>{citationLabel(hit)}</dd></div>
         <div><dt>最终排名</dt><dd>第 {rank} 条</dd></div>
@@ -1133,7 +1135,7 @@ function KnowledgeHitDetail({ baseId, hit, onOpen, rank, transport }: { baseId: 
       </dl>
       <Disclosure className="knowledge-search__advanced" summary="高级：检索详情">
         <dl>
-          {hit.provenance ? <><div><dt>解析结构</dt><dd>{knowledgeBlockKindLabel(hit.provenance.kind)}{hit.provenance.split ? ' · 超长内容已分段' : ''}</dd></div><div><dt>来源位置</dt><dd>{hit.provenance.sourceBlocks.slice(0, 8).map((block, index) => <p key={index}>{block.page === null ? '页码未提供' : `第 ${block.page} 页`}{block.bbox ? ` · 区域 ${block.bbox.join(', ')}（${block.coordinateSystem === 'normalized-1000' ? '归一化坐标 0–1000' : '坐标单位未统一'}）` : ' · 无页内坐标'}</p>)}{hit.provenance.sourceBlocks.length > 8 ? <p>共 {hit.provenance.sourceBlocks.length} 个来源块，显示前 8 个</p> : null}</dd></div></> : null}
+          {hit.provenance ? <><div><dt>解析结构</dt><dd>{knowledgeMediaKind(hit.provenance) === 'video-frame' ? '采样画面' : knowledgeBlockKindLabel(hit.provenance.kind)}{hit.provenance.split ? ' · 超长内容已分段' : ''}</dd></div><div><dt>来源位置</dt><dd>{hit.provenance.sourceBlocks.slice(0, 8).map((block, index) => <p key={index}>{knowledgeMediaPositionLabel(block) ?? (block.page === null ? '页码未提供' : `第 ${block.page} 页`)}{block.bbox ? ` · 区域 ${block.bbox.join(', ')}（${block.coordinateSystem === 'normalized-1000' ? '归一化坐标 0–1000' : '坐标单位未统一'}）` : knowledgeMediaPositionLabel(block) ? '' : ' · 无页内坐标'}</p>)}{hit.provenance.sourceBlocks.length > 8 ? <p>共 {hit.provenance.sourceBlocks.length} 个来源块，显示前 8 个</p> : null}</dd></div></> : null}
           <div><dt>相关度分数</dt><dd>{scorePoints(hit.score)} / 100</dd></div>
           <div><dt>命中方式</dt><dd>{retrievalEvidenceLabel(hit)}</dd></div>
           {(['lexical', 'dense', 'graph'] as const).map((channel) => hit.diagnostics[`${channel}Rank`] !== null ? <div key={channel}><dt>{{ lexical: '关键词', dense: '向量', graph: '图谱' }[channel]}召回</dt><dd>第 {hit.diagnostics[`${channel}Rank`]} 条 · 原始分数 {hit.diagnostics[`${channel}Score`] ?? '未报告'}</dd></div> : null)}
@@ -1161,7 +1163,7 @@ function KnowledgeHitDetail({ baseId, hit, onOpen, rank, transport }: { baseId: 
           ) : null}
         </dl>
       </Disclosure>
-      <Button leadingIcon={<ExternalLink size={14} />} loading={openMutation.isPending} onClick={() => openMutation.mutate()} size="small" variant="primary">打开来源</Button>
+      <Button leadingIcon={<ExternalLink size={14} />} loading={openMutation.isPending} onClick={() => openMutation.mutate()} preserveFocusWhileLoading size="small" variant="primary">打开来源</Button>
       {openMutation.error ? <p className="knowledge-inline-error">当前无法打开来源。</p> : null}
     </article>
   );
@@ -1892,7 +1894,12 @@ function retrievalEvidenceLabel(hit: KnowledgeSearchHit): string {
   const matches = hit.diagnostics.graphMatches.length ? ` · 关联 ${publicKnowledgeText(hit.diagnostics.graphMatches.slice(0, 3).join('、'))}` : '';
   return ranks.length ? `${mode} · ${ranks.join(' · ')}${matches}` : mode;
 }
-function citationLabel(hit: KnowledgeSearchHit): string { if (hit.page !== null) return `第 ${hit.page} 页`; if (hit.lineStart !== null) return hit.lineEnd && hit.lineEnd !== hit.lineStart ? `第 ${hit.lineStart}-${hit.lineEnd} 行` : `第 ${hit.lineStart} 行`; return '文档段落'; }
+function citationLabel(hit: KnowledgeSearchHit): string { const media = knowledgeMediaLocationLabel(hit.provenance); if (media) return media; if (hit.page !== null) return `第 ${hit.page} 页`; if (hit.lineStart !== null) return hit.lineEnd && hit.lineEnd !== hit.lineStart ? `第 ${hit.lineStart}-${hit.lineEnd} 行` : `第 ${hit.lineStart} 行`; return '文档段落'; }
+function mediaHitDescription(hit: KnowledgeSearchHit): string | null {
+  const kind = knowledgeMediaKind(hit.provenance);
+  if (!kind || !hit.provenance?.sourceBlocks.some((block) => block.transcriptionApplied === false)) return null;
+  return kind === 'audio' ? '音频片段；未生成转写文本。' : '视频采样画面；不代表连续视频理解。';
+}
 function uploadItemId(file: File, index: number): string { return `upload-${Date.now()}-${index}-${file.name}-${file.size}`; }
 function replaceUploadItem(items: KnowledgeUploadItem[], id: string, patch: Partial<KnowledgeUploadItem>): KnowledgeUploadItem[] { return items.map((item) => item.id === id ? { ...item, ...patch } : item); }
 function indexRevisionLabel(documents: readonly KnowledgeDocument[]): string {

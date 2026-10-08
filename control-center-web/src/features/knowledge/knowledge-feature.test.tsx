@@ -30,6 +30,25 @@ afterEach(() => {
 });
 
 describe('document knowledge library', () => {
+  it('shows native media time and truthful sampling copy while opening the original hit identity', async () => {
+    const user = userEvent.setup(); const transport = createTransport();
+    const original = transport.request.bind(transport);
+    vi.spyOn(transport, 'request').mockImplementation(async (input) => input.pathId === 'knowledgeBases.search' ? { hits: [{
+      chunkId: 'audio-zero', documentId: 'file-runtime', documentName: 'public-tone.wav', title: '公开音频片段',
+      content: '[audio-segment: 0–2s; no transcription]', citation: { kind: 'audio', modality: 'audio', startSeconds: 0, endSeconds: 2,
+        sourceBlocks: [{ order: 0, metadata: { sourcePart: 'audio-segment', startSeconds: 0, endSeconds: 2, timestampKind: 'segment-offset', transcriptionApplied: false } }],
+      },
+    }] } as never : original(input));
+    renderKnowledge(transport, '/knowledge?tab=search', true);
+    await user.type(await screen.findByRole('textbox', { name: '搜索知识库' }), 'tone');
+    await user.click(screen.getByRole('button', { name: '搜索' }));
+    expect(await screen.findByText('音频片段 · 00:00–00:02', { selector: 'dd' })).toBeVisible();
+    expect(screen.getByText('音频片段；未生成转写文本。', { selector: 'p' })).toBeVisible();
+    expect(screen.getByRole('option')).toHaveTextContent('音频片段 · 00:00–00:02');
+    await user.click(screen.getByRole('button', { name: '打开来源' }));
+    await waitFor(() => expect(request(transport, 'knowledgeBases.open')).toMatchObject({ params: { kbId: 'kb-runtime', fileId: 'file-runtime' }, query: { chunkId: 'audio-zero', lines: 80 } }));
+    expect(request(transport, 'knowledgeBases.open')?.query).not.toHaveProperty('startSeconds');
+  });
   it('keeps an empty PAWOS library actionable without an empty selector or duplicate create buttons', async () => {
     const user = userEvent.setup();
     const transport = new MockControlTransport({ routes: {

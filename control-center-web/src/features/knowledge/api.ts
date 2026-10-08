@@ -69,6 +69,7 @@ export interface KnowledgeDocument {
   parserVersion: string;
   sourceReadPath: string;
   indexedConfigRevision: number;
+  metadata?: Record<string, JsonValue>;
 }
 
 export interface KnowledgeChunk {
@@ -85,6 +86,10 @@ export interface KnowledgeChunk {
 
 export interface KnowledgeProvenance {
   kind: string;
+  modality?: 'audio' | 'image' | null;
+  startSeconds?: number | null;
+  endSeconds?: number | null;
+  timestampKind?: KnowledgeTimestampKind | null;
   parser: string;
   headingPath: string[];
   split: boolean;
@@ -93,8 +98,12 @@ export interface KnowledgeProvenance {
     id?: string; order?: number | null; assetSha256?: string; imagePath?: string;
     sheetName?: string; sourcePart?: string; ocrApplied?: boolean | null;
     chartDataAvailable?: boolean | null;
+    kind?: string; startSeconds?: number | null; endSeconds?: number | null;
+    timestampKind?: KnowledgeTimestampKind | null; transcriptionApplied?: boolean | null;
   }>;
 }
+
+export type KnowledgeTimestampKind = 'seek-offset' | 'segment-offset';
 
 export interface KnowledgePageSummary {
   page: number;
@@ -853,7 +862,7 @@ export function chooseKnowledgeFiles(maxFiles = 20): Promise<File[]> {
     const input = document.createElement('input');
     input.type = 'file';
     input.multiple = true;
-    input.accept = '.pdf,.epub,.docx,.pptx,.xlsx,.doc,.ppt,.xls,.txt,.md,.markdown,.rst,.csv,.tsv,.json,.html,.htm,.png,.jpg,.jpeg,.bmp,.tiff,.tif,.webp';
+    input.accept = '.pdf,.epub,.docx,.pptx,.xlsx,.doc,.ppt,.xls,.txt,.md,.markdown,.rst,.csv,.tsv,.json,.html,.htm,.png,.jpg,.jpeg,.bmp,.tiff,.tif,.webp,.wav,.mp3,.flac,.ogg,.m4a,.mp4,.mov,.webm,.mkv';
     input.addEventListener('change', () => resolve([...(input.files ?? [])].slice(0, maxFiles)), { once: true });
     input.addEventListener('cancel', () => resolve([]), { once: true });
     input.click();
@@ -994,6 +1003,7 @@ function normalizeDocuments(value: unknown, baseId: string): KnowledgeDocument[]
       parserVersion: text(row.parserVersion ?? row.parser_version),
       sourceReadPath: safeSourcePath(text(row.sourceReadPath)),
       indexedConfigRevision: number(row.indexedConfigRevision ?? row.indexed_config_revision),
+      metadata: jsonRecord(record(row.metadata)),
     };
   }).filter((row) => Boolean(row.id));
 }
@@ -1354,6 +1364,8 @@ function normalizeProvenance(value: unknown): KnowledgeProvenance | undefined {
   if (!row.kind && !Array.isArray(row.sourceBlocks)) return undefined;
   return {
     kind: text(row.kind), parser: text(row.parser), split: row.split === true,
+    modality: row.modality === 'audio' || row.modality === 'image' ? row.modality : null,
+    ...normalizeMediaRange(row), timestampKind: timestampKind(row.timestampKind),
     headingPath: list(row.headingPath).map((item) => text(item)).filter(Boolean),
     sourceBlocks: list(row.sourceBlocks).map((item) => {
       const block = record(item);
@@ -1361,13 +1373,26 @@ function normalizeProvenance(value: unknown): KnowledgeProvenance | undefined {
       const bbox = list(block.bbox);
       return {
         id: text(block.id), order: typeof block.order === 'number' && Number.isSafeInteger(block.order) && block.order >= 0 ? block.order : null,
+        kind: text(block.kind), ...normalizeMediaRange(metadata), timestampKind: timestampKind(metadata.timestampKind),
         page: nullableNumber(block.page), coordinateSystem: text(metadata.coordinateSystem), bbox: bbox.length === 4 && bbox.every((value) => typeof value === 'number' && Number.isFinite(value)) ? bbox as number[] : null,
         assetSha256: text(metadata.assetSha256), imagePath: text(metadata.imagePath), sheetName: text(metadata.sheetName), sourcePart: text(metadata.sourcePart),
         ocrApplied: typeof metadata.ocrApplied === 'boolean' ? metadata.ocrApplied : null,
         chartDataAvailable: typeof metadata.chartDataAvailable === 'boolean' ? metadata.chartDataAvailable : null,
+        transcriptionApplied: typeof metadata.transcriptionApplied === 'boolean' ? metadata.transcriptionApplied : null,
       };
     }),
   };
+}
+
+function normalizeMediaRange(row: Record<string, unknown>): { startSeconds: number | null; endSeconds: number | null } {
+  const start = row.startSeconds; const end = row.endSeconds;
+  return typeof start === 'number' && Number.isFinite(start) && start >= 0
+    && typeof end === 'number' && Number.isFinite(end) && end >= start
+    ? { startSeconds: start, endSeconds: end } : { startSeconds: null, endSeconds: null };
+}
+
+function timestampKind(value: unknown): KnowledgeTimestampKind | null {
+  return value === 'seek-offset' || value === 'segment-offset' ? value : null;
 }
 
 function normalizeSearchRetrieval(value: unknown): KnowledgeSearchRetrieval | null {

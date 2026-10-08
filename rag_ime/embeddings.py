@@ -174,6 +174,7 @@ class SentenceTransformerEmbeddingProvider:
     device: str = ""
     fingerprint: str = field(init=False)
     _model: Any = field(default=None, init=False, repr=False)
+    _audio_loaded: bool = field(default=False, init=False, repr=False)
     _cache: OrderedDict[tuple[str, str], list[float]] = field(default_factory=OrderedDict, init=False, repr=False)
     _lock: RLock = field(default_factory=RLock, init=False, repr=False)
 
@@ -193,6 +194,7 @@ class SentenceTransformerEmbeddingProvider:
             )
         if self.supports_images:
             material_payload["imageEncoding"] = "embeddinggemma2-image-v1"
+            material_payload["audioEncoding"] = "embeddinggemma2-pcm16-v1"
         material = json.dumps(material_payload, ensure_ascii=False, sort_keys=True)
         digest = hashlib.sha256(material.encode("utf-8")).hexdigest()[:12]
         revision = f"@{self.model_revision}" if self.model_revision else ""
@@ -209,6 +211,34 @@ class SentenceTransformerEmbeddingProvider:
             return json.loads(config.read_text(encoding="utf-8")).get("model_type") == "embedding_gemma2"
         except (OSError, ValueError, AttributeError):
             return False
+
+    @property
+    def supports_audio(self) -> bool:
+        return self.supports_images
+
+    def embed_audio(self, paths: list[str], *, batch_size: int = 1) -> list[list[float]]:
+        """Encode bounded decoded PCM, without captions, transcripts or URL loaders."""
+        if not self.supports_audio:
+            raise ValueError("embedding model does not support native audio inputs")
+        if not paths:
+            return []
+        import wave
+        import numpy as np
+        inputs = []
+        for path in paths:
+            with wave.open(path, "rb") as audio:
+                if (audio.getframerate() != 16000 or audio.getnchannels() != 1
+                        or audio.getsampwidth() != 2 or not 0 < audio.getnframes() <= 30 * 16000):
+                    raise ValueError("native audio requires at most 30 seconds of mono 16 kHz PCM16")
+                samples = np.frombuffer(audio.readframes(audio.getnframes()), dtype="<i2").astype(np.float32) / 32768.0
+            inputs.append({"audio": {"array": samples, "sampling_rate": 16000}})
+        with _SENTENCE_TRANSFORMER_EXECUTION:
+            encoded = self._load_model(audio=True).encode(inputs,
+                batch_size=max(1, min(4, int(batch_size))), normalize_embeddings=True, show_progress_bar=False)
+        vectors = [[float(value) for value in vector] for vector in encoded.tolist()]
+        if len(vectors) != len(paths) or any(not vector or not all(math.isfinite(value) for value in vector) for vector in vectors):
+            raise RuntimeError("audio encoder returned invalid vectors")
+        return vectors
 
     def embed_images(self, paths: list[str], *, batch_size: int = 1) -> list[list[float]]:
         """Encode local image assets in the same space as text; never use captions."""
@@ -277,8 +307,12 @@ class SentenceTransformerEmbeddingProvider:
                     self._cache.popitem(last=False)
             return list(vector)
 
-    def _load_model(self):
+    def _load_model(self, *, audio: bool = False):
         with _SENTENCE_TRANSFORMER_EXECUTION:
+            if audio and not self._audio_loaded:
+                # Upgrade the same lazy encoder; never retain a second model loop.
+                self._model = None
+                self._audio_loaded = True
             return self._load_model_locked()
 
     def _load_model_locked(self):
@@ -308,7 +342,7 @@ class SentenceTransformerEmbeddingProvider:
                 # Keep the Knowledge worker's image/text footprint bounded.
                 # float16 is unsupported by EmbeddingGemma 2; CPU float32 is safe.
                 import torch
-                options["config_kwargs"] = {"audio_config": None}
+                options["config_kwargs"] = {} if self._audio_loaded else {"audio_config": None}
                 options["model_kwargs"] = {"torch_dtype": torch.float32}
             self._model = SentenceTransformer(self.model, **options)
         return self._model
@@ -658,7 +692,7 @@ def embedding_provider_info(provider: EmbeddingProvider) -> dict[str, Any]:
             "fingerprint": fingerprint,
             "semantic": True,
             "configured": True,
-            "modalities": ["text", "image"] if provider.supports_images else ["text"],
+            "modalities": ["text", "image", "audio"] if provider.supports_images else ["text"],
         }
     if isinstance(provider, MlxBertEmbeddingProvider):
         return {

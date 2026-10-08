@@ -1,5 +1,6 @@
 import { pickBrowserAttachments } from './browser-attachment-picker';
 import { prepareHttpAttachment } from './attachment-import';
+import { KNOWLEDGE_AUDIO_ASSET_MIME_TYPES, KNOWLEDGE_AUDIO_SOURCE_MIME_TYPES, KNOWLEDGE_IMAGE_ASSET_MIME_TYPES, KNOWLEDGE_VIDEO_SOURCE_MIME_TYPES } from './knowledge-media';
 import {
   MAX_COMPOSER_ATTACHMENT_BYTES,
   normalizeComposerAttachmentMimeType,
@@ -785,15 +786,11 @@ function knowledgeParserProvider(
   return input.parser;
 }
 
-const KNOWLEDGE_ASSET_MIME_TYPES = new Set([
-  'image/png',
-  'image/jpeg',
-  'image/gif',
-  'image/webp',
-  'image/bmp',
-]);
+const KNOWLEDGE_ASSET_MIME_TYPES = new Set([...KNOWLEDGE_IMAGE_ASSET_MIME_TYPES, ...KNOWLEDGE_AUDIO_ASSET_MIME_TYPES]);
 const MAX_KNOWLEDGE_ASSET_BYTES = 25 * 1024 * 1024;
 const KNOWLEDGE_SOURCE_MIME_TYPES = new Set([
+  ...KNOWLEDGE_AUDIO_SOURCE_MIME_TYPES,
+  ...KNOWLEDGE_VIDEO_SOURCE_MIME_TYPES,
   'application/pdf',
   'image/png',
   'image/jpeg',

@@ -2581,6 +2581,16 @@
 .knowledge-inline-image > span { display: flex; flex-direction: column; gap: 8px; max-width: 100%; }
 .knowledge-inline-image img { display: block; max-width: 100%; max-height: 420px; object-fit: contain; }
 .knowledge-inline-image button { max-width: 100%; white-space: normal; text-align: start; overflow-wrap: anywhere; }
+.knowledge-media-summary { color: var(--color-text-secondary); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.knowledge-media-summary p { margin: 0 0 var(--space-1); }
+.knowledge-media-location { font-variant-numeric: tabular-nums; }
+.knowledge-inline-audio, .knowledge-audio-content, .knowledge-audio-list, .knowledge-audio-list > div { display: grid; min-width: 0; gap: var(--space-2); }
+.knowledge-audio-list { padding-top: var(--space-2); }
+.knowledge-inline-audio > button, .knowledge-audio-content > button { justify-self: start; max-width: 100%; white-space: normal; text-align: start; overflow-wrap: anywhere; }
+.knowledge-audio-content audio { display: block; width: 100%; max-width: 420px; min-width: 0; }
+.knowledge-audio-content p, .knowledge-source-fallback p { margin: 0; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.knowledge-audio-content a { color: var(--k-accent); }
+.knowledge-audio-list small { color: var(--color-text-secondary); overflow-wrap: anywhere; }
 .knowledge-pdf-source { display: grid; gap: 12px; min-width: 0; }
 .knowledge-pdf-controls, .knowledge-pdf-controls form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .knowledge-pdf-controls input { width: 6rem; }

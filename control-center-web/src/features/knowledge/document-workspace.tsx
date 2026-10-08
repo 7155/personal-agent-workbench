@@ -28,6 +28,7 @@ import { EvidenceEchoUsage } from '@/features/evidence-echo/EvidenceEchoUsage';
 import { InlineNotice, StatusBadge, publicErrorText } from '@/features/overview/management-ui';
 import { TraceAgentHandoffButton } from '@/features/trace-agent/handoff';
 import type { ControlTransport } from '@/platform/transport';
+import { KNOWLEDGE_AUDIO_ASSET_MIME_TYPES, KNOWLEDGE_AUDIO_SOURCE_MIME_TYPES, KNOWLEDGE_VIDEO_SOURCE_MIME_TYPES } from '@/platform/knowledge-media';
 import type {
   KnowledgeAsset,
   KnowledgeChunk,
@@ -40,7 +41,7 @@ import type {
 } from './api';
 import { knowledgeBlockKindLabel } from './public-copy';
 import { extractMarkdownOutline, type MarkdownOutlineItem } from './reading-outline';
-import { chunkAssets, chunkTables, localMarkdownAsset, readableTableMarkdown } from './structured-reading';
+import { chunkAssets, chunkTables, formatKnowledgeMediaTime, knowledgeMediaKind, knowledgeMediaLocationLabel, knowledgeMediaPositionLabel, localMarkdownAsset, readableTableMarkdown } from './structured-reading';
 
 export interface KnowledgeUploadItem {
   id: string;
@@ -245,7 +246,7 @@ function MaterialsDropzone({
         <Upload aria-hidden="true" size={17} />
         <span>
           <strong>{importing ? '正在导入文件…' : dropSupported ? '拖放文件到这里，或点击选择' : '点击选择本机文件导入'}</strong>
-          <small>支持 PDF、Word、PPT、Excel、Markdown、文本与图片 · 单次最多 20 个</small>
+          <small>支持文档、图片、音频与视频 · 单次最多 20 个；媒体不生成转写文本</small>
         </span>
       </button>
       {dropNotice ? <InlineNotice title="导入提示" tone="info">{dropNotice}</InlineNotice> : null}
@@ -465,6 +466,8 @@ export function KnowledgeDocumentViewer({
     ? [detail.document, ...documents]
     : documents;
   const selectedDocument = readableDocuments.find((item) => item.id === (selectedDocumentId || readableDocuments[0]?.id)) ?? null;
+  const nativeMedia = detail?.document.metadata?.nativeMediaEmbeddings === true
+    && [...KNOWLEDGE_AUDIO_SOURCE_MIME_TYPES, ...KNOWLEDGE_VIDEO_SOURCE_MIME_TYPES].includes(detail.document.mimeType);
   useEffect(() => setView('markdown'), [selectedDocumentId]);
   useEffect(() => { if (focusHit?.documentId === selectedDocumentId) setView('chunks'); }, [focusHit, selectedDocumentId]);
   if (!documents.length && !selectedDocumentId) {
@@ -486,23 +489,24 @@ export function KnowledgeDocumentViewer({
         <label className="knowledge-viewer__document"><span>材料</span><Select aria-label="材料" disabled={!readableDocuments.length} onValueChange={onSelectDocument} options={readableDocuments.map((item) => ({ value: item.id, label: item.name }))} value={selectedDocumentId || readableDocuments[0]?.id} /></label>
         <div aria-label="材料状态与内容统计" className="knowledge-viewer__meta" role="group">
           {selectedDocument ? <StatusBadge label={documentStatusLabel(selectedDocument.status)} tone={documentTone(selectedDocument.status)} /> : null}
-          {detail ? <><span>{detail.chunkTotal} 个段落</span><span>{pageCount ? `${pageCount} 页` : detail.pages.length ? `已定位 ${detail.pages.length} 个页码 · 总页数未提供` : '页码未提供'}</span><span>{detail.assets.length} 个产物</span></> : null}
+          {detail ? <><span>{detail.chunkTotal} 个{nativeMedia ? '片段' : '段落'}</span>{!nativeMedia ? <span>{pageCount ? `${pageCount} 页` : detail.pages.length ? `已定位 ${detail.pages.length} 个页码 · 总页数未提供` : '页码未提供'}</span> : null}<span>{detail.assets.length} 个产物</span></> : null}
         </div>
       </div>
       {loading && !detail ? <KnowledgeReadingLoading label="正在读取解析结果" /> : null}
       {error ? <InlineNotice title="暂时无法查看材料" tone="warning"><p>{publicErrorText(error, '可以重新读取材料。')}</p><Button onClick={onRetry} size="small" variant="quiet">重新读取材料</Button></InlineNotice> : null}
+      {nativeMedia && detail ? <KnowledgeMediaSummary document={detail.document} /> : null}
       {detail ? (
         <Tabs className="knowledge-document-tabs" onValueChange={(value) => setView(value === 'source' || value === 'chunks' || value === 'artifacts' ? value : 'markdown')} value={view}>
           <TabsList aria-label="材料查看方式">
             <TabsTrigger value="source"><FileText size={13} />源文件</TabsTrigger>
-            <TabsTrigger value="markdown"><Rows3 size={13} />正文</TabsTrigger>
-            <TabsTrigger value="chunks"><Grid3X3 size={13} />段落</TabsTrigger>
+            <TabsTrigger value="markdown"><Rows3 size={13} />{nativeMedia ? '媒体内容' : '正文'}</TabsTrigger>
+            <TabsTrigger value="chunks"><Grid3X3 size={13} />{nativeMedia ? '片段' : '段落'}</TabsTrigger>
             <TabsTrigger value="artifacts"><GalleryHorizontalEnd size={13} />解析产物</TabsTrigger>
           </TabsList>
           <TabsContent value="source"><DocumentSource detail={detail} focusHit={focusHit?.documentId === selectedDocumentId ? focusHit : null} transport={transport} /></TabsContent>
-          <TabsContent value="markdown"><DocumentContent detail={detail} hasMore={hasMoreContent} loadingMore={loadingMoreContent} onLoadMore={onLoadMoreContent} transport={transport} /></TabsContent>
+          <TabsContent value="markdown">{nativeMedia ? <ChunkGallery detail={detail} focusHit={null} hasMore={hasMoreChunks} loadFailed={loadMoreChunksFailed} loadingMore={loadingMoreChunks} onLoadMore={onLoadMoreChunks} transport={transport} /> : <DocumentContent detail={detail} hasMore={hasMoreContent} loadingMore={loadingMoreContent} onLoadMore={onLoadMoreContent} transport={transport} />}</TabsContent>
           <TabsContent value="chunks"><ChunkGallery detail={detail} focusHit={focusHit?.documentId === selectedDocumentId ? focusHit : null} hasMore={hasMoreChunks} loadFailed={loadMoreChunksFailed} loadingMore={loadingMoreChunks} onLoadMore={onLoadMoreChunks} transport={transport} /></TabsContent>
-          <TabsContent value="artifacts"><ArtifactGallery assets={detail.assets} document={detail.document} tables={detail.tables} transport={transport} /></TabsContent>
+          <TabsContent value="artifacts"><ArtifactGallery assets={detail.assets} chunks={detail.chunks} document={detail.document} tables={detail.tables} transport={transport} /></TabsContent>
         </Tabs>
       ) : null}
       {selectedDocument ? (
@@ -516,6 +520,20 @@ export function KnowledgeDocumentViewer({
 
 function KnowledgeReadingLoading({ label }: { label: string }) {
   return <div aria-label={label} className="knowledge-reading-loading" role="status"><p>{label}…</p><Skeleton /><Skeleton /><Skeleton /></div>;
+}
+
+function KnowledgeMediaSummary({ document }: { document: KnowledgeDocument }) {
+  const metadata = document.metadata ?? {};
+  const duration = typeof metadata.durationSeconds === 'number' && Number.isFinite(metadata.durationSeconds) && metadata.durationSeconds > 0 ? metadata.durationSeconds : null;
+  const units = typeof metadata.mediaUnitCount === 'number' && Number.isSafeInteger(metadata.mediaUnitCount) && metadata.mediaUnitCount >= 0 ? metadata.mediaUnitCount : null;
+  return <div className="knowledge-media-summary">
+    {duration !== null || units !== null ? <p>{[duration !== null ? `源文件时长 ${formatKnowledgeMediaTime(duration)}` : '', units !== null ? `${units} 个采样单元` : ''].filter(Boolean).join(' · ')}</p> : null}
+    {metadata.transcriptionApplied === false ? <p>媒体按音频片段或视频画面检索，未生成转写文本。</p> : null}
+    {KNOWLEDGE_VIDEO_SOURCE_MIME_TYPES.includes(document.mimeType) ? <p>采样画面不代表连续视频理解；时间标记为采样偏移。</p> : null}
+    {metadata.videoFramesTruncated === true ? <p>采样画面仅覆盖部分视频，完整内容请查看源文件。</p> : null}
+    {metadata.audioSegmentsTruncated === true ? <p>音频片段仅覆盖部分音轨，完整内容请查看源文件。</p> : null}
+    {metadata.audioOmitted === true ? <p>本次未提取音轨，声音内容请查看源文件。</p> : null}
+  </div>;
 }
 
 function DocumentContent({ detail, hasMore, loadingMore, onLoadMore, transport }: { detail: KnowledgeDocumentDetail; hasMore: boolean; loadingMore: boolean; onLoadMore: () => void; transport: ControlTransport }) {
@@ -626,10 +644,10 @@ export function DocumentSource({ detail, transport, focusHit = null }: { detail:
   if (!detail.document.sourceReadPath || !transport.readKnowledgeDocumentSource) {
     return <EmptyState description="当前运行环境未提供可安全读取的源文件；请回到“资料”页重新解析。" icon={FileText} title="源文件预览不可用" />;
   }
-  if (source.loading || !source.error && !source.url) return <p className="knowledge-detail-loading">正在安全读取源文件…</p>;
-  if (source.error || !source.url) {
-    return <InlineNotice title="源文件暂不可用" tone="warning"><p>{publicErrorText(source.error, '可以重新读取源文件。')}</p><Button leadingIcon={<RotateCcw size={13} />} onClick={source.retry} size="small" variant="quiet">重新读取源文件</Button></InlineNotice>;
+  if (source.error) {
+    return <InlineNotice title={source.loading ? '正在重新读取源文件' : '源文件暂不可用'} tone={source.loading ? 'info' : 'warning'}><p>{source.loading ? '保留上次读取失败的信息，正在重新读取。' : publicErrorText(source.error, '可以重新读取源文件。')}</p><Button leadingIcon={<RotateCcw size={13} />} loading={source.loading} onClick={source.retry} preserveFocusWhileLoading size="small" variant="quiet">重新读取源文件</Button></InlineNotice>;
   }
+  if (source.loading || !source.url) return <p className="knowledge-detail-loading">正在安全读取源文件…</p>;
   if (source.mimeType === 'application/pdf') {
     return <div className="knowledge-pdf-source">
       <div aria-label="PDF 页面导航" className="knowledge-pdf-controls" role="group">
@@ -654,7 +672,12 @@ export function DocumentSource({ detail, transport, focusHit = null }: { detail:
   if (source.mimeType.startsWith('image/')) {
     return <div className="knowledge-source-image"><img alt={detail.document.name} src={source.url} /></div>;
   }
-  return <div className="knowledge-source-fallback"><FileText size={24} /><strong>{detail.document.name}</strong><a href={source.url} rel="noreferrer" target="_blank">打开源文件</a></div>;
+  const mediaSource = [...KNOWLEDGE_AUDIO_SOURCE_MIME_TYPES, ...KNOWLEDGE_VIDEO_SOURCE_MIME_TYPES].includes(source.mimeType);
+  const hitTime = mediaSource ? knowledgeMediaPositionLabel(matchingHit?.provenance) : null;
+  return <div className="knowledge-source-fallback"><FileText size={24} /><strong>{detail.document.name}</strong>{mediaSource ? <>
+    {matchingHit ? <p>{hitTime ? `命中位置：${hitTime}` : '命中未提供有效时间位置'}</p> : null}
+    <p>尚不支持自动跳转到媒体时间；请打开或下载源文件，在播放器中核对。</p>
+  </> : null}<a href={source.url} rel="noreferrer" target="_blank">打开源文件</a>{mediaSource ? <a download={detail.document.name} href={source.url}>下载源文件</a> : null}</div>;
 }
 
 function ChunkGallery({ detail, focusHit, hasMore, loadFailed, loadingMore, onLoadMore, transport }: { detail: KnowledgeDocumentDetail; focusHit: KnowledgeSearchHit | null; hasMore: boolean; loadFailed: boolean; loadingMore: boolean; onLoadMore: () => void; transport: ControlTransport }) {
@@ -673,7 +696,7 @@ function ChunkGallery({ detail, focusHit, hasMore, loadFailed, loadingMore, onLo
       {focusHit ? <div className="knowledge-focus-banner"><FileSearch size={14} /><span>{focusedLoaded ? `已定位检索命中：${focusHit.title}` : loadFailed ? `命中段落未能加载：${focusHit.title}；已读段落已保留，可重试继续定位。` : hasMore ? `正在加载命中段落：${focusHit.title}` : `命中来自较早索引：${focusHit.title}；重新处理材料后可更新。`}</span></div> : null}
       {detail.chunks.map((chunk) => (
         <article data-focused={focusHit?.id === chunk.id || undefined} key={chunk.id}>
-          <header><b>#{chunk.ordinal + 1}{chunk.provenance ? ` · ${knowledgeBlockKindLabel(chunk.provenance.kind)}` : ''}{focusHit?.id === chunk.id ? ' · 检索命中' : ''}</b><span>{chunk.page ? `第 ${chunk.page} 页` : chunk.lineStart ? `第 ${chunk.lineStart} 行` : '无页码'}</span></header>
+          <header><b>#{chunk.ordinal + 1}{chunk.provenance ? ` · ${knowledgeMediaKind(chunk.provenance) === 'video-frame' ? '采样画面' : knowledgeBlockKindLabel(chunk.provenance.kind)}` : ''}{focusHit?.id === chunk.id ? ' · 检索命中' : ''}</b><span>{knowledgeMediaKind(chunk.provenance) ? '媒体片段' : chunk.page ? `第 ${chunk.page} 页` : chunk.lineStart ? `第 ${chunk.lineStart} 行` : '无页码'}</span></header>
           {chunk.heading ? <h4>{chunk.heading}</h4> : null}
           <StructuredChunkContent chunk={chunk} detail={detail} focusHit={focusHit} transport={transport} />
           <footer><span>文档段落</span><Disclosure className="knowledge-chunk-detail" contentClassName="knowledge-chunk-detail__content" summary="高级：段落详情"><span>{chunk.tokenCount ? `${chunk.tokenCount} Token` : 'Token 未统计'}</span><span>{chunk.id}</span></Disclosure></footer>
@@ -688,28 +711,53 @@ function StructuredChunkContent({ chunk, detail, focusHit, transport }: { chunk:
   const tables = chunkTables(chunk, detail.tables);
   const assets = chunkAssets(chunk, detail.assets);
   const sources = chunk.provenance?.sourceBlocks ?? [];
+  const mediaKind = knowledgeMediaKind(chunk.provenance);
+  const mediaTime = knowledgeMediaPositionLabel(chunk.provenance);
+  const mediaLabel = knowledgeMediaLocationLabel(chunk.provenance);
   const original = <p>{focusHit?.id === chunk.id ? <HighlightedChunkText content={chunk.content} excerpt={focusHit.excerpt} /> : chunk.content}</p>;
   return <div className="knowledge-structured-chunk">
+    {mediaLabel ? <p className="knowledge-media-location">{mediaLabel}</p> : null}
     {tables.length ? <>
       {chunk.provenance?.split ? <><p>此命中是表格的一部分。下方展开的是来源表格，检索片段保留在原文中。</p><Disclosure summary="查看来源表格">{tables.map((table) => <ParsedTable key={table.id} table={table} />)}</Disclosure></> : tables.map((table) => <ParsedTable key={table.id} table={table} />)}
       <Disclosure summary="检索片段原文">{original}</Disclosure>
-    </> : original}
-    {assets.map((asset) => <InlineKnowledgeImage asset={asset} document={detail.document} key={asset.id} transport={transport} />)}
+    </> : mediaKind && sources.some((source) => source.transcriptionApplied === false) ? <><p>{mediaKind === 'audio' ? '此片段按原音频提取，未生成转写文本。' : '此画面按视频采样提取，不代表连续视频理解。'}</p><Disclosure summary="检索片段原文">{original}</Disclosure></> : original}
+    {assets.map((asset) => KNOWLEDGE_AUDIO_ASSET_MIME_TYPES.includes(asset.mimeType)
+      ? <InlineKnowledgeAudio asset={asset} document={detail.document} key={JSON.stringify([detail.document.baseId, detail.document.id, asset.id])} label={mediaTime ?? (asset.caption || asset.name)} transport={transport} />
+      : <InlineKnowledgeImage asset={asset} document={detail.document} key={asset.id} label={mediaKind === 'video-frame' ? mediaTime ?? '时间位置未提供' : undefined} sampled={mediaKind === 'video-frame'} transport={transport} />)}
     {['image', 'figure'].includes(chunk.provenance?.kind ?? '') && sources.some((source) => source.ocrApplied === false) ? <small>图片按原文件提取，本次未进行图片 OCR。</small> : null}
     {sources.some((source) => source.chartDataAvailable === false) ? <small>原文件未提供图表缓存数据，请查看源文件核对。</small> : null}
   </div>;
 }
 
-function InlineKnowledgeImage({ asset, document, transport }: { asset: KnowledgeAsset; document: KnowledgeDocument; transport: ControlTransport }) {
+function InlineKnowledgeImage({ asset, document, label, sampled = false, transport }: { asset: KnowledgeAsset; document: KnowledgeDocument; label?: string; sampled?: boolean; transport: ControlTransport }) {
   const [expanded, setExpanded] = useState(false);
   useEffect(() => setExpanded(false), [asset.id, document.id]);
-  return <span className="knowledge-inline-image"><Button aria-expanded={expanded} onClick={() => setExpanded((value) => !value)} size="small" variant="quiet">{expanded ? '收起图片' : '查看图片'}：{asset.caption || asset.name}</Button>{expanded ? <InlineImageContent asset={asset} document={document} transport={transport} /> : null}</span>;
+  return <span className="knowledge-inline-image"><Button aria-expanded={expanded} onClick={() => setExpanded((value) => !value)} size="small" variant="quiet">{expanded ? '收起' : '查看'}{sampled ? '采样画面' : '图片'}：{label ?? (asset.caption || asset.name)}</Button>{expanded ? <InlineImageContent asset={asset} document={document} transport={transport} /> : null}</span>;
+}
+
+function InlineKnowledgeAudio({ asset, document, label, transport }: { asset: KnowledgeAsset; document: KnowledgeDocument; label: string; transport: ControlTransport }) {
+  const [expanded, setExpanded] = useState(false);
+  return <div className="knowledge-inline-audio"><Button aria-expanded={expanded} onClick={() => setExpanded((value) => !value)} size="small" variant="quiet">{expanded ? '收起' : '查看'}音频片段：{label}</Button>{expanded ? <KnowledgeAudioContent asset={asset} document={document} label={label} transport={transport} /> : null}</div>;
+}
+
+function KnowledgeAudioContent({ asset, document, label, transport }: { asset: KnowledgeAsset; document: KnowledgeDocument; label: string; transport: ControlTransport }) {
+  const binary = useKnowledgeAsset(document, asset, transport);
+  const [hasFailed, setHasFailed] = useState(false);
+  const [playbackFailed, setPlaybackFailed] = useState(false);
+  useEffect(() => { if (binary.error) setHasFailed(true); }, [binary.error]);
+  useEffect(() => setPlaybackFailed(false), [binary.url]);
+  return <div className="knowledge-audio-content">
+    {binary.loading ? <p role="status">{hasFailed || binary.error ? '正在重新读取音频…' : '正在读取音频…'}</p> : binary.error ? <p role="alert">音频暂不可用。{publicErrorText(binary.error, '可以重新读取音频。')}</p> : !binary.url ? <p>当前环境未提供此音频资产的读取能力。</p> : null}
+    {binary.url && binary.mimeType === 'audio/wav' ? <><audio aria-label={`音频片段：${label}`} controls onError={() => setPlaybackFailed(true)} preload="none" src={binary.url} /><a download={asset.name} href={binary.url}>下载音频片段</a>{playbackFailed ? <p role="alert">此浏览器无法播放此音频，可下载片段核对。</p> : null}</> : null}
+    {hasFailed || binary.error ? <Button leadingIcon={<RotateCcw size={13} />} loading={binary.loading} onClick={binary.retry} preserveFocusWhileLoading size="small" variant="quiet">重新读取音频</Button> : null}
+  </div>;
 }
 
 function InlineImageContent({ asset, document, transport }: { asset: KnowledgeAsset; document: KnowledgeDocument; transport: ControlTransport }) {
   const binary = useKnowledgeAsset(document, asset, transport);
+  if (binary.error) return <span role={binary.loading ? 'status' : 'alert'}>{binary.loading ? '正在重新读取图片…' : '图片暂不可用。'}<Button loading={binary.loading} onClick={binary.retry} preserveFocusWhileLoading size="small" variant="quiet">重新读取图片</Button></span>;
   if (binary.loading) return <span role="status">正在读取图片…</span>;
-  if (binary.error || !binary.url) return <span role="alert">图片暂不可用。<Button onClick={binary.retry} size="small" variant="quiet">重新读取图片</Button></span>;
+  if (!binary.url) return <span role="alert">图片暂不可用。<Button onClick={binary.retry} size="small" variant="quiet">重新读取图片</Button></span>;
   return <span><img alt={asset.caption || asset.name} src={binary.url} /><a download={asset.name} href={binary.url}>下载图片</a></span>;
 }
 
@@ -719,37 +767,45 @@ function HighlightedChunkText({ content, excerpt }: { content: string; excerpt: 
   return index >= 0 ? <>{content.slice(0, index)}<mark>{needle}</mark>{content.slice(index + needle.length)}</> : <mark>{content}</mark>;
 }
 
-function ArtifactGallery({ assets, document, tables, transport }: { assets: readonly KnowledgeAsset[]; document: KnowledgeDocument; tables: readonly KnowledgeTableArtifact[]; transport: ControlTransport }) {
+function ArtifactGallery({ assets, chunks, document, tables, transport }: { assets: readonly KnowledgeAsset[]; chunks: readonly KnowledgeChunk[]; document: KnowledgeDocument; tables: readonly KnowledgeTableArtifact[]; transport: ControlTransport }) {
   const images = assets.filter((item) => item.mimeType.startsWith('image/') && item.readPath);
-  const attachments = assets.filter((item) => !images.includes(item));
+  const audios = assets.filter((item) => KNOWLEDGE_AUDIO_ASSET_MIME_TYPES.includes(item.mimeType) && item.readPath);
+  const attachments = assets.filter((item) => !images.includes(item) && !audios.includes(item));
+  const sampled = document.metadata?.nativeMediaEmbeddings === true && KNOWLEDGE_VIDEO_SOURCE_MIME_TYPES.includes(document.mimeType);
+  const timesFor = (asset: KnowledgeAsset) => [...new Set(chunks.filter((chunk) => chunkAssets(chunk, [asset]).length > 0).map((chunk) => knowledgeMediaPositionLabel(chunk.provenance)).filter((time): time is string => time !== null))];
   if (!assets.length && !tables.length) return <EmptyState description="当前解析没有返回图片或表格产物；重新解析后可再次检查。" icon={GalleryHorizontalEnd} title="暂无解析产物" />;
   return (
     <div className="knowledge-artifacts">
-      {images.length ? <section><header><FileImage size={14} /><strong>图片</strong><span>{images.length}</span></header><div className="knowledge-image-grid">{images.map((asset) => <KnowledgeAssetImage asset={asset} document={document} key={asset.id} transport={transport} />)}</div></section> : null}
+      {images.length ? <section><header><FileImage size={14} /><strong>{sampled ? '采样画面' : '图片'}</strong><span>{images.length}</span></header><div className="knowledge-image-grid">{images.map((asset) => <KnowledgeAssetImage asset={asset} document={document} key={asset.id} sampleTimes={sampled ? timesFor(asset) : undefined} transport={transport} />)}</div></section> : null}
       {tables.length ? <section><header><Table2 size={14} /><strong>表格</strong><span>{tables.length}</span></header><div className="knowledge-table-gallery">{tables.map((table) => <ParsedTable key={table.id} table={table} />)}</div></section> : null}
+      {audios.length ? <section><header><FileText size={14} /><strong>音频片段</strong><span>{audios.length}</span></header><div className="knowledge-audio-list">{audios.map((asset) => {
+        const times = timesFor(asset);
+        return <div key={JSON.stringify([document.baseId, document.id, asset.id])}><strong>{asset.name}</strong>{times.length ? <small>已读片段位置：{times.join('、')}</small> : <small>时间位置未提供</small>}<InlineKnowledgeAudio asset={asset} document={document} label={asset.caption || asset.name} transport={transport} /></div>;
+      })}</div></section> : null}
       {attachments.length ? <section><header><FileText size={14} /><strong>附件产物</strong><span>{attachments.length}</span></header><div className="knowledge-asset-list">{attachments.map((asset) => <KnowledgeAssetAttachment asset={asset} document={document} key={asset.id} transport={transport} />)}</div></section> : null}
     </div>
   );
 }
 
-function KnowledgeAssetImage({ asset, document, transport }: { asset: KnowledgeAsset; document: KnowledgeDocument; transport: ControlTransport }) {
+function KnowledgeAssetImage({ asset, document, sampleTimes, transport }: { asset: KnowledgeAsset; document: KnowledgeDocument; sampleTimes?: readonly string[]; transport: ControlTransport }) {
   const binary = useKnowledgeAsset(document, asset, transport);
   return (
     <figure>
-      {binary.loading ? <div className="knowledge-image-placeholder">正在读取…</div> : null}
+      {binary.loading && !binary.error ? <div className="knowledge-image-placeholder">正在读取…</div> : null}
       {binary.url ? <img alt={asset.caption || asset.name} loading="lazy" src={binary.url} /> : null}
-      {binary.error ? <div className="knowledge-image-placeholder"><span>读取失败</span><Button aria-label={`重新读取 ${asset.name}`} leadingIcon={<RotateCcw size={13} />} onClick={binary.retry} size="small" variant="quiet">重新读取</Button></div> : null}
-      <figcaption><span><strong>{asset.name}</strong><small>{asset.page ? `第 ${asset.page} 页 · ` : ''}{formatBytes(asset.byteSize)}</small></span>{binary.url ? <span className="knowledge-asset-actions"><a aria-label={`查看 ${asset.name}`} href={binary.url} rel="noreferrer" target="_blank" title={`查看 ${asset.name}`}><Eye size={13} /></a><a aria-label={`下载 ${asset.name}`} download={asset.name} href={binary.url} title={`下载 ${asset.name}`}><Download size={13} /></a></span> : null}</figcaption>
+      {binary.error ? <div className="knowledge-image-placeholder"><span>{binary.loading ? '正在重新读取…' : '读取失败'}</span><Button aria-label={`重新读取 ${asset.name}`} leadingIcon={<RotateCcw size={13} />} loading={binary.loading} onClick={binary.retry} preserveFocusWhileLoading size="small" variant="quiet">重新读取</Button></div> : null}
+      <figcaption><span><strong>{asset.name}</strong><small>{asset.page ? `第 ${asset.page} 页 · ` : ''}{formatBytes(asset.byteSize)}</small>{sampleTimes ? <small>{sampleTimes.length ? `已读采样位置：${sampleTimes.join('、')}` : '时间位置未提供'}</small> : null}</span>{binary.url ? <span className="knowledge-asset-actions"><a aria-label={`查看 ${asset.name}`} href={binary.url} rel="noreferrer" target="_blank" title={`查看 ${asset.name}`}><Eye size={13} /></a><a aria-label={`下载 ${asset.name}`} download={asset.name} href={binary.url} title={`下载 ${asset.name}`}><Download size={13} /></a></span> : null}</figcaption>
     </figure>
   );
 }
 
 function KnowledgeAssetAttachment({ asset, document, transport }: { asset: KnowledgeAsset; document: KnowledgeDocument; transport: ControlTransport }) {
   const binary = useKnowledgeAsset(document, asset, transport);
-  return <div><FileText size={14} /><span><strong>{asset.name}</strong><small>{fileFormatLabel(asset.mimeType)} · {formatBytes(asset.byteSize)}{binary.loading ? ' · 正在读取…' : binary.error ? ' · 读取失败' : ''}</small></span>{binary.error ? <Button aria-label={`重新读取 ${asset.name}`} leadingIcon={<RotateCcw size={13} />} onClick={binary.retry} size="small" variant="quiet">重新读取</Button> : null}{binary.url ? <span className="knowledge-asset-actions"><a aria-label={`查看 ${asset.name}`} href={binary.url} rel="noreferrer" target="_blank"><Eye size={13} /></a><a aria-label={`下载 ${asset.name}`} download={asset.name} href={binary.url}><Download size={13} /></a></span> : null}</div>;
+  return <div><FileText size={14} /><span><strong>{asset.name}</strong><small>{fileFormatLabel(asset.mimeType)} · {formatBytes(asset.byteSize)}{binary.loading ? ' · 正在读取…' : binary.error ? ' · 读取失败' : ''}</small></span>{binary.error ? <Button aria-label={`重新读取 ${asset.name}`} leadingIcon={<RotateCcw size={13} />} loading={binary.loading} onClick={binary.retry} preserveFocusWhileLoading size="small" variant="quiet">重新读取</Button> : null}{binary.url ? <span className="knowledge-asset-actions"><a aria-label={`查看 ${asset.name}`} href={binary.url} rel="noreferrer" target="_blank"><Eye size={13} /></a><a aria-label={`下载 ${asset.name}`} download={asset.name} href={binary.url}><Download size={13} /></a></span> : null}</div>;
 }
 
 interface BinaryViewState {
+  binding: string;
   error: Error | null;
   loading: boolean;
   mimeType: string;
@@ -761,50 +817,70 @@ interface BinaryViewResult extends BinaryViewState {
 }
 
 function useKnowledgeDocumentSource(detail: KnowledgeDocumentDetail, transport: ControlTransport): BinaryViewResult {
-  const [state, setState] = useState<BinaryViewState>({ error: null, loading: false, mimeType: '', url: '' });
+  const binding = JSON.stringify([detail.document.baseId, detail.document.id, detail.document.sha256, detail.document.sourceReadPath]);
+  const [state, setState] = useState<BinaryViewState>({ binding: '', error: null, loading: false, mimeType: '', url: '' });
   const [attempt, setAttempt] = useState(0);
+  const pending = useRef(false);
   useEffect(() => {
     if (!detail.document.sourceReadPath || !transport.readKnowledgeDocumentSource) {
-      setState({ error: null, loading: false, mimeType: '', url: '' });
+      pending.current = false;
+      setState({ binding, error: null, loading: false, mimeType: '', url: '' });
       return;
     }
     const controller = new AbortController();
     let objectUrl = '';
     let active = true;
-    setState({ error: null, loading: true, mimeType: '', url: '' });
+    pending.current = true;
+    setState((previous) => ({ binding, error: previous.binding === binding ? previous.error : null, loading: true, mimeType: '', url: '' }));
     void transport.readKnowledgeDocumentSource({
       kbId: detail.document.baseId,
       fileId: detail.document.id,
       signal: controller.signal,
     }).then((payload) => {
       if (!active) return;
+      if (payload.kbId !== detail.document.baseId || payload.fileId !== detail.document.id
+        || /^[a-f0-9]{64}$/u.test(detail.document.sha256) && payload.sha256 !== detail.document.sha256) {
+        throw new Error('读取到的源文件与当前材料不一致，请刷新材料后重试。');
+      }
       objectUrl = URL.createObjectURL(payload.blob);
-      setState({ error: null, loading: false, mimeType: payload.mimeType, url: objectUrl });
+      pending.current = false;
+      setState({ binding, error: null, loading: false, mimeType: payload.mimeType, url: objectUrl });
     }).catch((error: unknown) => {
       if (!active || controller.signal.aborted) return;
-      setState({ error: asError(error), loading: false, mimeType: '', url: '' });
+      pending.current = false;
+      setState({ binding, error: asError(error), loading: false, mimeType: '', url: '' });
     });
     return () => {
       active = false;
+      pending.current = false;
       controller.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [attempt, detail.document.baseId, detail.document.id, detail.document.sourceReadPath, transport]);
-  return { ...state, retry: () => setAttempt((current) => current + 1) };
+  }, [attempt, binding, detail.document.baseId, detail.document.id, detail.document.sha256, detail.document.sourceReadPath, transport]);
+  return { ...(state.binding === binding ? state : { binding, error: null, loading: true, mimeType: '', url: '' }), retry: () => {
+    if (pending.current) return;
+    pending.current = true;
+    setState((previous) => ({ ...previous, loading: true }));
+    setAttempt((current) => current + 1);
+  } };
 }
 
 function useKnowledgeAsset(document: KnowledgeDocument, asset: KnowledgeAsset, transport: ControlTransport): BinaryViewResult {
-  const [state, setState] = useState<BinaryViewState>({ error: null, loading: false, mimeType: '', url: '' });
+  const binding = JSON.stringify([document.baseId, document.id, asset.id, asset.sha256, asset.mimeType, asset.readPath]);
+  const [state, setState] = useState<BinaryViewState>({ binding: '', error: null, loading: false, mimeType: '', url: '' });
   const [attempt, setAttempt] = useState(0);
+  const pending = useRef(false);
   useEffect(() => {
     if (!asset.readPath || !transport.readKnowledgeAsset) {
-      setState({ error: null, loading: false, mimeType: '', url: '' });
+      pending.current = false;
+      setState({ binding, error: null, loading: false, mimeType: '', url: '' });
       return;
     }
     const controller = new AbortController();
     let objectUrl = '';
     let active = true;
-    setState({ error: null, loading: true, mimeType: '', url: '' });
+    pending.current = true;
+    setState((previous) => ({ binding, error: previous.binding === binding ? previous.error : null, loading: true, mimeType: '', url: '' }));
     void transport.readKnowledgeAsset({
       kbId: document.baseId,
       fileId: document.id,
@@ -812,19 +888,32 @@ function useKnowledgeAsset(document: KnowledgeDocument, asset: KnowledgeAsset, t
       signal: controller.signal,
     }).then((payload) => {
       if (!active) return;
+      if (payload.kbId !== document.baseId || payload.fileId !== document.id || payload.assetId !== asset.id
+        || /^[a-f0-9]{64}$/u.test(asset.sha256) && payload.sha256 !== asset.sha256
+        || asset.mimeType && payload.mimeType !== asset.mimeType) {
+        throw new Error('读取到的内容与当前材料不一致，请刷新材料后重试。');
+      }
       objectUrl = URL.createObjectURL(payload.blob);
-      setState({ error: null, loading: false, mimeType: payload.mimeType, url: objectUrl });
+      pending.current = false;
+      setState({ binding, error: null, loading: false, mimeType: payload.mimeType, url: objectUrl });
     }).catch((error: unknown) => {
       if (!active || controller.signal.aborted) return;
-      setState({ error: asError(error), loading: false, mimeType: '', url: '' });
+      pending.current = false;
+      setState({ binding, error: asError(error), loading: false, mimeType: '', url: '' });
     });
     return () => {
       active = false;
+      pending.current = false;
       controller.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [attempt, asset.id, asset.readPath, document.baseId, document.id, transport]);
-  return { ...state, retry: () => setAttempt((current) => current + 1) };
+  }, [attempt, binding, asset.id, asset.mimeType, asset.sha256, asset.readPath, document.baseId, document.id, transport]);
+  return { ...(state.binding === binding ? state : { binding, error: null, loading: true, mimeType: '', url: '' }), retry: () => {
+    if (pending.current) return;
+    pending.current = true;
+    setState((previous) => ({ ...previous, loading: true }));
+    setAttempt((current) => current + 1);
+  } };
 }
 
 function ParsedTable({ table }: { table: KnowledgeTableArtifact }) {
@@ -899,6 +988,8 @@ function fileFormatLabel(value: string): string {
   if (format === 'application/pdf') return 'PDF 文档';
   if (format === 'text/plain') return '文本文档';
   if (format === 'application/json') return 'JSON 文件';
+  if (KNOWLEDGE_AUDIO_SOURCE_MIME_TYPES.includes(format)) return '音频';
+  if (KNOWLEDGE_VIDEO_SOURCE_MIME_TYPES.includes(format)) return '视频';
   if (format.startsWith('image/')) return '图片';
   if (format.includes('wordprocessingml')) return 'Word 文档';
   if (format.includes('spreadsheetml') || format.includes('excel')) return '表格文件';

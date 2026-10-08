@@ -37,6 +37,7 @@ from .vault import MarkdownVault
 from .store import KnowledgeStore, decode_metadata, now_ms, rank_retrieval_hits as _rank_retrieval_hits
 from .structured import restore_blocks, serialize_blocks, structured_spans
 from .reader_artifacts import bound_tables, enrich_assets, structured_tables
+from .media import MEDIA_EXTENSIONS, media_spans, parse_native_media
 from .visual import IMAGE_EXTENSIONS, attach_visual_evidence, parse_native_image, visual_spans
 
 
@@ -67,6 +68,8 @@ _IMAGE_MIME_TYPES = frozenset({"image/jpeg", "image/png", "image/gif", "image/we
 _SOURCE_PREVIEW_MIME_TYPES = _IMAGE_MIME_TYPES | frozenset(
     {
         "image/tiff",
+        "audio/wav", "audio/x-wav", "audio/mpeg", "audio/flac", "audio/x-flac",
+        "audio/ogg", "audio/mp4", "audio/mp4a-latm", "video/mp4", "video/quicktime", "video/webm", "video/x-matroska",
         "application/pdf",
         "text/plain",
         "text/markdown",
@@ -627,7 +630,7 @@ class KnowledgeLibraryService:
             raise KnowledgeLibraryError("invalid asset id", code="invalid_argument")
         row = self.store.document_asset(base_id=base_id, document_id=document_id, asset_id=asset_id)
         media_type = str(row["media_type"] or "").lower()
-        if media_type not in _IMAGE_MIME_TYPES:
+        if media_type not in _IMAGE_MIME_TYPES | {"audio/wav"}:
             raise KnowledgeLibraryError("asset MIME type is not allowed for inline reading", code="asset_type_not_allowed")
         byte_size = int(row["byte_size"])
         if byte_size > self.config.max_asset_read_bytes:
@@ -1471,7 +1474,13 @@ class KnowledgeLibraryService:
                 else parser_mode
             )
             native_images = bool(getattr(getattr(self.dense_index, "provider", None), "supports_images", False))
-            if native_images and effective_parser != "mineru" and source_path.suffix.lower() in IMAGE_EXTENSIONS:
+            native_audio = bool(getattr(getattr(self.dense_index, "provider", None), "supports_audio", False))
+            if source_path.suffix.lower() in MEDIA_EXTENSIONS:
+                if effective_parser == "mineru":
+                    raise DocumentParseError("MinerU does not support media", code="unsupported_type")
+                parsed = parse_native_media(source_path, supports_images=native_images, supports_audio=native_audio,
+                    should_stop=lambda: self._job_should_stop(job_id, revision))
+            elif native_images and effective_parser != "mineru" and source_path.suffix.lower() in IMAGE_EXTENSIONS:
                 parsed = parse_native_image(source_path)
             else:
                 try:
@@ -1480,7 +1489,7 @@ class KnowledgeLibraryService:
                     if not native_images or source_path.suffix.lower() != ".pdf" or exc.code not in {"pdf_needs_ocr", "empty_document"}:
                         raise
                     parsed = ParsedDocument(text="[PDF visual source]", provider="builtin", provider_version="native-pdf-v1", metadata={"textSource": "source-label", "ocrApplied": False})
-            if native_images:
+            if native_images and not parsed.metadata.get("nativeMediaEmbeddings"):
                 parsed = attach_visual_evidence(parsed, source_path)
             parsed = ParserRouter.validate_output(parsed, source_path)
             if self._job_should_stop(job_id, revision):
@@ -1553,19 +1562,21 @@ class KnowledgeLibraryService:
                 for chunk in chunks:
                     projection = dict(chunk)
                     provenance = chunk.get("provenance") or {}
-                    if provenance.get("modality") == "image":
+                    if provenance.get("modality") in {"image", "audio"}:
                         asset = assets_by_hash.get(str(provenance.get("assetSha256") or ""))
-                        if asset is None or not str(asset["media_type"]).startswith("image/"):
-                            raise KnowledgeLibraryError("visual evidence has no matching local image asset", code="asset_unavailable")
+                        if asset is None or not str(asset["media_type"]).startswith(str(provenance["modality"]) + "/"):
+                            raise KnowledgeLibraryError("media evidence has no matching local asset", code="asset_unavailable")
                         asset_path = _safe_stored_path(Path(str(asset["stored_path"])), root=self.config.assets_dir)
                         if hashlib.sha256(asset_path.read_bytes()).hexdigest() != str(asset["sha256"]):
-                            raise KnowledgeLibraryError("visual asset content changed", code="asset_hash_mismatch")
-                        projection["image_path"] = str(asset_path)
+                            raise KnowledgeLibraryError("media asset content changed", code="asset_hash_mismatch")
+                        projection[f"{provenance['modality']}_path"] = str(asset_path)
                     projection_chunks.append(projection)
                 self.dense_index.replace_document(document_id, projection_chunks)
                 self._dense_error = ""
             except Exception as exc:
                 self._dense_error = str(exc)
+                if parsed.metadata.get("nativeMediaEmbeddings"):
+                    raise DocumentParseError("native media embedding failed", code="media_embedding_failed") from exc
             with self._job_state_lock:
                 if not self._job_is_active_locked(job_id, revision):
                     return self._document_result_or_deleted(document_id, base_id=base_id)
@@ -1808,8 +1819,8 @@ def _chunk_with_visual_evidence(
     base_id: str,
     chunking_config: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    chunks = _chunk_document(parsed, document_id=document_id, base_id=base_id, chunking_config=chunking_config)
-    for span in visual_spans(parsed):
+    chunks = [] if parsed.metadata.get("nativeMediaEmbeddings") else _chunk_document(parsed, document_id=document_id, base_id=base_id, chunking_config=chunking_config)
+    for span in [*visual_spans(parsed), *media_spans(parsed)]:
         provenance = {**span["provenance"], "assetReadPath": f"/api/knowledge-bases/{base_id}/documents/{document_id}/assets/{span['provenance']['assetSha256']}"}
         chunks.append({**_chunk_record(document_id, base_id, len(chunks), span["content"], span["heading"], span["page"]), "provenance": provenance})
     return chunks

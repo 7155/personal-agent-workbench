@@ -109,7 +109,7 @@ class NativeImageProviderTests(unittest.TestCase):
         provider = SentenceTransformerEmbeddingProvider(model="google/embeddinggemma-2")
         self.assertEqual(provider.query_prefix, "task: search result | query: ")
         self.assertEqual(provider.document_prefix, "title: none | text: ")
-        self.assertEqual(embedding_provider_info(provider)["modalities"], ["text", "image"])
+        self.assertEqual(embedding_provider_info(provider)["modalities"], ["text", "image", "audio"])
         self.assertFalse(SentenceTransformerEmbeddingProvider(model="BAAI/bge-base-zh-v1.5").supports_images)
 
     def test_remote_and_unsupported_image_references_do_not_become_native_vectors(self):

@@ -455,6 +455,53 @@ describe('HttpControlTransport', () => {
     expect(calls).toHaveLength(1);
   });
 
+  it.each(['audio/wav', 'audio/x-wav', 'audio/mpeg', 'audio/flac', 'audio/x-flac', 'audio/ogg', 'audio/mp4', 'audio/mp4a-latm', 'video/mp4', 'video/quicktime', 'video/webm', 'video/x-matroska'])('reads implemented media source %s without widening the id-only route', async (mimeType) => {
+    const bytes = new Uint8Array([82, 73, 70, 70]);
+    const hash = await sha256(bytes);
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(bytes, { headers: {
+      'Content-Type': mimeType, 'Content-Length': String(bytes.length), ETag: `"${hash}"`,
+      'X-Content-Type-Options': 'nosniff', 'Content-Disposition': 'inline; filename="source"',
+    } }));
+    const transport = new HttpControlTransport({ baseUrl: 'http://127.0.0.1:8766', fetch: fetchMock as typeof fetch });
+    const controller = new AbortController();
+    await expect(transport.readKnowledgeDocumentSource({ kbId: 'base', fileId: 'media', signal: controller.signal })).resolves.toMatchObject({ mimeType, sha256: hash });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe('http://127.0.0.1:8766/api/knowledge-bases/base/documents/media/source');
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: 'GET', signal: controller.signal });
+    await expect(transport.readKnowledgeDocumentSource({ kbId: 'base', fileId: 'media', path: '/private/source' } as never)).rejects.toThrow('unsupported field');
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('reads only the implemented WAV asset and retains hash, size and MIME fences', async () => {
+    const bytes = new Uint8Array([82, 73, 70, 70]);
+    const hash = await sha256(bytes);
+    let mimeType = 'audio/wav'; let entityTag = hash; let size = bytes.length;
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(bytes, { headers: {
+      'Content-Type': mimeType, 'Content-Length': String(size), ETag: `"${entityTag}"`,
+      'X-Content-Type-Options': 'nosniff', 'Content-Disposition': 'inline; filename="segment.wav"',
+    } }));
+    const transport = new HttpControlTransport({ baseUrl: 'http://127.0.0.1:8766', fetch: fetchMock as typeof fetch });
+    await expect(transport.readKnowledgeAsset({ kbId: 'base', fileId: 'media', assetId: hash })).resolves.toMatchObject({ mimeType: 'audio/wav', sha256: hash });
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(`http://127.0.0.1:8766/api/knowledge-bases/base/documents/media/assets/${hash}`);
+    for (const rejected of ['audio/mpeg', 'audio/unknown', 'video/mp4', 'image/svg+xml', 'text/html']) {
+      mimeType = rejected;
+      await expect(transport.readKnowledgeAsset({ kbId: 'base', fileId: 'media', assetId: hash })).rejects.toThrow('invalid security headers');
+    }
+    mimeType = 'audio/wav'; entityTag = 'a'.repeat(64);
+    await expect(transport.readKnowledgeAsset({ kbId: 'base', fileId: 'media', assetId: hash })).rejects.toThrow('invalid security headers');
+    entityTag = hash; size += 1;
+    await expect(transport.readKnowledgeAsset({ kbId: 'base', fileId: 'media', assetId: hash })).rejects.toThrow('bounded receipt');
+  });
+
+  it.each(['audio/unknown', 'video/unknown', 'image/svg+xml', 'text/html'])('rejects unsupported source MIME %s', async (mimeType) => {
+    const bytes = new Uint8Array([1]); const hash = await sha256(bytes);
+    const transport = new HttpControlTransport({ baseUrl: 'http://127.0.0.1:8766', fetch: vi.fn(async () => new Response(bytes, { headers: {
+      'Content-Type': mimeType, 'Content-Length': '1', ETag: `"${hash}"`,
+      'X-Content-Type-Options': 'nosniff', 'Content-Disposition': 'inline',
+    } })) as typeof fetch });
+    await expect(transport.readKnowledgeDocumentSource({ kbId: 'base', fileId: 'media' })).rejects.toThrow('invalid security headers');
+  });
+
   it('reconnects SSE with the latest Last-Event-ID and validates envelopes', async () => {
     const headers: string[] = [];
     const payloads = [agentEventFixture(1, 'text_delta', { delta: 'A' }), agentEventFixture(2, 'turn_completed', {})];
