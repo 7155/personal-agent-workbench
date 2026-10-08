@@ -769,16 +769,37 @@
   align-content: center;
   gap: 7px;
   padding: 10px 12px 10px 15px;
+  /* Keep the semantic target rectangular; the rounded face paints separately. */
+  border: 1px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--paw-wb-ink);
+  text-align: left;
+  isolation: isolate;
+  cursor: pointer;
+  transform: translate(var(--paw-wb-node-x), var(--paw-wb-node-y));
+  transition: translate 140ms var(--paw-wb-ease-out);
+  animation: paw-wb-node-enter 460ms var(--paw-wb-ease-out) backwards;
+}
+
+.paw-workbench .paw-wb-task-node::before {
+  content: '';
+  position: absolute;
+  /* Absolute positioning starts at the padding edge, inside the 1px border. */
+  inset: -1px;
+  z-index: -1;
+  pointer-events: none;
   border: 1px solid var(--paw-wb-line);
   border-radius: 13px;
   background: var(--paw-wb-surface);
-  color: var(--paw-wb-ink);
-  text-align: left;
   box-shadow: var(--paw-wb-shadow);
-  cursor: pointer;
-  transform: translate(var(--paw-wb-node-x), var(--paw-wb-node-y));
-  transition: border-color 140ms ease-out, box-shadow 170ms ease-out, translate 140ms var(--paw-wb-ease-out);
-  animation: paw-wb-node-enter 460ms var(--paw-wb-ease-out) backwards;
+  transition: border-color 140ms ease-out, box-shadow 170ms ease-out;
+}
+
+.paw-workbench .paw-wb-task-node:focus-visible { outline: none; }
+.paw-workbench .paw-wb-task-node:focus-visible::before {
+  outline: 3px solid rgb(49 94 172 / 30%);
+  outline-offset: 2px;
 }
 
 /* Arrival stagger reads as the plan assembling itself; reduced motion
@@ -789,9 +810,10 @@
 .paw-workbench .paw-wb-task-node:nth-of-type(5) { animation-delay: 180ms; }
 .paw-workbench .paw-wb-task-node:nth-of-type(n + 6) { animation-delay: 220ms; }
 
-.paw-workbench .paw-wb-task-node:hover { translate: 0 -2px; box-shadow: 0 8px 22px rgb(23 31 43 / 12%); }
-.paw-workbench .paw-wb-task-node[aria-pressed='true'] { border-color: var(--paw-wb-accent); box-shadow: 0 0 0 3px rgb(49 94 172 / 20%), 0 8px 22px rgb(23 31 43 / 11%); }
-.paw-workbench .paw-wb-task-node[data-gate='true'] { border-color: rgb(164 82 0 / 58%); }
+.paw-workbench .paw-wb-task-node:hover { translate: 0 -2px; }
+.paw-workbench .paw-wb-task-node:hover::before { box-shadow: 0 8px 22px rgb(23 31 43 / 12%); }
+.paw-workbench .paw-wb-task-node[aria-pressed='true']::before { border-color: var(--paw-wb-accent); box-shadow: 0 0 0 3px rgb(49 94 172 / 20%), 0 8px 22px rgb(23 31 43 / 11%); }
+.paw-workbench .paw-wb-task-node[data-gate='true']::before { border-color: rgb(164 82 0 / 58%); }
 .paw-workbench .paw-wb-task-node__title { min-width: 0; display: grid; grid-template-columns: 8px minmax(0, 1fr); align-items: center; gap: 8px; }
 .paw-workbench .paw-wb-task-node__title strong { overflow: hidden; font-size: 14px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
 .paw-workbench .paw-wb-task-node__meta { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -1371,7 +1393,7 @@
 @media (forced-colors: active) {
   .paw-workbench :is(.paw-wb-status-mark, .paw-wb-task-progress > i, .paw-wb-flow-packet) { background: currentColor; fill: currentColor; forced-color-adjust: none; }
   .paw-workbench .paw-wb-status-mark { box-shadow: none; }
-  .paw-workbench .paw-wb-task-node[aria-pressed='true'] { outline: 2px solid Highlight; }
+  .paw-workbench .paw-wb-task-node[aria-pressed='true']::before { outline: 2px solid Highlight; }
   .paw-workbench .paw-wb-now { border: 1px solid CanvasText; }
 }
 
