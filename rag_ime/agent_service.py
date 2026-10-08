@@ -701,6 +701,7 @@ class AgentService:
         self.wake_schedules = AgentWakeScheduleStore(db_path)
         self.wake_schedules.initialize()
         self.wake_application = AgentWakeApplicationService(
+            command_receipts=self.command_receipts,
             schedules=self.wake_schedules,
             sessions=self.sessions,
             personas=self.personas,
@@ -726,9 +727,11 @@ class AgentService:
             on_tick=self._run_scheduled_work_once,
         )
         self.wake_application.bind_scheduler(self.wake_scheduler)
-        self._remove_wake_observer = self.events.add_observer(
-            self.wake_scheduler.observe_event
-        )
+        def observe_wake_event(event: AgentEventEnvelope) -> None:
+            # EventHub notifications discard the settlement result.
+            self.wake_scheduler.observe_event(event)
+
+        self._remove_wake_observer = self.events.add_observer(observe_wake_event)
         self.room_dispatch = RoomSessionDispatchService(
             rooms=self.rooms, room_work=self.room_work, room_events=self.room_events,
             room_turns=self.room_turns, room_partner_dispatches=self.room_partner_dispatches,
@@ -1059,13 +1062,14 @@ class AgentService:
         return self.eval_runs.get(eval_run_id) is not None
 
     def _run_scheduled_work_once(self, now_ms: int | None = None) -> int:
+        reconciled_wakes = self.wake_application.reconcile_once()
         application = getattr(self, "jev_application", None)
         count = application.tick() if application is not None else 0
         work = getattr(self, "coordinator_work", None)
         harvested = work.reconcile_once(limit=20) if work is not None else 0
         delivery = getattr(self, "coordinator_delivery", None)
         notified = delivery.reconcile_once() if delivery is not None else 0
-        return count + harvested + notified + self._run_eval_schedules_once(now_ms)
+        return reconciled_wakes + count + harvested + notified + self._run_eval_schedules_once(now_ms)
 
     def jev_workspace(self, room_id: str, graph_id: str = "") -> dict[str, object]:
         return self.jev_application.projection(room_id, graph_id)

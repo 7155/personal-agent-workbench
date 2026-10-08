@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-08T07:07:26.402201+00:00",
+  "generatedAt": "2026-10-08T08:18:19.039117+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "undo/paw-experience-20261007",
@@ -202,15 +202,15 @@
       "pathCount": 94
     },
     "architecture_recovery_20261008": {
-      "description": "Transactional Knowledge projection recovery, evaluation-only history, explicit scheduler lifecycle and removal of private implementations without consumers; foreground and installed acceptance are recorded separately.",
-      "pathCount": 12
+      "description": "Transactional Knowledge projection recovery, evaluation-only history, explicit scheduler lifecycle and removal of private implementations without consumers; foreground and installed acceptance are recorded separately. Preserve known original Wake admissions and reconcile exact durable evidence without effect replay.",
+      "pathCount": 13
     }
   },
   "summary": {
-    "pathCount": 2224,
+    "pathCount": 2225,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1908
+      "keep_release": 1909
     },
     "groupCounts": {
       "local_docs": 121,
@@ -240,7 +240,7 @@
       "conversation_controls": 65,
       "durable_desktop_iteration": 28,
       "trace_optimization": 63,
-      "architecture_recovery_20261008": 12,
+      "architecture_recovery_20261008": 13,
       "scheduled_tasks": 25,
       "session_full_access": 8,
       "mac_local_update_20261006": 8,
@@ -15833,6 +15833,13 @@
       "disposition": "keep_release",
       "group": "refactor_integration",
       "reason": "Inventory the Python dependency lockfile already committed in 0e128f50; the Earth inventory repair adds no unrelated dependency changes."
+    },
+    {
+      "path": "tests/test_agent_wake_reconciliation.py",
+      "status": "added",
+      "group": "architecture_recovery_20261008",
+      "reason": "Verify original Wake admission retention and exact passive reconciliation, including uncertain ACK, lease expiry, cancellation and no replay.",
+      "disposition": "keep_release"
     }
   ]
 }
