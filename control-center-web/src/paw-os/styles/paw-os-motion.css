@@ -346,10 +346,6 @@
     box-shadow var(--paw-motion-feedback) ease;
 }
 
-.paw-terminal-tab[data-selected] {
-  transform: translate3d(0, -1px, 0);
-}
-
 @starting-style {
   .paw-terminal-connecting,
   .paw-terminal-error,

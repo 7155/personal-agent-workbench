@@ -83,6 +83,7 @@ export function ManagementMutationWorkflow<Context>({
   title: string;
 }) {
   const [stage, setStage] = useState<'idle' | 'preview' | 'approval' | 'receipt' | 'rolled-back'>('idle');
+  const [pendingTriggerLabel, setPendingTriggerLabel] = useState<string | null>(null);
   const [approved, setApproved] = useState(false);
   const [preview, setPreview] = useState<ManagementWorkPreview<Context> | null>(null);
   const [receipt, setReceipt] = useState<ManagementWorkReceipt | null>(null);
@@ -186,6 +187,7 @@ export function ManagementMutationWorkflow<Context>({
   const actionable = availability.state === 'available' && !disabled;
   const previewExpired = Boolean(preview && preview.expiresAtMs <= Date.now());
   const isWorking = previewMutation.isPending || applyMutation.isPending || rollbackMutation.isPending;
+  const triggerLabel = previewMutation.isError ? '重新尝试' : declaredDangerous ? '查看影响' : title;
   const liveStatus = previewMutation.isPending
     ? declaredDangerous ? '正在准备影响说明' : '正在准备更改'
     : applyMutation.isPending
@@ -216,11 +218,16 @@ export function ManagementMutationWorkflow<Context>({
             disabled={!actionable}
             leadingIcon={declaredDangerous ? <ShieldCheck size={15} /> : <Check size={15} />}
             loading={previewMutation.isPending || applyMutation.isPending || availability.state === 'checking'}
-            onClick={() => previewMutation.mutate()}
+            onClick={() => {
+              // Pending clears the preview error before direct apply finishes.
+              setPendingTriggerLabel(triggerLabel);
+              previewMutation.mutate();
+            }}
+            preserveFocusWhileLoading
             size="small"
             variant={declaredDangerous ? 'danger' : 'primary'}
           >
-            {previewMutation.isError ? '重新尝试' : declaredDangerous ? '查看影响' : title}
+            {isWorking ? pendingTriggerLabel ?? triggerLabel : triggerLabel}
           </Button>
         ) : null}
       </div>
@@ -311,6 +318,7 @@ export function ManagementMutationWorkflow<Context>({
               disabled={!approved || previewExpired || !actionable || applyMutation.isError}
               loading={applyMutation.isPending}
               onClick={() => applyMutation.mutate(preview)}
+              preserveFocusWhileLoading
               size="small"
               variant={preview.summary.risk === 'R3' ? 'danger' : 'primary'}
             >
@@ -351,6 +359,7 @@ export function ManagementMutationWorkflow<Context>({
                 leadingIcon={<RotateCcw size={14} />}
                 loading={rollbackMutation.isPending}
                 onClick={() => rollbackMutation.mutate({ applied: receipt, boundPreview: preview })}
+                preserveFocusWhileLoading
                 size="small"
               >
                 {requiresConfirmation ? '撤销这次更改' : '撤销'}

@@ -527,6 +527,7 @@
 }
 
 .paw-workbench .paw-wb-detail {
+  min-width: 0;
   min-height: 0;
   overflow: auto;
   background: var(--paw-wb-surface);
@@ -680,6 +681,8 @@
 .paw-workbench .paw-wb-graph > header span { color: var(--paw-wb-muted); font-size: 13px; line-height: 1.4; font-variant-numeric: tabular-nums; }
 
 .paw-workbench .paw-wb-graph__viewport {
+  /* The resource notice may be absent; the viewport still owns the flex row. */
+  grid-row: 3;
   min-width: 0;
   min-height: 0;
   overflow: auto;
@@ -817,7 +820,7 @@
 .paw-workbench .paw-wb-detail > header p { margin-top: 3px; color: var(--paw-wb-muted); font-size: 14px; line-height: 1.45; }
 .paw-workbench .paw-wb-detail__actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
 .paw-workbench .paw-wb-detail__actions button {
-  min-height: 31px;
+  min-height: var(--paw-wb-control-size);
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -828,6 +831,8 @@
   color: var(--paw-wb-muted);
   font-size: 13px;
   line-height: 1.4;
+  white-space: nowrap;
+  scroll-margin-block: 16px;
   cursor: pointer;
 }
 .paw-workbench .paw-wb-detail__actions button:first-child { color: var(--paw-wb-accent); }
@@ -1191,8 +1196,16 @@
 
 @container paw-native-stage (max-width: 1050px) {
   .paw-workbench .paw-wb-overview__workspace { grid-template-columns: minmax(0, 1.1fr) minmax(252px, .9fr); }
-  .paw-workbench .paw-wb-orchestration { grid-template-columns: 190px minmax(360px, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
-  .paw-workbench .paw-wb-orchestration > .paw-wb-detail { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 11px 14px; overflow: hidden; border-top: 1px solid var(--paw-wb-line); border-left: 0; transition: box-shadow 180ms ease-out; }
+  /* Detail content must not consume the graph's last usable row. Short
+     windows scroll this band, with room inside the resize pointer boundary. */
+  .paw-workbench .paw-wb-orchestration {
+    grid-template-columns: 190px minmax(360px, 1fr);
+    grid-template-rows: minmax(240px, 1fr) auto;
+    overflow-y: auto;
+    padding-bottom: 16px;
+    scroll-padding-block: 16px;
+  }
+  .paw-workbench .paw-wb-orchestration > .paw-wb-detail { grid-column: 1 / -1; min-height: auto; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 11px 14px; overflow: hidden; border-top: 1px solid var(--paw-wb-line); border-left: 0; transition: box-shadow 180ms ease-out; }
   .paw-workbench .paw-wb-detail > header { position: static; min-width: 0; padding: 0; border-bottom: 0; background: none; }
   .paw-workbench .paw-wb-detail__actions { margin: 0; }
   .paw-workbench .paw-wb-detail__compact-toggle { display: inline-flex; }
@@ -1244,7 +1257,12 @@
   .paw-workbench .paw-wb-overview__side:has(> [data-pane='goals']) { grid-template-rows: none; grid-auto-rows: auto; }
   .paw-workbench .paw-wb-pane > :is(.paw-wb-pane__list, .paw-wb-pane__rows, .paw-wb-pane__goals) { max-height: 318px; }
   .paw-workbench .paw-wb-ledger { position: sticky; bottom: 0; }
-  .paw-workbench .paw-wb-orchestration { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; }
+  .paw-workbench .paw-wb-orchestration { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(240px, 1fr) auto; }
+  /* The App container can stay narrow after the desktop viewport widens.
+     Identity and verbs each use the full detail width, and its expanded facts
+     join the same planning scroll instead of shrinking the graph behind it. */
+  .paw-workbench .paw-wb-orchestration > .paw-wb-detail { grid-template-columns: minmax(0, 1fr); align-items: start; overflow: visible; }
+  .paw-workbench .paw-wb-detail[data-expanded='true'] { max-height: none; overflow: visible; }
   .paw-workbench .paw-wb-outline { max-height: 190px; border-right: 0; border-bottom: 1px solid var(--paw-wb-line); }
   .paw-workbench .paw-wb-outline > ol:not(.paw-wb-outline__tasks) { display: none; }
   .paw-workbench .paw-wb-outline__tasks { grid-auto-flow: column; grid-auto-columns: minmax(180px, 1fr); overflow-x: auto; }

@@ -20,33 +20,93 @@ describe('ManagementMutationWorkflow feedback and confirmation', () => {
     const user = userEvent.setup();
     const pendingPreview = deferred<ManagementWorkPreview<TestContext>>();
     const pendingApply = deferred<ManagementWorkReceipt>();
+    const pendingRollback = deferred<ManagementWorkReceipt>();
+    const boundPreview = previewFixture('R2');
+    const appliedReceipt = receiptFixture(true);
     const onPreview = vi.fn(() => pendingPreview.promise);
     const onApply = vi.fn(() => pendingApply.promise);
-    const onRollback = vi.fn(async () => receiptFixture());
+    const onRollback = vi.fn(() => pendingRollback.promise);
 
     renderWorkflow({ onApply, onPreview, onRollback, risk: 'R2', title: '保存设置' });
 
     const trigger = screen.getByRole('button', { name: '保存设置' });
-    await user.click(trigger);
-    expect(trigger).toBeDisabled();
+    trigger.focus();
+    await user.keyboard('{Enter}');
+    expect(trigger).toBeEnabled();
+    expect(trigger).toHaveFocus();
+    expect(trigger).toHaveAttribute('aria-disabled', 'true');
     expect(trigger).toHaveAttribute('aria-busy', 'true');
     expect(screen.getByText('正在准备更改')).toBeInTheDocument();
 
+    await user.keyboard('{Enter} ');
     await user.click(trigger);
     expect(onPreview).toHaveBeenCalledTimes(1);
 
-    await act(async () => pendingPreview.resolve(previewFixture('R2')));
+    await act(async () => pendingPreview.resolve(boundPreview));
     await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('button', { name: '保存设置' })).toBe(trigger);
+    expect(trigger).toHaveFocus();
+    expect(trigger).toHaveAttribute('aria-disabled', 'true');
     expect(screen.queryByText('继续确认')).not.toBeInTheDocument();
     expect(screen.getByText('正在保存更改')).toBeInTheDocument();
+    await user.keyboard('{Enter} ');
+    await user.click(trigger);
+    expect(onPreview).toHaveBeenCalledTimes(1);
+    expect(onApply).toHaveBeenCalledTimes(1);
 
-    await act(async () => pendingApply.resolve(receiptFixture(true)));
+    await act(async () => pendingApply.resolve(appliedReceipt));
     const receipt = await screen.findByRole('status');
     expect(receipt).toHaveTextContent('已保存');
     expect(receipt).toHaveFocus();
-    expect(within(receipt).getByRole('button', { name: '撤销' })).toBeEnabled();
-    await user.click(within(receipt).getByRole('button', { name: '完成' }));
+    const undo = within(receipt).getByRole('button', { name: '撤销' });
+    undo.focus();
+    await user.keyboard('{Enter}');
+    expect(undo).toBeEnabled();
+    expect(undo).toHaveFocus();
+    expect(undo).toHaveAttribute('aria-disabled', 'true');
+    expect(undo).toHaveAttribute('aria-busy', 'true');
+    expect(within(receipt).getByRole('button', { name: '撤销' })).toBe(undo);
+    expect(within(receipt).getByRole('button', { name: '完成' })).toBeDisabled();
+    await user.keyboard('{Enter} ');
+    await user.click(undo);
+    expect(onRollback).toHaveBeenCalledTimes(1);
+    expect(onRollback).toHaveBeenCalledWith(appliedReceipt, boundPreview);
+    await act(async () => pendingRollback.resolve(receiptFixture()));
+    const restored = await screen.findByRole('status');
+    expect(restored).toHaveTextContent('已恢复到更改前');
+    expect(restored).toHaveFocus();
+    await user.click(within(restored).getByRole('button', { name: '完成' }));
     expect(screen.getByRole('button', { name: '保存设置' })).toHaveFocus();
+  });
+
+  it.each(['创建任务', '完成所选任务', '重新打开所选任务'])('keeps the original %s target focused through direct preview and apply', async (title) => {
+    const user = userEvent.setup();
+    const pendingPreview = deferred<ManagementWorkPreview<TestContext>>();
+    const pendingApply = deferred<ManagementWorkReceipt>();
+    const onPreview = vi.fn(() => pendingPreview.promise);
+    const onApply = vi.fn(() => pendingApply.promise);
+    renderWorkflow({ onApply, onPreview, risk: 'R1', title });
+
+    const trigger = screen.getByRole('button', { name: title });
+    trigger.focus();
+    await user.keyboard('{Enter}');
+    expect(trigger).toBeEnabled();
+    expect(trigger).toHaveFocus();
+    expect(trigger).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('button', { name: title })).toBe(trigger);
+
+    await act(async () => pendingPreview.resolve(previewFixture('R1')));
+    await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1));
+    expect(trigger).toHaveFocus();
+    expect(trigger).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('button', { name: title })).toBe(trigger);
+    await user.keyboard('{Enter} ');
+    await user.click(trigger);
+    expect(onPreview).toHaveBeenCalledTimes(1);
+    expect(onApply).toHaveBeenCalledTimes(1);
+
+    await act(async () => pendingApply.resolve(receiptFixture()));
+    expect(await screen.findByRole('status')).toHaveFocus();
   });
 
   it('uses the server preview as the authority and confirms an R3 escalation', async () => {
@@ -90,12 +150,18 @@ describe('ManagementMutationWorkflow feedback and confirmation', () => {
     const checkbox = screen.getByRole('checkbox');
     await user.click(checkbox);
     const applyButton = screen.getByRole('button', { name: '确认执行' });
-    await user.click(applyButton);
+    applyButton.focus();
+    await user.keyboard('{Enter}');
 
     expect(checkbox).toBeDisabled();
     expect(screen.getByRole('button', { name: '返回查看' })).toBeDisabled();
-    expect(applyButton).toBeDisabled();
+    expect(applyButton).toBeEnabled();
+    expect(applyButton).toHaveFocus();
+    expect(applyButton).toHaveAttribute('aria-disabled', 'true');
     expect(applyButton).toHaveAttribute('aria-busy', 'true');
+    await user.keyboard('{Enter} ');
+    await user.click(applyButton);
+    expect(onApply).toHaveBeenCalledTimes(1);
 
     await act(async () => pendingApply.reject(new Error('网络暂时不可用，请稍后重试。')));
     const alert = await screen.findByRole('alert');
@@ -107,15 +173,18 @@ describe('ManagementMutationWorkflow feedback and confirmation', () => {
     expect(screen.getByRole('button', { name: '查看影响' })).toHaveFocus();
   });
 
-  it('offers a visible retry after preview failure without exposing technical details', async () => {
+  it('keeps the original retry name and focus through held preview and apply after a sanitized failure', async () => {
     const user = userEvent.setup();
+    const pendingRetryPreview = deferred<ManagementWorkPreview<TestContext>>();
+    const pendingRetryApply = deferred<ManagementWorkReceipt>();
     const onPreview = vi.fn()
       .mockRejectedValueOnce(new Error('POST /api/internal payloadSha256=secret'))
-      .mockResolvedValueOnce(previewFixture('R1'));
-    const onApply = vi.fn(async () => receiptFixture());
+      .mockImplementationOnce(() => pendingRetryPreview.promise);
+    const onApply = vi.fn(() => pendingRetryApply.promise);
 
     renderWorkflow({ onApply, onPreview, risk: 'R1', title: '保存设置' });
-    await user.click(screen.getByRole('button', { name: '保存设置' }));
+    const trigger = screen.getByRole('button', { name: '保存设置' });
+    await user.click(trigger);
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('预览失败');
@@ -124,8 +193,38 @@ describe('ManagementMutationWorkflow feedback and confirmation', () => {
     expect(within(alert).getByRole('button', { name: '交给 Trace Agent' })).toBeInTheDocument();
     expect(alert.parentElement).toHaveFocus();
 
-    await user.click(screen.getByRole('button', { name: '重新尝试' }));
-    expect(await screen.findByRole('status')).toHaveTextContent('已保存');
+    const retry = screen.getByRole('button', { name: '重新尝试' });
+    const retryLabel = retry.querySelector('.ui-button__label');
+    expect(retry).toBe(trigger);
+    retry.focus();
+    await user.keyboard('{Enter}');
+    expect(retry).toHaveAccessibleName('重新尝试');
+    expect(screen.getByRole('button', { name: '重新尝试' })).toBe(retry);
+    expect(retry.querySelector('.ui-button__label')).toBe(retryLabel);
+    expect(retry).toHaveFocus();
+    expect(retry).toBeEnabled();
+    expect(retry).toHaveAttribute('aria-disabled', 'true');
+    expect(retry).toHaveAttribute('aria-busy', 'true');
+    await user.keyboard('{Enter} ');
+    await user.click(retry);
+    expect(onPreview).toHaveBeenCalledTimes(2);
+    expect(onApply).not.toHaveBeenCalled();
+
+    await act(async () => pendingRetryPreview.resolve(previewFixture('R1')));
+    await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1));
+    expect(retry).toHaveAccessibleName('重新尝试');
+    expect(screen.getByRole('button', { name: '重新尝试' })).toBe(retry);
+    expect(retry.querySelector('.ui-button__label')).toBe(retryLabel);
+    expect(retry).toHaveFocus();
+    expect(retry).toHaveAttribute('aria-disabled', 'true');
+    expect(retry).toHaveAttribute('aria-busy', 'true');
+    await user.keyboard('{Enter} ');
+    await user.click(retry);
+    await act(async () => pendingRetryApply.resolve(receiptFixture()));
+    const receipt = await screen.findByRole('status');
+    expect(receipt).toHaveTextContent('已保存');
+    expect(receipt).toHaveFocus();
+    expect(screen.queryByRole('button', { name: '重新尝试' })).not.toBeInTheDocument();
     expect(onPreview).toHaveBeenCalledTimes(2);
     expect(onApply).toHaveBeenCalledTimes(1);
   });
