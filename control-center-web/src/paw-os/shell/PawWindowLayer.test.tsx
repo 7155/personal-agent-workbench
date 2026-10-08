@@ -627,6 +627,179 @@ describe('PAWOS compositor window frame', () => {
     expect(screen.getByLabelText('Rooms窗口')).toHaveAttribute('data-placement', 'maximized');
   });
 
+  it.each([
+    { kind: 'close', settlement: 'resolve' }, { kind: 'close', settlement: 'reject' },
+    { kind: 'minimize', settlement: 'resolve' }, { kind: 'minimize', settlement: 'reject' },
+  ] as const)('preserves a foreground reopen while the old $kind animation $settlement settles', async ({ kind, settlement }) => {
+    const animations = controlledWindowAnimations();
+    try {
+      render(<ControlTransportProvider transport={createPreviewTransport()}><PawDesktopProvider initialAppId="agent">
+        <CaptureDesktopApi /><PawWindowLayer />
+      </PawDesktopProvider></ControlTransportProvider>);
+      const api = capturedDesktopApi!;
+      const shell = document.querySelector('[data-paw-window-id="agent"]') as HTMLElement;
+      fireEvent.click(within(shell).getByRole('button', { name: kind === 'close' ? '关闭窗口' : '最小化窗口' }));
+      const exiting = animations.calls.find((call) => call.options.fill === 'forwards')!;
+      expect(exiting).toBeDefined();
+      expect(api.getState().windows.agent).toBeDefined();
+      act(() => {
+        api.getState().openApp('agent', { title: '重新打开的对话' });
+        api.getState().openApp('agent');
+        api.getState().openApp('agent');
+        expect(exiting.cancel).toHaveBeenCalledTimes(1);
+        expect(exiting.target).not.toHaveAttribute('data-exiting');
+      });
+      await act(async () => exiting[settlement]());
+      expect(api.getState().windows.agent).toMatchObject({ title: '重新打开的对话', minimized: false });
+      expect(api.getState().activeWindowId).toBe('agent');
+      expect(document.querySelector('[data-paw-window-id="agent"]')).toBe(shell);
+    } finally {
+      cleanup();
+      animations.restore();
+    }
+  });
+
+  it.each(['close', 'minimize'] as const)('finishes an uninterrupted %s once despite repeated clicks', async (kind) => {
+    const animations = controlledWindowAnimations();
+    try {
+      renderMotionDesktop();
+      const api = capturedDesktopApi!;
+      const button = within(document.querySelector('[data-paw-window-id="agent"]') as HTMLElement)
+        .getByRole('button', { name: kind === 'close' ? '关闭窗口' : '最小化窗口' });
+      fireEvent.click(button);
+      fireEvent.click(button);
+      const exits = animations.calls.filter((call) => call.options.fill === 'forwards');
+      expect(exits).toHaveLength(1);
+      await act(async () => exits[0]!.resolve());
+      expect(exits[0]!.cancel).toHaveBeenCalledTimes(1);
+      expect(exits[0]!.target).not.toHaveAttribute('data-exiting');
+      if (kind === 'close') expect(api.getState().windows.agent).toBeUndefined();
+      else expect(api.getState().windows.agent?.minimized).toBe(true);
+    } finally { cleanup(); animations.restore(); }
+  });
+
+  it.each(['close', 'minimize'] as const)('cancels %s on a focus request for the already active window', async (kind) => {
+    const animations = controlledWindowAnimations();
+    try {
+      renderMotionDesktop();
+      const api = capturedDesktopApi!;
+      fireEvent.click(screen.getByRole('button', { name: kind === 'close' ? '关闭窗口' : '最小化窗口' }));
+      const exiting = animations.calls.find((call) => call.options.fill === 'forwards')!;
+      act(() => api.getState().focusWindow('agent'));
+      expect(exiting.cancel).toHaveBeenCalledTimes(1);
+      await act(async () => exiting.reject());
+      expect(api.getState().windows.agent?.minimized).toBe(false);
+    } finally { cleanup(); animations.restore(); }
+  });
+
+  it.each(['background same window', 'foreground other window'] as const)('does not cancel close for a %s request', async (request) => {
+    const animations = controlledWindowAnimations();
+    try {
+      renderMotionDesktop();
+      const api = capturedDesktopApi!;
+      fireEvent.click(screen.getByRole('button', { name: '关闭窗口' }));
+      const exiting = animations.calls.find((call) => call.options.fill === 'forwards')!;
+      act(() => {
+        if (request === 'background same window') api.getState().openApp('agent', { background: true, title: 'Observer refresh' });
+        else api.getState().openApp('eval-lab');
+      });
+      expect(exiting.cancel).not.toHaveBeenCalled();
+      await act(async () => exiting.resolve());
+      expect(api.getState().windows.agent).toBeUndefined();
+      if (request === 'foreground other window') expect(api.getState().activeWindowId).toBe('eval-lab');
+    } finally { cleanup(); animations.restore(); }
+  });
+
+  it('keeps a new exit independent of a cancelled exit completion', async () => {
+    const animations = controlledWindowAnimations();
+    try {
+      renderMotionDesktop();
+      const api = capturedDesktopApi!;
+      fireEvent.click(screen.getByRole('button', { name: '关闭窗口' }));
+      const old = animations.calls.find((call) => call.options.fill === 'forwards')!;
+      act(() => api.getState().openApp('agent'));
+      fireEvent.click(screen.getByRole('button', { name: '最小化窗口' }));
+      const next = animations.calls.filter((call) => call.options.fill === 'forwards')[1]!;
+      await act(async () => old.resolve());
+      expect(next.target).toHaveAttribute('data-exiting', 'minimize');
+      expect(api.getState().windows.agent?.minimized).toBe(false);
+      await act(async () => next.resolve());
+      expect(api.getState().windows.agent?.minimized).toBe(true);
+      act(() => api.getState().focusWindow('agent'));
+      expect(api.getState().windows.agent?.minimized).toBe(false);
+      expect(document.querySelector('[data-paw-window-id="agent"] .paw-window')).not.toHaveAttribute('data-exiting');
+    } finally { cleanup(); animations.restore(); }
+  });
+
+  it('cancels an exit when the window is externally closed and protects a new same-ID frame', async () => {
+    const animations = controlledWindowAnimations();
+    try {
+      renderMotionDesktop();
+      const api = capturedDesktopApi!;
+      const oldShell = document.querySelector('[data-paw-window-id="agent"]');
+      fireEvent.click(screen.getByRole('button', { name: '关闭窗口' }));
+      const old = animations.calls.find((call) => call.options.fill === 'forwards')!;
+      act(() => api.getState().closeWindow('agent'));
+      expect(old.cancel).toHaveBeenCalledTimes(1);
+      act(() => api.getState().openApp('agent'));
+      await act(async () => old.reject());
+      expect(api.getState().windows.agent).toBeDefined();
+      expect(document.querySelector('[data-paw-window-id="agent"]')).not.toBe(oldShell);
+    } finally { cleanup(); animations.restore(); }
+  });
+
+  it('cancels an exit on unmount without mutating the desktop afterward', async () => {
+    const animations = controlledWindowAnimations();
+    try {
+      const view = renderMotionDesktop();
+      const api = capturedDesktopApi!;
+      act(() => api.getState().openApp('agent'));
+      fireEvent.click(screen.getByRole('button', { name: '关闭窗口' }));
+      const old = animations.calls.find((call) => call.options.fill === 'forwards')!;
+      view.unmount();
+      const saved = JSON.parse(window.localStorage.getItem('pawos.desktop.v1')!);
+      expect(saved).not.toHaveProperty('foregroundWindowRequest');
+      expect(createPawDesktopStore(undefined, undefined, saved).getState().foregroundWindowRequest).toBeNull();
+      expect(old.cancel).toHaveBeenCalledTimes(1);
+      expect(old.target).not.toHaveAttribute('data-exiting');
+      await act(async () => old.resolve());
+      expect(api.getState().windows.agent).toBeDefined();
+    } finally { cleanup(); animations.restore(); }
+  });
+
+  it.each(['close', 'minimize'] as const)('commits %s immediately with reduced motion', (kind) => {
+    const animations = controlledWindowAnimations();
+    document.documentElement.dataset.reduceMotion = 'true';
+    try {
+      renderMotionDesktop();
+      const api = capturedDesktopApi!;
+      fireEvent.click(screen.getByRole('button', { name: kind === 'close' ? '关闭窗口' : '最小化窗口' }));
+      expect(animations.calls).toHaveLength(0);
+      if (kind === 'close') expect(api.getState().windows.agent).toBeUndefined();
+      else expect(api.getState().windows.agent?.minimized).toBe(true);
+      act(() => api.getState().openApp('agent'));
+      expect(api.getState().windows.agent?.minimized).toBe(false);
+    } finally { cleanup(); delete document.documentElement.dataset.reduceMotion; animations.restore(); }
+  });
+
+  it.each(['close', 'minimize'] as const)('commits %s immediately without Web Animations', (kind) => {
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'animate');
+    Object.defineProperty(HTMLElement.prototype, 'animate', { configurable: true, value: undefined });
+    try {
+      renderMotionDesktop();
+      const api = capturedDesktopApi!;
+      fireEvent.click(screen.getByRole('button', { name: kind === 'close' ? '关闭窗口' : '最小化窗口' }));
+      if (kind === 'close') expect(api.getState().windows.agent).toBeUndefined();
+      else expect(api.getState().windows.agent?.minimized).toBe(true);
+      act(() => api.getState().openApp('agent'));
+      expect(api.getState().windows.agent?.minimized).toBe(false);
+    } finally {
+      cleanup();
+      if (descriptor) Object.defineProperty(HTMLElement.prototype, 'animate', descriptor);
+      else delete (HTMLElement.prototype as Partial<HTMLElement>).animate;
+    }
+  });
+
   it('reveals an ordinary window in one short responsive beat', () => {
     const descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'animate');
     const calls: Array<{ target: HTMLElement; frames: Keyframe[]; options: KeyframeAnimationOptions }> = [];
@@ -1130,4 +1303,37 @@ function FrameHarness({ appId = 'agent', children, collaborationRole, flowState,
       {children}
     </PawWindowFrame>
   );
+}
+
+function controlledWindowAnimations() {
+  const descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'animate');
+  const calls: Array<{ target: HTMLElement; options: KeyframeAnimationOptions; cancel: ReturnType<typeof vi.fn>; resolve: () => void; reject: () => void }> = [];
+  Object.defineProperty(HTMLElement.prototype, 'animate', {
+    configurable: true,
+    value(this: HTMLElement, _frames: Keyframe[], options: KeyframeAnimationOptions) {
+      let resolve!: () => void;
+      let reject!: () => void;
+      const finished = new Promise<Animation>((yes, no) => {
+        resolve = () => yes(animation);
+        reject = () => no(new DOMException('Cancelled', 'AbortError'));
+      });
+      const cancel = vi.fn(); // Settle separately to exercise queued stale callbacks too.
+      const animation = { cancel, finished } as unknown as Animation;
+      calls.push({ target: this, options, cancel, resolve, reject });
+      return animation;
+    },
+  });
+  return {
+    calls,
+    restore() {
+      if (descriptor) Object.defineProperty(HTMLElement.prototype, 'animate', descriptor);
+      else delete (HTMLElement.prototype as Partial<HTMLElement>).animate;
+    },
+  };
+}
+
+function renderMotionDesktop() {
+  return render(<ControlTransportProvider transport={createPreviewTransport()}><PawDesktopProvider initialAppId="agent">
+    <CaptureDesktopApi /><PawWindowLayer />
+  </PawDesktopProvider></ControlTransportProvider>);
 }
