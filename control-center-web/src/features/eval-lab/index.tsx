@@ -24,9 +24,11 @@ import {
   useEvalLabEvidenceCatalog,
   useEvalLabEvidenceDetail,
   useEvalLabRuns,
+  isEvalLabEvidenceUnavailable,
   type EvalLabComparisonResult,
   type EvalLabEvidenceRun,
   type EvalLabEvidenceDetail,
+  type EvalLabEvidenceProjectionDetail,
   type EvalLabEvidenceResponse,
   type EvalLabEvidenceTask,
   type EvalLabFailureOwner,
@@ -164,6 +166,7 @@ export function LegacyEvalLabFeature({ initialPage = 'workspace' }: { initialPag
   useEffect(() => { if (!sourceEvidence.isFetching) setLastEvidenceError(sourceEvidence.error); }, [sourceEvidence.error, sourceEvidence.isFetching]);
   const runsError = runs.error ?? (runs.isFetching ? lastRunsError : null);
   const evidenceError = sourceEvidence.error ?? (sourceEvidence.isFetching ? lastEvidenceError : null);
+  const evidenceLoading = sourceEvidence.isLoading && !evidenceError;
   const directoryEmpty = !runs.isLoading && !runsError && Boolean(runs.data) && !hasRecords;
 
   function showGolden(startNew = false) {
@@ -363,7 +366,7 @@ export function LegacyEvalLabFeature({ initialPage = 'workspace' }: { initialPag
 
       <TraceLabContext experiment={page === 'workspace' ? activeWorkspaceExperiment(runs.data?.experiments ?? [], selectedExperimentId) : activeProjectExperiment(runs.data?.experiments ?? [], selectedExperimentId)} />
 
-      {runs.isLoading ? <div aria-live="polite" className="eval-lab__state" role="status">正在读取评测回执…</div> : null}
+      {runs.isLoading && !runsError ? <div aria-live="polite" className="eval-lab__state" role="status">正在读取评测回执…</div> : null}
       {runsError ? (
         <div aria-live="assertive" className="eval-lab__error" role="alert">
           <strong>{runs.data ? '更新暂时失败，仍显示上次读取的实验' : '还没读取到评测结果'}</strong>
@@ -424,7 +427,7 @@ export function LegacyEvalLabFeature({ initialPage = 'workspace' }: { initialPag
                 onDiscuss={() => { if (pendingDispatch) showOwnedRoom(pendingDispatch.room, roomPersonas, 'workspace'); else void createOptimizationRoom(experiment, undefined, experiment.experimentId, 'workspace'); }}
                 onStart={(setup) => createCandidateRoom(experiment, setup)}
                 onCreateEvaluation={() => showGolden(true)}
-                results={<ExperimentWorkspaceResults desktop={desktop} evidenceCatalog={sourceEvidence.data} evidenceError={Boolean(evidenceError)} evidenceLoading={sourceEvidence.isLoading} experiment={experiment} linkedRuns={matchingRuns(experiment, runItems)} />}
+                results={<ExperimentWorkspaceResults desktop={desktop} evidenceCatalog={sourceEvidence.data} evidenceError={Boolean(evidenceError)} evidenceLoading={evidenceLoading} experiment={experiment} linkedRuns={matchingRuns(experiment, runItems)} />}
                 room={<AgentLabRoomDeck activeRoomId={activeRoomId} error={roomCatalogError} onRoomUpdated={(updated) => { setOwnedRooms((current) => mergeAgentLabRooms([updated], current)); void runs.refetch(); void sourceEvidence.refetch(); }} onSelect={setActiveRoomId} personas={roomPersonas} rooms={rooms} />}
                 roomCount={rooms.length}
                 scene={candidateLabel(experiment)}
@@ -434,14 +437,14 @@ export function LegacyEvalLabFeature({ initialPage = 'workspace' }: { initialPag
             })() : null}
             {page === 'workspace' && !experiments.length && !runs.isLoading && !directoryEmpty ? <EmptyState icon={FlaskConical} title="还没有实验配置" description="已有运行可在对话与证据中核对。点击新建评测，定义任务与基线。" /> : null}
             {page === 'overview' && experiments.length ? (
-              <ExperimentMatrix evidenceCatalog={sourceEvidence.data} evidenceLoading={sourceEvidence.isLoading} experiments={experiments} onOpenExperiment={(experimentId) => { setSelectedExperimentId(experimentId); setPage('details'); }} />
+              <ExperimentMatrix evidenceCatalog={sourceEvidence.data} evidenceLoading={evidenceLoading} experiments={experiments} onOpenExperiment={(experimentId) => { setSelectedExperimentId(experimentId); setPage('details'); }} />
             ) : null}
             {(page === 'overview' || page === 'details') && !experiments.length && !runs.isLoading && !directoryEmpty ? <EmptyState icon={FlaskConical} title="还没有已关联的实验结果" description="已有运行仍可在对话与证据中查看；建立评测集后，才能保存有明确基线的实验比较。" action={<Button onClick={() => setPage('sessions')}>查看已有运行</Button>} /> : null}
             {page === 'paths' && runs.data?.pathSearches?.length ? <OptimalPathPanel searches={runs.data.pathSearches} /> : null}
             {page === 'paths' && !runs.data?.pathSearches?.length && !runs.isLoading && !directoryEmpty ? <EmptyState icon={GitBranch} title="还没有可比较的方案路径" description="先新建评测并运行至少一个新方案，这里会显示每一步为何保留或淘汰。" /> : null}
             {page === 'details' && experiments.length ? (
               <section aria-label="Agent Lab 实验" className="eval-lab__experiments">
-                {sourceEvidence.isLoading ? <p className="eval-lab__evidence-loading" role="status">正在读取可回溯的原始运行…</p> : null}
+                {evidenceLoading ? <p className="eval-lab__evidence-loading" role="status">正在读取可回溯的原始运行…</p> : null}
                 {evidenceError ? <p className="eval-lab__evidence-error" role="alert">原始运行证据暂时不可读：{publicErrorText(evidenceError)}</p> : null}
                 <ProjectExperimentPicker experiments={experiments} selectedId={selectedExperimentId} onSelect={setSelectedExperimentId} />
                 {activeProjectExperiment(experiments, selectedExperimentId) ? (() => {
@@ -481,7 +484,7 @@ export function LegacyEvalLabFeature({ initialPage = 'workspace' }: { initialPag
                   </div>
                   <span>{runItems.length} 个回执{sourceEvidence.data?.source.runCount ? ` · ${sourceEvidence.data.source.runCount} 个历史批次` : ''}</span>
                 </header>
-                {sourceEvidence.isLoading ? <p className="eval-lab__evidence-loading" role="status">正在读取研究盘里的历史运行…</p> : null}
+                {evidenceLoading ? <p className="eval-lab__evidence-loading" role="status">正在读取研究盘里的历史运行…</p> : null}
                 {evidenceError ? <p className="eval-lab__evidence-error" role="alert">历史运行目录暂时不可读：{publicErrorText(evidenceError)} 可使用上方“刷新”重新读取。</p> : null}
                 {sourceEvidence.data && evidenceRunCount > 0 ? <SourceEvidenceCatalog catalog={sourceEvidence.data} /> : null}
                 {runItems.map((run) => <EvalRunSection desktop={desktop} key={run.runId} run={run} roomAction={roomAction} onCreateRoom={() => void createOptimizationRoom(fallbackExperiment(run), run, run.runId)} />)}
@@ -2921,7 +2924,7 @@ function EvalTaskRow({ desktop, run, task }: {
                 kind: 'session',
                 id: task.sessionId,
                 title: `${run.title} · ${task.taskAlias}`,
-                subtitle: '真实评测记录 · 只读',
+                subtitle: '评测记录 · 只读',
               },
             })}
             variant="secondary"
@@ -2953,7 +2956,12 @@ function EvidencePanel({ runId, taskIndex, fallbackTask, initialTab }: {
 }) {
   const evidence = useEvalLabEvidenceDetail(runId, taskIndex, true);
   const [tab, setTab] = useState<EvidenceTab>(initialTab ?? 'task');
+  const [lastError, setLastError] = useState(evidence.error);
+  useEffect(() => { if (!evidence.isFetching) setLastError(evidence.error); }, [evidence.error, evidence.isFetching]);
+  const evidenceError = evidence.error ?? (evidence.isFetching ? lastError : null);
   const detail = evidence.data?.detail;
+  const unavailableReason = detail ? unavailableEvidenceReason(detail) : '';
+  const projection = detail && !isEvalLabEvidenceUnavailable(detail) && !unavailableReason ? detail : undefined;
   const reportOnly = detail?.status === 'report_only'
     || detail?.summary?.status === 'report_only'
     || detail?.summary?.evidenceKind === 'report_only'
@@ -2963,7 +2971,7 @@ function EvidencePanel({ runId, taskIndex, fallbackTask, initialTab }: {
   const transcriptMissing = detail?.status === 'transcript_missing';
   const previewEvidence = detail?.origin === 'preview' || evidence.data?.source.label.includes('预览');
   const reportView = tab === 'report' || reportOnly || runReport;
-  const panelTitle = reportView
+  const panelTitle = unavailableReason ? '证据暂时不可读' : reportView
     ? '运行报告'
     : tab === 'task'
       ? '任务与结果'
@@ -2981,49 +2989,65 @@ function EvidencePanel({ runId, taskIndex, fallbackTask, initialTab }: {
         <div>
           <span className="eval-lab__evidence-kind">{previewEvidence ? '预览样例' : '只读证据'}</span>
           <h3>{panelTitle}</h3>
-          <p>{reportView ? (reportOnly ? '这条运行只有回执/报告，原始对话未公开；请按逐 case/报告核对。' : '这是该运行的公开报告投影；报告与逐轮 transcript 分开展示。') : transcriptMissing ? '这条任务有验收回执，但原始 JSONL 没有随运行目录保存；不会用摘要伪造对话。' : previewEvidence ? '这是演示数据中的有限样例，不代表实际 JSONL transcript；真实运行请查看本机回执。' : '这是该任务的公开 transcript 投影；只显示可复核的用户消息、助手动作和 Tool 返回摘要。'}</p>
+          <p>{unavailableReason ? '原始证据当前不可读取；已有任务和验收记录保留。' : !detail ? '读取证据后，可核对这条任务的公开消息、工具返回和验收结果。' : reportView ? (reportOnly ? '这条运行只有回执/报告，原始对话未公开；请按逐 case/报告核对。' : '这是该运行的公开报告投影；报告与逐轮 transcript 分开展示。') : transcriptMissing ? '这条任务有验收回执，但原始 JSONL 没有随运行目录保存；不会用摘要伪造对话。' : previewEvidence ? '这是演示数据中的有限样例，不代表实际 JSONL transcript；真实运行请查看本机回执。' : '这是该任务的公开 transcript 投影；只显示可复核的用户消息、助手动作和 Tool 返回摘要。'}</p>
           <code className="eval-lab__evidence-id">{runId} · {taskIndex > 0 ? `Task ${taskIndex}` : '运行级'}</code>
         </div>
         <span className="eval-lab__read-only"><ShieldCheck size={14} /> 不会重新运行</span>
       </header>
-      {evidence.isLoading ? <p className="eval-lab__evidence-loading" role="status">正在读取这条任务的原始回执…</p> : null}
-      {evidence.error ? <p className="eval-lab__evidence-error" role="alert">逐轮证据暂时不可读：{publicErrorText(evidence.error)}</p> : null}
-      {detail ? (
-        <>
+      {evidence.isLoading && !evidenceError && !unavailableReason ? <p className="eval-lab__evidence-loading" role="status">正在读取这条任务的原始回执…</p> : null}
+      {evidenceError || unavailableReason ? (
+        <div className="eval-lab__evidence-error" role="alert">
+          <p>{evidenceError ? '逐轮证据暂时不可读。已有记录和选择保留，可以重新读取证据。' : unavailableReason}</p>
+          <Button size="small" loading={evidence.isFetching} onClick={() => void evidence.refetch()} preserveFocusWhileLoading>重新读取证据</Button>
+        </div>
+      ) : null}
+      <>
           <nav aria-label="证据内容" className="eval-lab__evidence-tabs" role="tablist">
             {evidenceTabs.map(([key, label], index) => (
               <button aria-selected={tab === key} key={key} onClick={() => setTab(key)} onKeyDown={(event) => moveTabbedSelection(event, index, evidenceTabs.map(([value]) => value), setTab)} role="tab" type="button">{label}</button>
             ))}
           </nav>
-          {tab === 'task' ? <CaseProofSummary
-            detail={detail}
+          {tab === 'task' && projection ? <CaseProofSummary
+            detail={projection}
             previewEvidence={Boolean(previewEvidence)}
             reportOnly={Boolean(reportOnly || runReport)}
             transcriptMissing={transcriptMissing}
           /> : null}
-          {tab === 'trace' && !reportOnly ? (
+          {tab === 'trace' && !reportOnly && projection ? (
             <div className="eval-lab__trace-evidence">
               <section>
                 <h4>Agent 对话与动作</h4>
-                {transcriptMissing ? <MissingTranscriptEvidence detail={detail} /> : <ConversationEvidence detail={detail} />}
+                {transcriptMissing ? <MissingTranscriptEvidence detail={projection} /> : <ConversationEvidence detail={projection} />}
               </section>
               <section>
                 <h4>Tool 返回</h4>
-                <ToolEvidence detail={detail} />
+                <ToolEvidence detail={projection} />
               </section>
             </div>
           ) : null}
           {tab === 'environment' ? <EnvironmentEvidence detail={detail} fallbackTask={fallbackTask} /> : null}
           {tab === 'acceptance' ? <AcceptanceEvidence detail={detail} fallbackTask={fallbackTask} /> : null}
           {tab === 'report' ? <ReportEvidence detail={detail} /> : null}
-        </>
-      ) : null}
+      </>
     </section>
   );
 }
 
+function unavailableEvidenceReason(detail: EvalLabEvidenceDetail): string {
+  const reasons: Partial<Record<EvalLabEvidenceDetail['status'], string>> = {
+    invalid_run_id: '这条运行标识无效，暂时无法读取证据。',
+    source_unavailable: '评测研究盘当前不可用。',
+    not_found: '没有找到这条运行的证据。',
+    task_not_found: '没有找到这条任务的证据。',
+    no_sessions: '这条运行没有保存可读取的 Session 记录。',
+    report_unavailable: '这条运行没有可读取的公开报告。',
+  };
+  const reason = reasons[detail.status];
+  return reason ? detail.message || reason : '';
+}
+
 function CaseProofSummary({ detail, previewEvidence, reportOnly, transcriptMissing }: {
-  detail: EvalLabEvidenceDetail;
+  detail: EvalLabEvidenceProjectionDetail;
   previewEvidence: boolean;
   reportOnly: boolean;
   transcriptMissing: boolean;
@@ -3233,7 +3257,7 @@ function reportLabel(key: string): string {
   } as Record<string, string>)[key] ?? key;
 }
 
-function ConversationEvidence({ detail }: { detail?: EvalLabEvidenceDetail }) {
+function ConversationEvidence({ detail }: { detail?: EvalLabEvidenceProjectionDetail }) {
   const turns = detail?.turns ?? [];
   if (!turns.length) return <p className="eval-lab__evidence-empty">这条 Session 没有可公开的消息记录，或 transcript 尚未复制到证据目录。</p>;
   return (
@@ -3262,7 +3286,7 @@ function formatEvidenceTime(timestampMs: number): string {
   }
 }
 
-function ToolEvidence({ detail }: { detail?: EvalLabEvidenceDetail }) {
+function ToolEvidence({ detail }: { detail?: EvalLabEvidenceProjectionDetail }) {
   const tools = detail?.tools ?? [];
   return (
     <div className="eval-lab__tool-evidence">

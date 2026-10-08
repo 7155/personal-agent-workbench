@@ -24,6 +24,7 @@ export interface DebugTurnDescription {
 }
 
 export interface DebugContextDelta {
+  omitted?: boolean;
   baseCallIndex?: number;
   commonPrefixMessages: number;
   removedMessageCount: number;
@@ -64,6 +65,7 @@ export interface DebugModelCall {
   updatedAtMs: number;
   completedAtMs?: number;
   contextMessages: unknown[];
+  contextMessagesOmission?: JsonRecord;
   providerContext: JsonRecord;
   contextDelta: DebugContextDelta;
   providerExchanges: DebugProviderExchange[];
@@ -226,8 +228,12 @@ function normalizeModelCall(value: JsonRecord, fallbackIndex: number): DebugMode
     updatedAtMs: number(value.updatedAtMs) || number(value.capturedAtMs),
     completedAtMs: optionalNumber(value.completedAtMs),
     contextMessages: array(value.contextMessages),
+    ...(record(value.contextMessages).omitted === true
+      ? { contextMessagesOmission: record(value.contextMessages) }
+      : {}),
     providerContext: record(value.providerContext),
     contextDelta: {
+      ...(delta.omitted === true ? { omitted: true } : {}),
       baseCallIndex: optionalNumber(delta.baseCallIndex),
       commonPrefixMessages: number(delta.commonPrefixMessages),
       removedMessageCount: number(delta.removedMessageCount),

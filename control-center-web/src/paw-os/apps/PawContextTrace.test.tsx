@@ -9,10 +9,9 @@ import { PawContextTrace, projectionTraceTurns, reconcileTraceTurnSummaries } fr
 import type { DebugTurnSummary } from '@/features/context-debug/model';
 
 beforeEach(() => {
-  // This file verifies the animated exit contract explicitly. A prior test
-  // worker may leave the global reduced-motion attribute enabled, which takes
-  // the valid synchronous exit branch and makes the transition assertion
-  // nondeterministic in the full install gate.
+  // Allow pointer exit motion explicitly; keyboard closes settle immediately
+  // through the shared Disclosure contract. Do not inherit reduced motion
+  // from another test worker when checking pointer transitions.
   document.documentElement.dataset.reduceMotion = 'false';
 });
 
@@ -889,9 +888,9 @@ describe('PawContextTrace', () => {
     systemSummary.focus();
     await user.keyboard('{Enter}');
     expect(systemSummary).toHaveAttribute('aria-expanded', 'false');
-    expect(systemDetails).toHaveAttribute('open');
+    expect(systemDetails).not.toHaveAttribute('open');
     expect(systemDetails.querySelector('.ui-disclosure__reveal')).toHaveAttribute('inert');
-    await waitFor(() => expect(systemDetails).not.toHaveAttribute('open'));
+    expect(within(systemDetails).queryByText('完整系统指令：遵循项目边界。')).not.toBeInTheDocument();
     expect(systemSummary).toHaveFocus();
   });
 
