@@ -355,7 +355,20 @@ export function parseEvalLabEvidenceResponse(value: unknown, requireDetail = fal
     || (value.detail !== undefined && !isEvidenceDetail(value.detail))) {
     throw new Error('评测对话证据格式暂不可用。');
   }
-  return value as unknown as EvalLabEvidenceResponse;
+  const detail = isRecord(value.detail) ? value.detail : undefined;
+  return {
+    ...value,
+    runs: value.runs.map(evidenceRunWithMetrics),
+    ...(detail?.summary !== undefined ? { detail: { ...detail, summary: evidenceRunWithMetrics(detail.summary) } } : {}),
+  } as unknown as EvalLabEvidenceResponse;
+}
+
+function evidenceRunWithMetrics(value: unknown): Record<string, unknown> {
+  if (!isRecord(value) || (value.metrics != null && !isRecord(value.metrics))) {
+    throw new Error('评测对话证据格式暂不可用。');
+  }
+  // Older unavailable projections omitted this container; an empty record carries no scores.
+  return value.metrics == null ? { ...value, metrics: {} } : value;
 }
 
 function isEvidenceDetail(value: unknown): value is EvalLabEvidenceDetail {

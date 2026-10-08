@@ -1070,7 +1070,7 @@
   .paw-window-titlebar[data-window-chrome='terminal-tabs'] .paw-window-title { display: none; }
   .paw-window-titlebar[data-window-chrome='terminal-tabs'] .paw-window-chrome-slot { grid-column: 2; }
   .paw-terminal-new-group { gap: 0; }
-  .paw-terminal-app__toolbar { gap: 2px; }
+  .paw-terminal-app__toolbar { gap: 1px; }
   .paw-terminal-app__toolbar { padding-inline: 6px; }
   .paw-terminal-app__toolbar[data-window-chrome] { padding-inline: 0; }
 }

@@ -301,6 +301,86 @@ function renderAnswerEvidenceOverview(data: ReturnType<typeof r6AnswerEvidenceRe
 }
 
 describe('Agent Lab', () => {
+  describe('sparse catalog metrics boundary', () => {
+    function publicCatalog() {
+      return {
+        schemaVersion: 'rag-ime.eval-lab-evidence.v1', ok: true,
+        source: { available: true, label: '公开稀疏证据夹具', runCount: 210, sessionCount: 0, transcriptCount: 0, transcriptBytes: 0 },
+        runs: Array.from({ length: 210 }, (_, index) => ({
+          runId: `public-evidence-${index}`, title: `公开历史记录 ${index}`, family: '公开测试',
+          sourceId: 'public-fixture', sourceLabel: '公开稀疏证据夹具', split: 'unknown',
+          status: index < 201 ? 'completed' : 'evidence_unavailable',
+          evidenceKind: index < 201 ? 'report_only' : 'unavailable',
+          reportAvailable: index < 201, databaseAvailable: false,
+          sessionCount: 0, transcriptCount: 0, transcriptBytes: 0,
+          ...(index < 201 ? { metrics: { taskSuccessCount: 1, taskCount: 2, verifierPassCount: 2, verifierCount: 3 } } : {}),
+          environment: {}, tasks: [], updatedAtMs: index,
+        })),
+        total: 210,
+      };
+    }
+
+    it('normalizes the older 210-row catalog without dropping nine gaps or inventing scores', () => {
+      const original = publicCatalog();
+      const parsed = parseEvalLabEvidenceResponse(original);
+      expect(parsed.runs.map((run) => run.runId)).toEqual(original.runs.map((run) => run.runId));
+      expect(parsed.runs).toHaveLength(210);
+      expect(parsed.runs.slice(201)).toHaveLength(9);
+      for (const run of parsed.runs.slice(201)) {
+        expect(run.status).toBe('evidence_unavailable');
+        expect(run.metrics).toEqual({});
+        expect(run.metrics).not.toHaveProperty('taskSuccessCount');
+        expect(run.metrics).not.toHaveProperty('verifierPassCount');
+      }
+      expect(parsed.runs[0]!.metrics).toBe(original.runs[0]!.metrics);
+      expect(original.runs[201]).not.toHaveProperty('metrics');
+    });
+
+    it('normalizes a nullable older metrics container and a sparse detail summary without changing the input', () => {
+      const catalog = publicCatalog();
+      const summary = { ...catalog.runs[201]!, metrics: null };
+      const detail = { status: 'report_unavailable', runId: summary.runId, turns: [], tools: [], summary };
+      const original = { ...catalog, runs: [summary], total: 1, detail };
+      const parsed = parseEvalLabEvidenceResponse(original, true);
+      expect(parsed.runs[0]!.metrics).toEqual({});
+      expect(parsed.detail?.summary?.metrics).toEqual({});
+      expect(parsed.detail?.status).toBe('report_unavailable');
+      expect(summary.metrics).toBeNull();
+      expect(parsed.detail?.summary?.runId).toBe(summary.runId);
+    });
+
+    it.each([[], 'wrong-container', 0, false])('rejects an explicitly malformed metrics container %# at the existing boundary', (metrics) => {
+      const catalog = publicCatalog();
+      const malformed = { ...catalog, runs: [{ ...catalog.runs[0]!, metrics }], total: 1 };
+      expect(() => parseEvalLabEvidenceResponse(malformed)).toThrow('评测对话证据格式暂不可用。');
+    });
+
+    it('renders all 210 rows and nine gaps from the older sparse response with no manufactured quality counts', async () => {
+      const original = publicCatalog();
+      const transport = new MockControlTransport({ routes: {
+        'agent.eval-lab.runs': { schemaVersion: 'rag-ime.eval-lab-run-list.v1', ok: true, items: [], total: 0, experiments: [], experimentTotal: 0 },
+        'agent.eval-lab.evidence': original,
+        'agent.rooms.list': { ok: true, items: [] },
+        'agent.roles.list': { items: [] },
+      } });
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      render(<QueryClientProvider client={client}><ControlTransportProvider transport={transport}><PawOsDesktopProvider openWindow={vi.fn()}><EvalLabFeature initialPage="sessions" /></PawOsDesktopProvider></ControlTransportProvider></QueryClientProvider>);
+      const catalog = await screen.findByRole('region', { name: '研究盘历史运行' });
+      const rows = catalog.querySelectorAll('.eval-lab__source-run');
+      expect(rows).toHaveLength(210);
+      expect(within(catalog).getAllByText('证据缺口')).toHaveLength(9);
+      expect(rows[0]).toHaveTextContent('任务 1/2 · Verifier 2/3');
+      for (const row of Array.from(rows).slice(201)) {
+        expect(row).toHaveTextContent('证据缺口');
+        expect(row).toHaveTextContent('0 份 transcript 可读');
+        expect(row).not.toHaveTextContent(/任务 \d+\/\d+|Verifier \d+\/\d+/);
+      }
+      expect(original.runs[201]).not.toHaveProperty('metrics');
+      expect(transport.requests.every(({ request }) => controlRoute(request.pathId).method === 'GET' && !request.body)).toBe(true);
+      client.clear();
+    });
+  });
+
   describe('evidence detail read boundary', () => {
     const runId = 't04-original-run';
     const envelope = {
