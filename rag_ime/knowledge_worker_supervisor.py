@@ -24,6 +24,17 @@ from .knowledge_embedding_profile import (
 from .knowledge_library.models import DEFAULT_MINERU_TIMEOUT_SECONDS
 
 
+# Only audited read operations may be repeated after an unknown transport result.
+# POST search/open/find and chunk previews stay excluded: names or verbs alone
+# do not establish that an operation has no persistent effects.
+_RETRYABLE_READ_OPERATIONS = frozenset({
+    "list_bases", "status", "management_list_bases", "management_get_base",
+    "management_knowledge_graph", "management_list_documents",
+    "management_document_detail", "management_read_asset", "management_read_source",
+    "management_reindex_preview", "management_jobs", "management_status", "mineru_health",
+})
+
+
 class KnowledgeWorkerSupervisor:
     """Lazily starts the isolated document worker and exposes its HTTP client."""
 
@@ -294,7 +305,7 @@ class KnowledgeWorkerSupervisor:
         try:
             result = handler(*args, **kwargs)
         except KnowledgeLibraryError as exc:
-            if exc.code != "worker_unavailable":
+            if exc.code != "worker_unavailable" or operation not in _RETRYABLE_READ_OPERATIONS:
                 raise
             with self._lock:
                 if self._process is not None and self._process.poll() is not None:

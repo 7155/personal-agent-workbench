@@ -2058,7 +2058,7 @@ i.paw-files-tree__disclosure {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  width: min(360px, calc(100vw - 16px));
+  width: min(360px, calc(100vw - 16px), var(--radix-popover-content-available-width, calc(100vw - 16px)));
   min-width: 0;
   max-height: min(480px, var(--radix-popover-content-available-height));
   overflow: auto;
