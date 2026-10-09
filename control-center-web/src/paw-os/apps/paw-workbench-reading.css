@@ -14,8 +14,14 @@
 .paw-desktop-root .paw-session-workspace[data-chat-presentation-version='v2'][data-design='workbench'] .project-quick-actions__buttons { min-width: 0; }
 .paw-desktop-root .paw-session-workspace[data-chat-presentation-version='v2'][data-design='workbench'] .project-quick-actions button { min-height: 32px; border-radius: var(--radius-2); }
 .paw-desktop-root .paw-session-workspace[data-chat-presentation-version='v2'][data-design='workbench'] .project-quick-actions :is(.project-quick-actions__notice, .project-quick-actions__status) { font-size: 12px; }
-.paw-desktop-root .paw-session-workspace[data-chat-presentation-version='v2'][data-design='workbench'] .paw-session-workspace__composer { padding: 12px 30px 21px; border: 0; background: var(--wb-surface); }
+.paw-desktop-root .paw-session-workspace[data-chat-presentation-version='v2'][data-design='workbench'] .paw-session-workspace__composer { padding: 12px 30px 21px; border: 0; background: none; }
 .paw-desktop-root .paw-session-workspace[data-chat-presentation-version='v2'][data-design='workbench'] .paw-session-workspace__composer > .agent-composer-wrap { width: min(var(--wb-read), 100%); margin-inline: auto; }
+/* The dock stays transparent around its card. One-line editing leaves room to
+   read; only an empty collapsed editor is capped, including a stale inline
+   height from before the responsive stylesheet arrived. Drafts still grow and
+   scroll, and explicit expansion keeps the shared editor's existing bounds. */
+.paw-desktop-root .paw-session-workspace[data-chat-presentation-version='v2'][data-design='workbench'] .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2']:not([data-expanded]) textarea { min-height: 64px; }
+.paw-desktop-root .paw-session-workspace[data-chat-presentation-version='v2'][data-design='workbench'] .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2']:not([data-expanded]) textarea:placeholder-shown { max-height: 64px; }
 .paw-desktop-root .paw-session-workspace[data-chat-presentation-version='v2'][data-design='workbench'] .paw-session-workspace__conversation { --ccui-font-size: 16px; --ccui-line-height: 1.66; background: var(--wb-surface); font-family: var(--wb-font); }
 .paw-desktop-root .paw-session-workspace[data-chat-presentation-version='v2'][data-design='workbench'] :is(.ccui-markdown, .agent-markdown, .fx-prose) { font-size: var(--reading-body-size, 16px); line-height: var(--reading-line-height, 1.66); letter-spacing: .003em; }
 .paw-desktop-root .paw-session-workspace[data-chat-presentation-version='v2'][data-design='workbench'] :is(.ccui-markdown, .agent-markdown, .fx-prose) :is(p, ul, ol) { margin-block: 0 var(--reading-paragraph-gap, 1em); }

@@ -5,6 +5,10 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Give Full Session conversations more room around the floating editor. Remove
+  its opaque outer band and reduce empty collapsed input height while preserving
+  the editor card, controls, growing drafts and expanded editing.
+
 - Keep full-history connection feedback tied to the current live stream. Reuse
   an already stable subscription after an accepted read; new or failed streams
   continue to show recovery until their own connection is confirmed.
