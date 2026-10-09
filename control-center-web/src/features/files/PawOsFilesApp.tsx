@@ -1230,7 +1230,7 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
           <span>已加载 {visibleEntryCount} 项</span>
           {filterActive ? <><i aria-hidden="true" /><span>匹配 {filterMatches.length} 项</span></> : null}
           {selectedFile ? <><i aria-hidden="true" /><span className="paw-files-statusbar__selection" title={`${selectedFile.path}${selectedFile.byteSize !== undefined ? ` · ${formatBytes(selectedFile.byteSize)}` : ''}`}>已选 {selectedFile.name}{selectedFile.byteSize !== undefined ? ` · ${formatBytes(selectedFile.byteSize)}` : ''}</span></> : null}
-          <span className="paw-files-statusbar__root" data-live={roots.length ? true : undefined} title={roots.join('\n') || undefined}>{roots.length ? authorizedRoots(selectedSession).some((root) => roots.includes(root)) ? 'Session 工作区快捷入口 · 本机读取' : '本机文件 · 无需 Session' : workspacePending ? '正在打开文件夹' : '输入路径以开始浏览'}</span>
+          <span className="paw-files-statusbar__root" data-live={roots.length ? true : undefined} title={roots.join('\n') || undefined}>{roots.length ? authorizedRoots(selectedSession).some((root) => roots.some((path) => path === root || path.startsWith(root === '/' ? '/' : `${root}/`))) ? 'Session 工作区快捷入口 · 本机读取' : '本机文件 · 无需 Session' : workspacePending ? '正在打开文件夹' : '输入路径以开始浏览'}</span>
         </footer>
       </section>
     </>

@@ -329,6 +329,34 @@ describe('PawOsFilesApp', () => {
     ))).toBe(true));
   });
 
+  it.each([
+    { name: 'workspace root', root: '/workspace/paw', directory: '/workspace/paw', sessionId: 'session-work', sessionOrigin: true },
+    { name: 'deep directory', root: '/workspace/paw', directory: '/workspace/paw/docs/nested', sessionId: 'session-work', sessionOrigin: true },
+    { name: 'neighboring prefix', root: '/workspace/paw', directory: '/workspace/paw-other', sessionId: 'session-work', sessionOrigin: false },
+    { name: 'outside directory', root: '/workspace/paw', directory: '/outside', sessionId: 'session-work', sessionOrigin: false },
+    { name: 'local mode within a workspace', root: '/workspace/paw', directory: '/workspace/paw/docs', sessionId: '', sessionOrigin: false },
+    { name: 'filesystem-root workspace', root: '/', directory: '/workspace/docs', sessionId: 'session-work', sessionOrigin: true },
+  ])('keeps the file-origin footer aligned with the selected Session for $name', async ({ root, directory, sessionId, sessionOrigin }) => {
+    const path = `${directory}/notes.md`;
+    const transport = new MockControlTransport({ routes: {
+      'agent.sessions.list': { ok: true, activeSessionId: 'session-work', items: [{ id: 'session-work', title: 'Original Session', updatedAtMs: 1, workspaceRoots: [root], status: 'idle' }] },
+      'files.list': (request: ControlRequest) => {
+        const requested = String(request.query?.path || '/home/qa');
+        const canonical = requested === path ? directory : requested;
+        return { ok: true, scope: 'local', path: canonical, homePath: '/home/qa', selectedPath: requested === path ? path : '', items: canonical === directory ? [{ path, name: 'notes.md', kind: 'file' }] : [] };
+      },
+      'files.read': (request: ControlRequest) => ({ ok: true, scope: 'local', path, requestedPath: path, sessionId: request.query?.sessionId || '', content: '# Scoped preview', byteSize: 16, nextOffset: 16, editability: { editable: false, reason: 'Read-only fixture' } }),
+    } });
+    renderApp(transport, <PawOsFilesApp initialRoute={filesRoute(sessionId, path)} />);
+    await screen.findByRole('heading', { name: 'Scoped preview' });
+    expect(screen.getByRole('combobox', { name: '选择文件所属 Session' })).toHaveValue(sessionId);
+    expect(screen.getByText(sessionOrigin ? 'Session 工作区快捷入口 · 本机读取' : '本机文件 · 无需 Session')).toBeInTheDocument();
+    const reads = transport.requests.filter(({ request }) => request.pathId === 'files.read');
+    expect(reads.length).toBeGreaterThan(0);
+    expect(reads.every(({ request }) => request.query?.path === path && (request.query?.sessionId || '') === sessionId)).toBe(true);
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.workspace.save')).toBe(false);
+  });
+
   it('opens a root-relative file path from a Session evidence link', async () => {
     const relativePath = 'docs/room-runtime-handoff.md';
     const absolutePath = `/workspace/paw/${relativePath}`;
