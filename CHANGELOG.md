@@ -5,6 +5,9 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Fit long and expanded v2 Session and Room editors to their current window
+  height, including toolbar and attachment changes, while preserving the input.
+
 - Keep narrow v2 chat text clear of the larger editor expand control by
   reserving enough padding for its full hit target.
 
