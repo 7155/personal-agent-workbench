@@ -26,6 +26,68 @@ import { PawWindowFrame } from '../shell/PawWindowLayer';
 import { PawSessionWorkspace, sessionWorkspaceProjectionSlice, latestPublicSessionMessageId } from './PawSessionWorkspace';
 import { messageWithWorkspaceContext } from './workspace-draft';
 
+/* jsdom does not evaluate media queries or layout. Parse the real owners,
+   activate the observed viewport, and check their width cascade on the real
+   portalled menu; pixel containment remains a separate browser requirement. */
+function activeToolsMenuWidths(css: string, width: number, agentShellWidth: number): string {
+  const source = document.createElement('style');
+  source.textContent = css;
+  document.head.append(source);
+  try {
+    if (!source.sheet) throw new Error('tools menu stylesheet did not parse');
+    const visit = (rules: CSSRuleList): string => Array.from(rules).map(rule => {
+      if (rule.type === CSSRule.MEDIA_RULE) {
+        const media = rule as CSSMediaRule;
+        const condition = /^\((max|min)-width:\s*(\d+)px\)$/.exec(media.conditionText);
+        if (!condition) return '';
+        return (condition[1] === 'max' ? width <= Number(condition[2]) : width >= Number(condition[2]))
+          ? visit(media.cssRules) : '';
+      }
+      if (rule.cssText.startsWith('@container ')) {
+        const container = rule as CSSGroupingRule & { conditionText: string };
+        const condition = /^paw-agent-shell \(max-width:\s*(\d+)px\)$/.exec(container.conditionText);
+        return condition && agentShellWidth <= Number(condition[1]) ? visit(container.cssRules) : '';
+      }
+      if (rule.type !== CSSRule.STYLE_RULE) return '';
+      const style = rule as CSSStyleRule;
+      const value = style.style.getPropertyValue('width');
+      return value ? `${style.selectorText}{width:${value};}` : '';
+    }).join('\n');
+    return visit(source.sheet.cssRules);
+  } finally {
+    source.remove();
+  }
+}
+
+/* jsdom applies matching style rules in insertion order without browser
+   specificity. Resolve only these simple, matched width selectors from CSSOM;
+   reject unfamiliar selector syntax instead of approximating its cascade. */
+function toolsMenuWidth(element: HTMLElement, css: string): string {
+  const style = document.createElement('style');
+  style.textContent = css;
+  document.head.append(style);
+  try {
+    if (!style.sheet) throw new Error('tools widths did not parse');
+    const candidates: { value: string; classes: number; types: number; order: number }[] = [];
+    Array.from(style.sheet.cssRules).forEach((rule, order) => {
+      const owner = rule as CSSStyleRule;
+      if (!element.matches(owner.selectorText)) return;
+      if (/[:#\[\]()]/.test(owner.selectorText)) throw new Error(`unsupported matched width selector: ${owner.selectorText}`);
+      for (const selector of owner.selectorText.split(',')) {
+        if (!element.matches(selector)) continue;
+        if (!/^[\s>a-zA-Z0-9_.-]+$/.test(selector)) throw new Error(`unsupported matched width selector: ${selector}`);
+        const classes = (selector.match(/\.[a-zA-Z0-9_-]+/g) ?? []).length;
+        const types = (selector.replace(/\.[a-zA-Z0-9_-]+/g, '').match(/[a-zA-Z][a-zA-Z0-9-]*/g) ?? []).length;
+        candidates.push({ value: owner.style.getPropertyValue('width'), classes, types, order });
+      }
+    });
+    candidates.sort((a, b) => a.classes - b.classes || a.types - b.types || a.order - b.order);
+    return candidates.at(-1)?.value ?? 'auto';
+  } finally {
+    style.remove();
+  }
+}
+
 /* jsdom gives every row zero height, so the real virtualizer would keep the
    transcript empty and no timeline assertion here would mean anything. */
 vi.mock('react-virtuoso', () => ({
@@ -1646,7 +1708,14 @@ describe('PAWOS Agent Session structural migration', () => {
     expect(conversationNav?.querySelectorAll('button')).toHaveLength(2);
   });
 
-  it.each([375, 1400])('keeps full history out of a %ipx long-title caption and keyboard-accessible in the existing tools menu', async (width) => {
+  it.each([
+    { width: 375, agentShellWidth: 375 },
+    { width: 720, agentShellWidth: 720 },
+    { width: 1400, agentShellWidth: 1400 },
+    { width: 1400, agentShellWidth: 700 },
+  ].flatMap(sample => ['apps-first', 'apps-last'].map(order => ({ ...sample, order }))))(
+    'keeps full history out of a $width px long-title caption and keyboard-accessible in $order order (shell $agentShellWidth)',
+    async ({ width, agentShellWidth, order }) => {
     const sessionId = `long-caption-history-${width}`;
     const title = '公开长标题 /nested/project/result-and-receipt'.repeat(8);
     const full = deferred<unknown>();
@@ -1675,6 +1744,23 @@ describe('PAWOS Agent Session structural migration', () => {
     await user.keyboard('{ArrowDown}');
     const menu = screen.getByRole('menu', { name: '对话工具菜单' });
     const load = within(menu).getByRole('menuitem', { name: '加载完整记录' });
+    const css = document.createElement('style');
+    css.textContent = (order === 'apps-first' ? [appsCss, agentMigratedCss] : [agentMigratedCss, appsCss])
+      .map(sheet => activeToolsMenuWidths(sheet, width, agentShellWidth)).join('\n');
+    document.head.append(css);
+    const root = menu.closest('.paw-window-shell') as HTMLElement;
+    root.classList.add('paw-desktop-root');
+    try {
+      // Caption navigation may use icon squares, but every tools-menu item
+      // (including the existing subagent action) must retain a whole text row.
+      for (const item of within(menu).getAllByRole('menuitem')) {
+        const computed = toolsMenuWidth(item, css.textContent!);
+        expect(['', 'auto', '100%']).toContain(computed);
+      }
+    } finally {
+      css.remove();
+      root.classList.remove('paw-desktop-root');
+    }
     await user.keyboard('{End}');
     expect(load).toHaveFocus();
     await user.keyboard('{Escape}');

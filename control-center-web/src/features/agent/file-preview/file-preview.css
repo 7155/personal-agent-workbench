@@ -1,22 +1,21 @@
-/* Joins the insert family: same measure, same 3px hanging edge, same wash. It
-   used to be a solid grey slab with a 1px box on all four sides — the one
-   result type that did not look like it belonged to the document. */
+/* The collection groups by spacing; each receipt owns its clickable boundary. */
 .agent-file-block-shell {
   width: min(100%, 920px);
   margin: 9px 0;
 }
-.agent-file-block {
+.agent-file-block-shell > .agent-file-block {
   display: grid;
   width: 100%;
   max-width: none;
+  box-sizing: border-box;
+  min-height: 60px;
   grid-template-columns: 26px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   margin: 0;
   padding: 8px 11px;
-  border: 0;
-  border-left: 3px solid color-mix(in srgb, var(--color-border-strong) 55%, transparent);
-  border-radius: 4px var(--radius-2) var(--radius-2) 4px;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-2);
   background: color-mix(in srgb, var(--color-surface-subtle) 72%, var(--color-paper));
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-border-soft) 55%, transparent);
   color: inherit;
@@ -46,9 +45,10 @@
 .agent-file-block:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
 .agent-file-block:disabled { cursor: not-allowed; opacity: .62; }
 .agent-file-block > span:nth-child(2) { display: grid; min-width: 0; gap: 2px; }
-.agent-file-block strong, .agent-file-block small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-file-block strong, .agent-file-block small { white-space: normal; overflow-wrap: anywhere; }
+.agent-file-block small { line-height: 18px; }
 .agent-file-block strong { font-size: 13px; }
-.agent-file-block small { color: var(--color-text-tertiary); font-size: 13px; }
+.agent-file-block small { color: var(--color-text-tertiary); font-size: 12px; }
 .agent-file-block > svg { color: var(--color-text-tertiary); }
 .agent-file-block__icon { display: grid; width: 26px; height: 26px; place-items: center; border-radius: var(--radius-2); background: var(--color-surface); color: var(--color-accent); }
 
@@ -83,8 +83,12 @@
   width: min(100%, 920px);
   margin: 9px 0 12px;
   display: grid;
-  gap: 9px;
+  gap: 8px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
 }
+.agent-file-collection > .agent-file-block-shell { margin: 0; }
 
 .agent-file-preview-inline {
   overflow: hidden;
@@ -95,7 +99,7 @@
   color: var(--color-code-text);
 }
 .agent-file-block-shell[data-expanded='true'] .agent-file-block {
-  border-radius: 4px var(--radius-2) 0 0;
+  border-radius: var(--radius-2) var(--radius-2) 0 0;
   border-left-color: var(--color-accent);
 }
 .agent-file-preview-inline > header {

@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-09T13:22:08.053109+00:00",
+  "generatedAt": "2026-10-09T14:41:09.424171+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "undo/paw-acceptance-20261009",
     "baseCommit": "55fc923944ffcee72a2c90b04a891c1106485227",
-    "candidateCommitPolicy": "Committed source checkpoint of user-authorized frontend polish, persistent Agent coordination, exact Room result return and native message receipt recovery; source checks do not establish complete foreground acceptance. Recover local Knowledge drafts without search replay; real browser and installed acceptance remain separate. Keep the Session caption compact while preserving explicit history access and keyboard focus; current-source Chrome verification remains separate. Keep responsive menu dimensions under the structural CSS owner regardless of lazy chunk arrival order; current-source Chrome validation remains required."
+    "candidateCommitPolicy": "Committed source checkpoint of user-authorized frontend polish, persistent Agent coordination, exact Room result return and native message receipt recovery; source checks do not establish complete foreground acceptance. Recover local Knowledge drafts without search replay; real browser and installed acceptance remain separate. Keep the Session caption compact while preserving explicit history access and keyboard focus; current-source Chrome verification remains separate. Keep responsive menu dimensions under the structural CSS owner regardless of lazy chunk arrival order; current-source Chrome validation remains required. Preserve full-row menu focus and compact distinct file receipts with truthful small-file sizes; source checks remain separate from current-source real browser and installed acceptance."
   },
   "dispositions": {
     "keep_release": "Retain this source maintenance change.",
@@ -35,7 +35,7 @@
     },
     "brand_stellar": {
       "description": "User-selected branding and bounded stellar visual behavior.",
-      "pathCount": 60
+      "pathCount": 59
     },
     "public_showcase": {
       "description": "Public synthetic-data screenshots and usage documentation.",
@@ -51,11 +51,11 @@
     },
     "workspace_completion": {
       "description": "Complete user-authorized workspace source checkpoint across Jev, Lab and shared product owners.",
-      "pathCount": 315
+      "pathCount": 314
     },
     "conversation_v2_integration": {
       "description": "Conversation v2 and Jev integration with current main.",
-      "pathCount": 48
+      "pathCount": 47
     },
     "memory_lifecycle": {
       "description": "Canonical Memory import/export, ingress privacy, daily reports and owner-scoped resumable refresh.",
@@ -159,7 +159,7 @@
     },
     "pi1_experience_iteration": {
       "description": "Paired Pi 1.0 experience and runtime source, with scoped Mac acceptance fixes.",
-      "pathCount": 38
+      "pathCount": 37
     },
     "pi1_final_integration": {
       "description": "Complete the paired Pi 1.0 source candidate: canonical frontend recovery, Gateway execution identity, current model defaults, and isolated deterministic verification. Local source checkpoint only; installed and native foreground acceptance remain separate.",
@@ -219,18 +219,26 @@
     },
     "session_history_caption": {
       "description": "Move the original full-history read into existing Session tools for readable narrow captions; retain original request and focus owners.",
-      "pathCount": 3
+      "pathCount": 1
     },
     "responsive_menu_geometry": {
       "description": "Keep responsive menu geometry with its shared structural owner so lazy stylesheet order cannot overlap narrow or zoomed window controls.",
       "pathCount": 3
+    },
+    "session_tools_menu_rows": {
+      "description": "Keep every existing tools-menu item a full-width text row with original request and focus behavior.",
+      "pathCount": 2
+    },
+    "compact_file_results": {
+      "description": "Compact file results without discarding snapshots, diff receipts, or controlled previews.",
+      "pathCount": 6
     }
   },
   "summary": {
-    "pathCount": 2248,
+    "pathCount": 2250,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1932
+      "keep_release": 1934
     },
     "groupCounts": {
       "local_docs": 121,
@@ -239,17 +247,17 @@
       "pi1_final_integration": 235,
       "refactor_docs_examples": 9,
       "earth_research": 113,
-      "brand_stellar": 60,
+      "brand_stellar": 59,
       "public_showcase": 30,
       "primary_assistant_followup": 30,
       "references_history": 8,
       "main_followup_20261006": 66,
       "room_history_codemode": 58,
       "pi_content_studio_v5_v6": 40,
-      "workspace_completion": 315,
-      "conversation_v2_integration": 48,
+      "workspace_completion": 314,
+      "conversation_v2_integration": 47,
       "memory_lifecycle": 15,
-      "pi1_experience_iteration": 38,
+      "pi1_experience_iteration": 37,
       "primary_assistant_iteration": 83,
       "paw_experience_20261007": 96,
       "verification": 125,
@@ -263,6 +271,7 @@
       "architecture_recovery_20261008": 17,
       "scheduled_tasks": 25,
       "session_full_access": 8,
+      "compact_file_results": 6,
       "mac_local_update_20261006": 8,
       "jev_integration": 10,
       "lab_frontend": 55,
@@ -270,7 +279,8 @@
       "knowledge_runtime": 13,
       "knowledge_draft_recovery": 4,
       "room_frontend": 21,
-      "session_history_caption": 3,
+      "session_tools_menu_rows": 2,
+      "session_history_caption": 1,
       "responsive_menu_geometry": 3,
       "portable_guarded_acceptance": 14,
       "refactor_integration": 23,
@@ -3934,16 +3944,16 @@
     {
       "path": "control-center-web/src/features/agent/file-preview/FilePreviewHost.test.tsx",
       "disposition": "keep_release",
-      "group": "workspace_completion",
-      "reason": "User-requested complete source checkpoint for Room/Jev, Lab, Knowledge, memory, GIS and their shared runtime/UI owners; no binary-release claim.",
+      "group": "compact_file_results",
+      "reason": "Group independent file receipts by spacing; keep exact preview identity and display known small sizes in bytes.",
       "status": "modified"
     },
     {
       "path": "control-center-web/src/features/agent/file-preview/file-preview.css",
       "status": "modified",
       "disposition": "keep_release",
-      "group": "pi1_experience_iteration",
-      "reason": "Pi 1.0 integration and bounded interaction, cancellation, state recovery or runtime regression coverage from the paired experience candidate."
+      "group": "compact_file_results",
+      "reason": "Group independent file receipts by spacing; keep exact preview identity and display known small sizes in bytes."
     },
     {
       "path": "control-center-web/src/features/agent/file-preview/use-rich-html-url.ts",
@@ -4508,8 +4518,8 @@
     {
       "path": "control-center-web/src/features/agent/timeline/rich/rich-conversation.css",
       "disposition": "keep_release",
-      "group": "conversation_v2_integration",
-      "reason": "Integrate the reviewed Conversation v2, Jev execution and current main source owners; installation acceptance is recorded separately.",
+      "group": "compact_file_results",
+      "reason": "Group independent file receipts by spacing; keep exact preview identity and display known small sizes in bytes.",
       "status": "added"
     },
     {
@@ -8296,8 +8306,8 @@
       "path": "control-center-web/src/paw-os/apps/PawSessionWorkspace.test.tsx",
       "status": "modified",
       "disposition": "keep_release",
-      "group": "session_history_caption",
-      "reason": "Keep the original full-history read reachable through the existing tools menu without caption overflow, duplicate loads or draft loss."
+      "group": "session_tools_menu_rows",
+      "reason": "Retain whole-row text and keyboard focus targets in the existing Session tools menu under compact navigation rules."
     },
     {
       "path": "control-center-web/src/paw-os/apps/PawSessionWorkspace.tsx",
@@ -9457,8 +9467,8 @@
     {
       "path": "control-center-web/src/paw-os/styles/paw-os-agent.css",
       "status": "added",
-      "group": "session_history_caption",
-      "reason": "Keep the original full-history read reachable through the existing tools menu without caption overflow, duplicate loads or draft loss.",
+      "group": "session_tools_menu_rows",
+      "reason": "Retain whole-row text and keyboard focus targets in the existing Session tools menu under compact navigation rules.",
       "disposition": "keep_release"
     },
     {
@@ -9563,8 +9573,8 @@
       "path": "control-center-web/src/paw-os/styles/paw-os-stellar.css",
       "status": "modified",
       "disposition": "keep_release",
-      "group": "brand_stellar",
-      "reason": "User-selected branding and bounded stellar visual behavior."
+      "group": "compact_file_results",
+      "reason": "Group independent file receipts by spacing; keep exact preview identity and display known small sizes in bytes."
     },
     {
       "path": "control-center-web/src/paw-os/styles/paw-os-sys-apps-migrated-v1.css",
@@ -16026,6 +16036,20 @@
       "disposition": "keep_release",
       "group": "knowledge_draft_recovery",
       "reason": "Recover unsent Knowledge input and reading choices under the existing window/library owner without request replay."
+    },
+    {
+      "path": "control-center-web/src/features/agent/file-preview/file-descriptor.test.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "compact_file_results",
+      "reason": "Group independent file receipts by spacing; keep exact preview identity and display known small sizes in bytes."
+    },
+    {
+      "path": "control-center-web/src/features/agent/file-preview/file-descriptor.ts",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "compact_file_results",
+      "reason": "Group independent file receipts by spacing; keep exact preview identity and display known small sizes in bytes."
     }
   ]
 }

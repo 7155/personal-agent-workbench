@@ -5,6 +5,10 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Keep Session tool-menu labels and keyboard focus on full-width text rows in
+  compact windows. Group file results with spacing instead of a shared slab;
+  preserve each clickable receipt and display exact bytes for small snapshots.
+
 - Keep responsive menu and window dimensions aligned when shared styles load
   after the App shell, preserving usable controls in narrow and zoomed windows.
 

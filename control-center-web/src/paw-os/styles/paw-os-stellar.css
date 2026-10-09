@@ -736,7 +736,7 @@
   box-shadow: 0 16px 40px -20px rgb(31 49 77 / .2);
 }
 
-.paw-desktop-root[data-paw-visual='stellar'] .paw-session-workspace__conversation[data-message-flow='separated'] :is(.agent-inline-diff, .agent-rich-artifact, .agent-file-block, .agent-file-collection),
+.paw-desktop-root[data-paw-visual='stellar'] .paw-session-workspace__conversation[data-message-flow='separated'] :is(.agent-inline-diff, .agent-rich-artifact, .agent-file-block),
 .paw-desktop-root[data-paw-visual='stellar'] .paw-agent-trace-v1__filters button:not([aria-pressed='true']) {
   background: var(--paw-stellar-process);
 }

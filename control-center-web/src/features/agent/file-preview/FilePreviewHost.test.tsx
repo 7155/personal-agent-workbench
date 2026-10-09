@@ -6,6 +6,9 @@ import { ControlTransportProvider } from '@/app/control-transport';
 import { TooltipProvider } from '@/components/primitives';
 import { StubControlTransport } from '@/test/stub-control-transport';
 import { AgentFileBlock } from './AgentFileBlock';
+import { AgentFileCollection } from './AgentFileCollection';
+import type { ControlRequest } from '@/platform/transport';
+import type { UiAgentBlock } from '@/contracts/ui-events';
 import { FilePreviewHost } from './FilePreviewHost';
 import { RichHtmlPreview } from './RichHtmlPreview';
 import { useFilePreviewStore } from './file-preview-store';
@@ -98,6 +101,41 @@ describe('file preview interaction', () => {
 
     await user.click(screen.getByRole('button', { name: '收起 acceptance.md' }));
     expect(screen.queryByRole('region', { name: 'acceptance.md 内联预览' })).not.toBeInTheDocument();
+  });
+
+  it('keeps same-name receipts separate and opens each original snapshot with its exact byte size', async () => {
+    const blocks: UiAgentBlock[] = Array.from({ length: 6 }, (_, index) => ({
+      id: `file-result-${index}`, type: 'file', status: 'completed', presentationKind: 'file.v1',
+      data: { mediaId: `media_snapshot_00000${index}`, fileName: index % 2 ? 'notes.md.diff' : 'notes.md',
+        mimeType: 'text/markdown', byteSize: index === 0 ? 72 : 124, sha256: String(index + 1).repeat(64) },
+    }));
+    const transport = new StubControlTransport('mock', {
+      'agent.media.preview': (request: ControlRequest) => {
+        const block = blocks.find(item => item.data.mediaId === request.params?.mediaId)!;
+        const content = `snapshot ${block.id}`.padEnd(Number(block.data.byteSize), ' ');
+        return { ...preview(content), descriptor: { ...preview('').descriptor,
+          mediaId: block.data.mediaId, fileName: block.data.fileName, sha256: block.data.sha256, byteSize: block.data.byteSize,
+          contentUrl: `/api/agent/media/${block.data.mediaId}/content?sessionId=${SESSION_ID}` } };
+      },
+    });
+    const user = userEvent.setup();
+    const { container } = render(<TooltipProvider><ControlTransportProvider transport={transport}>
+      <AgentFileCollection blocks={[...blocks, blocks[0]!]} sessionId={SESSION_ID} />
+    </ControlTransportProvider></TooltipProvider>);
+    expect(container.querySelectorAll('.agent-file-block-shell')).toHaveLength(6);
+    expect(transport.requests).toHaveLength(0);
+    expect(screen.getByText(/72 B/)).toBeInTheDocument();
+    for (let index = 0; index < blocks.length; index++) {
+      const row = container.querySelectorAll<HTMLButtonElement>('.agent-file-block')[index]!;
+      expect(row).toHaveTextContent(index === 0 ? '72 B' : '124 B');
+      expect(row).toHaveAttribute('data-kind', index % 2 ? 'diff' : 'document');
+      await user.click(row);
+      expect(await screen.findByText(`snapshot file-result-${index}`)).toBeInTheDocument();
+      expect(transport.requests[index]).toMatchObject({ pathId: 'agent.media.preview',
+        params: { mediaId: blocks[index]!.data.mediaId }, query: { sessionId: SESSION_ID, sha256: blocks[index]!.data.sha256 } });
+    }
+    expect(container).not.toHaveTextContent('最新');
+    expect(container).not.toHaveTextContent('版本');
   });
 
   it('keeps the isolated loopback transport for the native WebKit host', () => {
