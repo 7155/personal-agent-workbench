@@ -8,6 +8,15 @@ source checkpoint is not a signed and notarized macOS binary release.
 - Show complete file paths in diff previews with naturally wrapping headers;
   keep change counts readable beside long paths and retain the original hunk reader.
 
+- Keep unavailable chat context details concise while preserving reported token
+  totals and compression history. Show the original failure reason and next
+  step, and provide a full-size close target without enabling raw context access.
+
+- Open StarMate from the desktop planet and keep the background conversation
+  directory as a separate action. Preserve working motion in visible, unfocused
+  pet windows; pause and resume the existing timeline when hidden or reduced,
+  without replaying arrival notices in the same mounted window.
+
 - Keep the original v2 chat controls in one compact row in very short full
   Session and Room windows, leaving a readable editor and preserving the
   primary Send/Stop targets and existing permissions and pickers.

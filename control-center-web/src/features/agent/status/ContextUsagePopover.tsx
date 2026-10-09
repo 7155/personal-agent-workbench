@@ -126,7 +126,7 @@ export function ContextUsagePopover({
               </button>
             </PopoverClose>
           </header>
-          <ContextUsageBody loading={loading} readError={readError} view={view} />
+          <ContextUsageBody layerDetailsAvailable={snapshot?.available === true} loading={loading} readError={readError} view={view} />
         </PopoverContent>
       </div>
     </Popover>
@@ -134,32 +134,23 @@ export function ContextUsagePopover({
 }
 
 function ContextUsageBody({
+  layerDetailsAvailable,
   loading,
   readError,
   view,
 }: {
+  layerDetailsAvailable: boolean;
   loading: boolean;
   readError: string;
   view: ContextUsageView;
 }) {
-  if (!view.available && loading) {
-    return <p className="agent-context-usage__empty">正在读取上下文占用…</p>;
-  }
-  if (!view.available) {
-    return (
-      <>
-        <p className="agent-context-usage__empty" role={readError ? 'status' : undefined}>{readError || '尚未收到 Runtime 上下文快照；各层明确标为未知，不用总量推算。'}</p>
-        <ContextUsageLayerList layers={view.layers} />
-      </>
-    );
-  }
-
+  const hasReportedTotal = view.tokens !== null || view.contextWindow > 0 || view.percent !== null;
   const used = view.tokens ?? 0;
   const barTotal = Math.max(view.contextWindow, used, 1);
   // Runtime's prompt is also normally present as the latest user message in
   // contextMessages. Keep the dedicated row, but do not double-count it in
   // the illustrative character strip.
-  const measurableLayers = view.layers.filter(
+  const measurableLayers = (layerDetailsAvailable ? view.layers : []).filter(
     (layer) => layer.id !== 'currentInput' && layer.characters !== null && layer.characters > 0,
   );
   const characterTotal = Math.max(
@@ -169,8 +160,12 @@ function ContextUsageBody({
 
   return (
     <>
-      {readError ? <p className="agent-context-usage__note" role="status">{readError}</p> : null}
-      <div className="agent-context-usage__summary">
+      {!layerDetailsAvailable || readError ? (
+        <p className="agent-context-usage__empty" role="status">
+          {loading ? '正在读取上下文占用…' : readError || '尚未收到分层上下文快照。'}
+        </p>
+      ) : null}
+      {hasReportedTotal ? <div className="agent-context-usage__summary">
         <b>{view.percent === null ? '占用未知' : `已用 ${Math.round(view.percent)}%`}</b>
         <span>
           {view.tokens === null ? '未知' : `约 ${formatContextTokenCount(view.tokens)}`}
@@ -178,13 +173,13 @@ function ContextUsageBody({
           {view.contextWindow > 0 ? formatContextTokenCount(view.contextWindow) : '未知'}
           {' Tokens'}
         </span>
-      </div>
-      <div aria-hidden="true" className="agent-context-usage__bar">
+      </div> : null}
+      {view.available ? <div aria-hidden="true" className="agent-context-usage__bar">
         {used > 0 ? <i data-used style={{ width: `${(used / barTotal) * 100}%` }} /> : null}
         {view.freeTokens !== null && view.freeTokens > 0 ? (
           <i data-free style={{ flex: view.freeTokens / barTotal }} />
         ) : null}
-      </div>
+      </div> : null}
       {measurableLayers.length ? (
         <p className="agent-context-usage__composition-label">已捕获层字符示意（当前输入可能已在对话历史中，不重复计入）</p>
       ) : null}
@@ -201,8 +196,10 @@ function ContextUsageBody({
           ))}
         </div>
       ) : null}
-      <ContextUsageLayerList layers={view.layers} />
-      {view.layers.some((layer) => layer.characters !== null && layer.tokenQuality === 'unknown') ? (
+      {layerDetailsAvailable ? <ContextUsageLayerList layers={view.layers} /> : (
+        <p className="agent-context-usage__note">{unavailableContextNote(readError, loading)}</p>
+      )}
+      {layerDetailsAvailable && view.tokens !== null && view.layers.some((layer) => layer.characters !== null && layer.tokenQuality === 'unknown') ? (
         <p className="agent-context-usage__note">总 Token 仅有整轮统计，不能可靠分摊到各层。</p>
       ) : null}
       {view.compaction ? (
@@ -215,6 +212,17 @@ function ContextUsageBody({
       ) : null}
     </>
   );
+}
+
+function unavailableContextNote(readError: string, loading: boolean): string {
+  if (loading) return '各层用量未知。';
+  if (readError === '本机原始上下文调试尚未启用') {
+    return '各层用量未知。可在设置 → 配置 → 隐私与安全开启“保存并查看本机上下文快照”。';
+  }
+  if (readError === '原对话尚未载入，暂时无法查看原始上下文。') {
+    return '各层用量未知。重新打开原对话后，再查看上下文。';
+  }
+  return '各层用量未知。关闭后重新打开，可再次读取。';
 }
 
 function contextReadError(reason: string): string {
