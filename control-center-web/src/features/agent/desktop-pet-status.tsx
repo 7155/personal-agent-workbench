@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { useChatPresentation } from '@/features/conversation-ui/reading/chat-presentation';
 import { PLANET_SIGNAL_PALETTE } from '@/features/rooms/sphere-avatar/sphere-avatar-protocol';
 import { useMotionActivity } from '@/design/motion';
@@ -10,6 +11,20 @@ export function PetStatusSignal({ state, animate = false, className = '', palett
 }) {
   const motionActive = useMotionActivity();
   const presentation = useChatPresentation();
+  const previous = useRef(state);
+  const [arrivalActive, setArrivalActive] = useState(() => animate && motionActive && (state === 'attention' || state === 'error'));
+  useEffect(() => {
+    const entered = previous.current !== state;
+    previous.current = state;
+    // Activity recovery never replays a notice or a state received while quiet.
+    if (!animate || !motionActive) setArrivalActive(false);
+    else if (entered) setArrivalActive(state === 'attention' || state === 'error');
+  }, [state, animate, motionActive]);
+  useEffect(() => {
+    if (!arrivalActive) return;
+    const timer = setTimeout(() => setArrivalActive(false), state === 'error' ? 420 : 260);
+    return () => clearTimeout(timer);
+  }, [arrivalActive, state]);
   const colored = palette === 'planet' || (palette === undefined && presentation?.ownerKey === 'builtin:desktop-pet' && presentation.version === 'v2');
   // Seven directory states stay intact. Ended is blue/minus, not a success
   // check; unknown remains slate/dashed, never a projected offline fact.
@@ -24,7 +39,7 @@ export function PetStatusSignal({ state, animate = false, className = '', palett
   }[state];
   return <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"
     className={`desktop-pet-status ${className}`.trim()} data-state={state}
-    data-motion-active={animate && motionActive} data-palette={colored ? 'planet' : undefined} style={colored ? { color } : undefined} fill="none" stroke="currentColor"
+    data-motion-active={animate && motionActive} data-arrival-active={arrivalActive && animate && motionActive} data-palette={colored ? 'planet' : undefined} style={colored ? { color } : undefined} fill="none" stroke="currentColor"
     strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     {state === 'running' ? <>
       <circle className="desktop-pet-status__shape" cx="12" cy="12" r="9" stroke="none" />
