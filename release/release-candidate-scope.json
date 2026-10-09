@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-09T22:02:15.588252+00:00",
+  "generatedAt": "2026-10-09T22:38:39.814327+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "undo/paw-acceptance-20261009",
     "baseCommit": "55fc923944ffcee72a2c90b04a891c1106485227",
-    "candidateCommitPolicy": "Committed source checkpoint of user-authorized frontend polish, persistent Agent coordination, exact Room result return and native message receipt recovery; source checks do not establish complete foreground acceptance. Recover local Knowledge drafts without search replay; real browser and installed acceptance remain separate. Keep the Session caption compact while preserving explicit history access and keyboard focus; current-source Chrome verification remains separate. Keep responsive menu dimensions under the structural CSS owner regardless of lazy chunk arrival order; current-source Chrome validation remains required. Preserve full-row menu focus and compact distinct file receipts with truthful small-file sizes; source checks remain separate from current-source real browser and installed acceptance. Restore exact visible Durable sidecars under stable current native message/turn/client binding; no alias fabrication or replay, and current-source browser acceptance remains required. Preserve current-stream authority during full-history reads and show recovery truthfully; source verification does not replace real connection/foreground acceptance. Keep the Full Session v2 floating dock transparent outside its editor card and compact only the empty collapsed editor; real viewport/zoom and long-draft acceptance remain required. Align the v2 context-meter target with the desktop and narrow composer controls; current-source real browser acceptance remains separate. Reserve the complete enlarged narrow editor control outside the text content area; current-source geometry and interaction verification remains required. Fit v2 full Session and portal Room editor floors and ceilings to their real local height budget; preserved node/draft/selection checks do not replace real zoom and window acceptance. Reveal explicitly opened original inline file rows and previews inside measured transcript clearance while preserving passive restoration and late-ACK reading position; source regression checks do not establish full preview paint, natural scrolling or installed acceptance. Compact only short full v2 workspaces using existing controls and a readable editor while preserving original permission/model/tool owners; source allocation and regression checks do not replace real short-window geometry or foreground acceptance. Use the desktop planet as the existing StarMate entry while keeping a separate original conversation directory; preserve visible unfocused working motion and same-mounted visibility/reduced-motion phase without replaying notices. Source checks do not establish native foreground, cold-window phase or six-state Room acceptance."
+    "candidateCommitPolicy": "Committed source checkpoint of user-authorized frontend polish, persistent Agent coordination, exact Room result return and native message receipt recovery; source checks do not establish complete foreground acceptance. Recover local Knowledge drafts without search replay; real browser and installed acceptance remain separate. Keep the Session caption compact while preserving explicit history access and keyboard focus; current-source Chrome verification remains separate. Keep responsive menu dimensions under the structural CSS owner regardless of lazy chunk arrival order; current-source Chrome validation remains required. Preserve full-row menu focus and compact distinct file receipts with truthful small-file sizes; source checks remain separate from current-source real browser and installed acceptance. Restore exact visible Durable sidecars under stable current native message/turn/client binding; no alias fabrication or replay, and current-source browser acceptance remains required. Preserve current-stream authority during full-history reads and show recovery truthfully; source verification does not replace real connection/foreground acceptance. Keep the Full Session v2 floating dock transparent outside its editor card and compact only the empty collapsed editor; real viewport/zoom and long-draft acceptance remain required. Align the v2 context-meter target with the desktop and narrow composer controls; current-source real browser acceptance remains separate. Reserve the complete enlarged narrow editor control outside the text content area; current-source geometry and interaction verification remains required. Fit v2 full Session and portal Room editor floors and ceilings to their real local height budget; preserved node/draft/selection checks do not replace real zoom and window acceptance. Reveal explicitly opened original inline file rows and previews inside measured transcript clearance while preserving passive restoration and late-ACK reading position; source regression checks do not establish full preview paint, natural scrolling or installed acceptance. Compact only short full v2 workspaces using existing controls and a readable editor while preserving original permission/model/tool owners; source allocation and regression checks do not replace real short-window geometry or foreground acceptance. Use the desktop planet as the existing StarMate entry while keeping a separate original conversation directory; preserve visible unfocused working motion and same-mounted visibility/reduced-motion phase without replaying notices. Source checks do not establish native foreground, cold-window phase or six-state Room acceptance. Keep unavailable context details concise without inventing layer usage or enabling raw context access; preserve reported totals, compression history, original error and keyboard return. Source checks do not establish real full-data, narrow-window or installed acceptance."
   },
   "dispositions": {
     "keep_release": "Retain this source maintenance change.",
@@ -83,7 +83,7 @@
     },
     "conversation_controls": {
       "description": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery.",
-      "pathCount": 63
+      "pathCount": 64
     },
     "trace_optimization": {
       "description": "Trace diagnosis and bounded optimization source, contracts and executable regressions.",
@@ -235,10 +235,10 @@
     }
   },
   "summary": {
-    "pathCount": 2250,
+    "pathCount": 2251,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1934
+      "keep_release": 1935
     },
     "groupCounts": {
       "local_docs": 121,
@@ -265,7 +265,7 @@
       "composition_refactor": 31,
       "portable_agent_ui": 8,
       "owner_boundaries": 15,
-      "conversation_controls": 63,
+      "conversation_controls": 64,
       "durable_desktop_iteration": 28,
       "trace_optimization": 63,
       "architecture_recovery_20261008": 17,
@@ -16050,6 +16050,13 @@
       "disposition": "keep_release",
       "group": "compact_file_results",
       "reason": "Group independent file receipts by spacing; keep exact preview identity and display known small sizes in bytes."
+    },
+    {
+      "path": "control-center-web/src/features/agent/status/ContextUsagePopover.css",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "conversation_controls",
+      "reason": "Keep unavailable context details concise with the existing popover owner while preserving totals, compression history, error and full-size close target."
     }
   ]
 }

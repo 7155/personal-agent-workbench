@@ -5,6 +5,10 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Keep unavailable chat context details concise while preserving reported token
+  totals and compression history. Show the original failure reason and next
+  step, and provide a full-size close target without enabling raw context access.
+
 - Open StarMate from the desktop planet and keep the background conversation
   directory as a separate action. Preserve working motion in visible, unfocused
   pet windows; pause and resume the existing timeline when hidden or reduced,
