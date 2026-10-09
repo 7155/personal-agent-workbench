@@ -113,7 +113,7 @@
 }
 @container workbench-composer (max-width: 460px) {
   .paw-desktop-root .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] textarea,
-  .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] textarea { padding: 14px 48px 10px 14px; font-size: 16px; }
+  .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] textarea { padding: 14px 64px 10px 14px; font-size: 16px; }
   .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] :is(.agent-composer__controls button, .agent-composer__editor > button) { min-width: 40px; min-height: 40px; }
   .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] .agent-composer__send { min-width: 44px; min-height: 44px; }
   .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] .agent-composer__toolbar { gap: 7px; padding: 6px 10px 10px; }

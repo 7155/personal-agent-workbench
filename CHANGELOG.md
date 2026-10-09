@@ -5,6 +5,9 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Keep narrow v2 chat text clear of the larger editor expand control by
+  reserving enough padding for its full hit target.
+
 - Keep the v2 chat context meter aligned with its toolbar: use a 32px minimum
   target on desktop and a 40px target in the narrow composer.
 
