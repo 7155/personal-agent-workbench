@@ -328,7 +328,7 @@ class AgentToolRuntimeContractTest(unittest.TestCase):
         self.assertEqual(branch["required"], ["op", "action"])
         self.assertEqual(
             branch["properties"]["action"]["enum"],
-            ["read", "create_session", "create_room", "prompt", "stop", "resume"],
+            ["read", "read_result", "create_session", "create_room", "prompt", "stop", "resume"],
         )
         # Existing delegation access, tools, skills and workspace arguments are
         # identical; only the unavailable coordinator's fields are omitted.

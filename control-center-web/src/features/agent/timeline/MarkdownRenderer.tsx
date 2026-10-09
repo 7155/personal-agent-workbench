@@ -14,6 +14,10 @@ import {
   type EvidenceEchoEntity,
 } from '@/features/evidence-echo/evidence-echo';
 import { openPawOsRoute, usePawOsDesktop } from '@/features/paw-os/surface-context';
+import { useOptionalControlTransport } from '@/app/control-transport';
+import type { UiAgentBlock } from '@/contracts/ui-events';
+import { filePreviewRequestFromBlock, managedContentUrl, type FilePreviewRequest } from '../file-preview/file-descriptor';
+import { useFilePreviewStore } from '../file-preview/file-preview-store';
 import type { AgentBlockRenderProps } from './renderer-contract';
 import { CodeContentBlock, StreamingCursor } from './CodeDiffRenderers';
 import {
@@ -300,10 +304,41 @@ type MarkdownRenderContextValue = {
 };
 const MarkdownRenderContext = createContext<MarkdownRenderContextValue | null>(null);
 
+const MessageFileReferencesContext = createContext<readonly FilePreviewRequest[]>([]);
+
+/** Bind only this message's original managed receipts; names never imply cwd. */
+export function MessageFileReferences({ blocks, sessionId, children }: {
+  blocks: readonly UiAgentBlock[]; sessionId: string; children: ReactNode;
+}) {
+  const references = useMemo(() => {
+    const unique = new Map<string, FilePreviewRequest>();
+    for (const block of blocks) {
+      if (block.type !== 'file' || block.status !== 'completed') continue;
+      const request = filePreviewRequestFromBlock(block.data, sessionId);
+      if (request) unique.set(`${request.sessionId}:${request.mediaId}:${request.expectedSha256}`, request);
+    }
+    return [...unique.values()];
+  }, [blocks, sessionId]);
+  return <MessageFileReferencesContext.Provider value={references}>{children}</MessageFileReferencesContext.Provider>;
+}
+
 function MarkdownLink({ href, children }: { href?: string; children?: ReactNode }) {
   const context = useContext(MarkdownRenderContext);
+  const references = useContext(MessageFileReferencesContext);
+  const transport = useOptionalControlTransport();
+  const openPreview = useFilePreviewStore(state => state.openPreview);
   if (!context) return <span>{children}</span>;
   const filePath = workspaceFileReference(href);
+  if (filePath && !filePath.startsWith('/')) {
+    const matches = references.filter(reference => reference.sessionId === context.sessionId && reference.fileNameHint === filePath);
+    const request = matches.length === 1 ? matches[0] : undefined;
+    const receiptUrl = request ? managedContentUrl(request) : null;
+    if (!request || !receiptUrl || !transport) return <span>{children}</span>;
+    return <a aria-label={`打开文件 ${request.fileNameHint}`} className="agent-markdown__file-link" href={receiptUrl}
+      onClick={event => { event.preventDefault(); openPreview(request, transport); }} title={request.fileNameHint}>
+      {children}<FileText aria-hidden="true" size={12} />
+    </a>;
+  }
   if (filePath) {
     const target: EvidenceEchoEntity = { appId: 'files', entityId: filePath, label: fileName(filePath),
       ...(context?.sessionId ? { sessionId: context.sessionId } : {}) };
@@ -418,12 +453,17 @@ function commandLikeText(value: string): boolean {
 }
 
 function workspaceFileReference(value: string | undefined): string | undefined {
-  if (!value || value.includes('\\') || value.includes('://') || value.startsWith('#')) return undefined;
-  const normalized = value.trim().replace(/^\.\//u, '');
-  if (!normalized || normalized === '.' || normalized === '..' || !/\.[a-z0-9]{1,12}$/iu.test(normalized)) return undefined;
-  if (!WORKSPACE_FILE_REFERENCE.test(normalized) && !/^\/[\w@+./-]+\.[a-z0-9]{1,12}$/iu.test(normalized)) return undefined;
-  WORKSPACE_FILE_REFERENCE.lastIndex = 0;
-  return value.trim();
+  if (!value) return undefined;
+  let path: string;
+  try { path = decodeURIComponent(value).trim(); } catch { return undefined; }
+  if (!path || path.includes('\\') || path.includes('://') || /[?#\u0000\r\n]/u.test(path)) return undefined;
+  if (!/\.[a-z0-9]{1,12}$/iu.test(path)) return undefined;
+  if (path.startsWith('/') && !path.startsWith('//')) return path;
+  // This only identifies file-like prose. Relative paths still need an exact
+  // same-message receipt before MarkdownLink offers an action.
+  const normalized = path.replace(/^\.\//u, '');
+  const match = new RegExp(WORKSPACE_FILE_REFERENCE.source, 'iu').exec(normalized);
+  return match?.index === 0 && match[0] === normalized ? path : undefined;
 }
 
 function fileName(path: string): string {

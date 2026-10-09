@@ -4083,3 +4083,49 @@ describe('Session codemode wiring', () => {
     expect(transport.requests.filter(request => request.pathId === 'agent.session.codemode.select')).toHaveLength(0);
   });
 });
+
+describe('bounded recent typed file receipts in the formal v2 consumer', () => {
+  it('keeps four distinct receipts clickable without guessing bold basenames or restoring full history', async () => {
+    const sessionId = 'public-recent-receipts';
+    const files = [34, 55, 176, 297].map((byteSize, index) => ({
+      schemaVersion: 'rag-ime.agent-block.v1', id: `file:${index}`, type: 'file', status: 'completed',
+      presentationKind: 'file', visibility: 'private_session', generation: 0,
+      ref: `block:public-receipt-${index}`, digest: String(index + 1).repeat(64),
+      source: { kind: 'pi_runtime_event', ref: `${sessionId}:native-entry` },
+      data: { mediaId: `media_public_receipt_${String(index).padStart(24, '0')}`, sessionId,
+        fileName: index < 2 ? 'result.txt' : 'result.txt.diff', mimeType: 'text/plain', byteSize,
+        sha256: String(index + 1).repeat(64), receiptUrl: `/api/agent/media/media_public_receipt_${String(index).padStart(24, '0')}/content?sessionId=${sessionId}` },
+    }));
+    const original = { schemaVersion: 'rag-ime.agent-message.v1', id: 'native-entry', sessionId,
+      turnId: 'public-turn', role: 'assistant', status: 'completed', attachments: [], citations: [], createdAtMs: 100,
+      blocks: [{ id: 'text:public', type: 'text', status: 'completed', presentationKind: 'markdown', data: { text: '**result.txt** public receipt fixture' } }, ...files] };
+    const transport = new StubControlTransport('mock', { ...idleSessionRoutes(),
+      'agent.session.snapshot': (request: ControlRequest) => {
+        expect(request.query?.view).toBe('recent');
+        return { schemaVersion: 'rag-ime.agent-messages.v1', sessionId, items: [original], status: 'idle',
+          partial: true, snapshotScope: 'recent', runtimeQuiescent: true, lastSequence: 0, liveEvents: [] };
+      }, 'agent.media.preview': () => new Promise(() => {}) });
+    const { container } = render(<ControlTransportProvider transport={transport}><TooltipProvider>
+      <PawOsDesktopProvider openRoute={vi.fn()} openWindow={vi.fn()}>
+        <PawSessionWorkspace record={{ ...liveSession(), id: sessionId, workspaceRoots: ['/'] }} recordId={sessionId}
+          appearance="full" showComposerControls initialDraft="public unsaved draft"
+          onNewWork={vi.fn()} onSessionCreated={vi.fn()} onSessionUpdated={vi.fn()} />
+      </PawOsDesktopProvider>
+    </TooltipProvider></ControlTransportProvider>);
+    const address = agentSessionAddress(transport, sessionId);
+    await waitFor(() => expect(useAgentLiveStore.getState().projections[agentProjectionKey(address)]?.messagesById[original.id]).toBeDefined());
+    const message = useAgentLiveStore.getState().projections[agentProjectionKey(address)]?.messagesById[original.id];
+    expect(message?.blocks.filter(block => block.type === 'file')).toHaveLength(4);
+    expect(container.querySelector('.paw-session-workspace')).toHaveAttribute('data-chat-presentation-version', 'v2');
+    const buttons = within(screen.getByRole('region', { name: '结果文件' })).getAllByRole('button', { name: /展开 result.txt/ });
+    expect(buttons).toHaveLength(4);
+    expect(screen.queryByRole('link', { name: '打开文件 result.txt' })).not.toBeInTheDocument();
+    const user = userEvent.setup();
+    for (const button of buttons) await user.click(button);
+    const requests = transport.requests.filter(request => request.pathId === 'agent.media.preview');
+    expect(requests.map(request => [request.params?.mediaId, request.query?.sessionId, request.query?.sha256])).toEqual(
+      files.map(block => [block.data.mediaId, sessionId, block.data.sha256]));
+    expect(screen.getByRole('textbox', { name: '消息' })).toHaveValue('public unsaved draft');
+    expect(transport.requests.filter(request => request.pathId === 'agent.session.prompt')).toHaveLength(0);
+  });
+});

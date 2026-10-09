@@ -373,6 +373,15 @@ class AgentEventProjectionService:
         message: Mapping[str, object],
     ) -> bool:
         generation = 0
+        native_message_id = event.payload.get("nativeMessageId")
+        native_pi_session_id = event.payload.get("nativePiSessionId")
+        has_native_identity = isinstance(native_message_id, str) and bool(native_message_id) and isinstance(native_pi_session_id, str) and bool(native_pi_session_id)
+        # The live bubble remains Turn-owned. Persist each actual native entry
+        # separately: one Turn may complete several assistant messages.
+        source_message_id = (
+            f"pi:{native_pi_session_id}:{native_message_id}" if has_native_identity
+            else str(message.get("id") or event.event_id)
+        )
         bound_message = dict(message)
         bound_message["blocks"] = bind_block_scope(
             [
@@ -381,9 +390,7 @@ class AgentEventProjectionService:
                 if isinstance(block, Mapping)
             ],
             session_id=event.session_id,
-            message_id=str(
-                message.get("id") or event.event_id
-            ),
+            message_id=source_message_id,
             generation=generation,
         )
         event.payload["message"] = bound_message
@@ -398,12 +405,14 @@ class AgentEventProjectionService:
             for block in bound_message.get("blocks", [])
         ):
             self.agent_blocks.persist_message(
-                bound_message,
+                {**bound_message, "id": source_message_id},
                 root_id="",
                 task_id="",
                 invocation_id="",
                 generation=generation,
                 created_at_ms=event.created_at_ms,
+                native_message_id=native_message_id if has_native_identity else "",
+                native_pi_session_id=native_pi_session_id if has_native_identity else "",
             )
         return True
 

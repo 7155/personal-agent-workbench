@@ -526,10 +526,12 @@ function KnowledgeMediaSummary({ document }: { document: KnowledgeDocument }) {
   const metadata = document.metadata ?? {};
   const duration = typeof metadata.durationSeconds === 'number' && Number.isFinite(metadata.durationSeconds) && metadata.durationSeconds > 0 ? metadata.durationSeconds : null;
   const units = typeof metadata.mediaUnitCount === 'number' && Number.isSafeInteger(metadata.mediaUnitCount) && metadata.mediaUnitCount >= 0 ? metadata.mediaUnitCount : null;
+  const description = [duration !== null ? `源文件时长 ${formatKnowledgeMediaTime(duration)}` : '', units !== null ? `${units} 个采样单元` : ''].filter(Boolean).join(' · ');
   return <div className="knowledge-media-summary">
-    {duration !== null || units !== null ? <p>{[duration !== null ? `源文件时长 ${formatKnowledgeMediaTime(duration)}` : '', units !== null ? `${units} 个采样单元` : ''].filter(Boolean).join(' · ')}</p> : null}
-    {metadata.transcriptionApplied === false ? <p>媒体按音频片段或视频画面检索，未生成转写文本。</p> : null}
-    {KNOWLEDGE_VIDEO_SOURCE_MIME_TYPES.includes(document.mimeType) ? <p>采样画面不代表连续视频理解；时间标记为采样偏移。</p> : null}
+    <Disclosure className="knowledge-media-summary__details" key={document.id} summary={<><ChevronDown aria-hidden="true" size={13} /><span>媒体说明</span>{description ? <span className="knowledge-media-summary__duration">{description}</span> : null}</>}>
+      {metadata.transcriptionApplied === false ? <p>媒体按音频片段或视频画面检索，未生成转写文本。</p> : null}
+      {KNOWLEDGE_VIDEO_SOURCE_MIME_TYPES.includes(document.mimeType) ? <p>采样画面不代表连续视频理解；时间标记为采样偏移。</p> : null}
+    </Disclosure>
     {metadata.videoFramesTruncated === true ? <p>采样画面仅覆盖部分视频，完整内容请查看源文件。</p> : null}
     {metadata.audioSegmentsTruncated === true ? <p>音频片段仅覆盖部分音轨，完整内容请查看源文件。</p> : null}
     {metadata.audioOmitted === true ? <p>本次未提取音轨，声音内容请查看源文件。</p> : null}

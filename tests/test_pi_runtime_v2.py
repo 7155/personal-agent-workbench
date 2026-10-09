@@ -3423,7 +3423,8 @@ class PiRuntimeV2Tests(unittest.TestCase):
         )
         self.assertEqual(
             self.runtime.recent_session_snapshot(session_id),
-            {"messages": [], "projectionCurrent": False},
+            {"messages": [], "projectionCurrent": False,
+             "nativePiSessionId": "pi-recent-bounded"},
         )
 
     def test_host_snapshot_failure_recovers_from_durable_history_instead_of_empty_success(self) -> None:

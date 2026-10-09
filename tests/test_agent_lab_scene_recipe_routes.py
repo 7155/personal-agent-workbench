@@ -125,7 +125,7 @@ class AgentLabSceneRecipeServiceTests(unittest.TestCase):
             background_job_execution_owner=False,
             startup_recovery_enabled=False,
         )
-        projection_patch = patch.object(self.service.eval_lab, "list_runs", return_value={"experiments": [_experiment()]})
+        projection_patch = patch.object(self.service.eval_lab, "list_experiments", return_value=[_experiment()])
         self.public_projection = projection_patch.start()
         self.addCleanup(projection_patch.stop)
         self.addCleanup(self.tmp.cleanup)
@@ -201,13 +201,13 @@ class AgentLabSceneRecipeServiceTests(unittest.TestCase):
         session_before = deepcopy(self.service.sessions.get(str(session["id"])))
         configuration_before = deepcopy(self.service.configuration())
 
-        self.public_projection.return_value = {"experiments": []}
+        self.public_projection.return_value = []
         initial = self.service.eval_lab_scene_recipes({"sceneId": SCENE_ID, "experimentId": EXPERIMENT_ID})
         self.assertEqual(initial["revision"], 0)
         self.assertEqual(initial["activeVersion"]["origin"], "runner_builtin")
         self.assertFalse(initial["candidate"]["available"])
 
-        self.public_projection.return_value = {"experiments": [_experiment()]}
+        self.public_projection.return_value = [_experiment()]
         available = self.service.eval_lab_scene_recipes({"sceneId": SCENE_ID, "experimentId": EXPERIMENT_ID})
         self.assertTrue(available["candidate"]["available"])
         applied = self.service.eval_lab_scene_recipe_apply(self._apply_body())

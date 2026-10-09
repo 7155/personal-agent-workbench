@@ -93,6 +93,28 @@ function mediaDetail(kind: 'audio' | 'frame' = 'audio'): KnowledgeDocumentDetail
   return source;
 }
 
+it('keeps partial-media warnings visible and opens the full media explanation from the keyboard without reading assets', async () => {
+  const user = userEvent.setup();
+  const transport = new MockControlTransport();
+  const read = vi.spyOn(transport, 'readKnowledgeAsset');
+  show(mediaDetail(), false, transport);
+  const summary = screen.getByText('媒体说明').closest('summary')!;
+  expect(summary).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.getByText('源文件时长 00:12 · 3 个采样单元')).toBeVisible();
+  expect(screen.getByText(/采样画面仅覆盖部分视频/)).toBeVisible();
+  expect(screen.queryByText('采样画面不代表连续视频理解；时间标记为采样偏移。')).not.toBeInTheDocument();
+  summary.focus();
+  await user.keyboard('{Enter}');
+  expect(summary).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByText('媒体按音频片段或视频画面检索，未生成转写文本。')).toBeVisible();
+  expect(screen.getByText('采样画面不代表连续视频理解；时间标记为采样偏移。')).toBeVisible();
+  await user.keyboard(' ');
+  expect(summary).toHaveAttribute('aria-expanded', 'false');
+  expect(summary).toHaveFocus();
+  expect(screen.getByText(/采样画面仅覆盖部分视频/)).toBeVisible();
+  expect(read).not.toHaveBeenCalled();
+});
+
 it('makes native media readable in the default view and reads a bound audio asset only on demand', async () => {
   const source = mediaDetail();
   const transport = new MockControlTransport({ knowledgeAsset: ({ kbId, fileId, assetId }) => ({ kbId, fileId, assetId, sha256: assetId, mimeType: 'audio/wav', byteSize: 4, blob: new Blob(['wave'], { type: 'audio/wav' }) }) });

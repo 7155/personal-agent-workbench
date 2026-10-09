@@ -292,6 +292,7 @@ class AgentMessageSnapshotService:
             return self._recent_session_messages(session_id)
         session = self.sessions.get(session_id)
         last_sequence = self.sessions.max_event_sequence(session_id)
+        binding_before = self.sessions.runtime_binding(session_id)
         snapshot_provider = getattr(
             self.runtime,
             "session_snapshot",
@@ -322,6 +323,8 @@ class AgentMessageSnapshotService:
                 for message in messages
                 if isinstance(message, Mapping)
             ],
+            native_pi_session_id=_snapshot_native_identity(
+                runtime_snapshot, binding_before, self.sessions.runtime_binding(session_id)),
         )
         messages = _recover_managed_html_links(
             session_id,
@@ -593,6 +596,7 @@ class AgentMessageSnapshotService:
             session_id,
             self.sessions.get(session_id),
         )
+        binding_before = self.sessions.runtime_binding(session_id)
         snapshot_provider = getattr(
             self.runtime,
             "recent_session_snapshot",
@@ -613,6 +617,12 @@ class AgentMessageSnapshotService:
             if isinstance(runtime_snapshot, Mapping)
             else []
         )
+        native_identity = _snapshot_native_identity(
+            runtime_snapshot, binding_before, self.sessions.runtime_binding(session_id))
+        if native_identity is not None:
+            messages = self.agent_blocks.hydrate_recent_messages(
+                session_id, messages, native_pi_session_id=native_identity,
+            )
         last_sequence = self.sessions.max_event_sequence(session_id)
         replayed, _gap = self.events.replay(session_id)
         # The durable event journal omits streaming text deltas by design.
@@ -1420,6 +1430,23 @@ def _mapping_field(
         return None
     field = value.get(key)
     return dict(field) if isinstance(field, Mapping) else None
+
+
+def _snapshot_native_identity(
+    snapshot: object, before: Mapping[str, object] | None, after: Mapping[str, object] | None,
+) -> str | None:
+    value = snapshot if isinstance(snapshot, Mapping) else {}
+    if "nativePiSessionId" in value:
+        identity = value["nativePiSessionId"]
+        return identity if isinstance(identity, str) else None
+    if isinstance(value.get("piSessionId"), str) and value["piSessionId"]:
+        return str(value["piSessionId"])
+    # Legacy providers may omit identity. The original binding must be stable
+    # over their read; None is explicitly unproven, while empty is legacy scope.
+    keys = ("driverId", "runtimeKind", "externalSessionId", "transcriptRef", "generation")
+    if tuple((before or {}).get(key) for key in keys) != tuple((after or {}).get(key) for key in keys):
+        return None
+    return str((before or {}).get("externalSessionId") or "")
 
 
 def _verified_codemode_mode(value: object) -> str | None:

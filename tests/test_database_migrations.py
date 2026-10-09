@@ -18,12 +18,36 @@ from rag_ime.db.migration_runner import (
     migration_status,
 )
 
-TESTED_SCHEMA_HEAD = 226
+TESTED_SCHEMA_HEAD = 227
 # 0225 is reserved for the separate Wake admission candidate, not shipped here.
-POST_0126_MIGRATIONS = (*range(127, 225), 226)
+POST_0126_MIGRATIONS = (*range(127, 225), 226, 227)
 
 
 class DatabaseMigrationTests(unittest.TestCase):
+    def test_native_block_alias_upgrade_keeps_unbound_legacy_history_truthful(self) -> None:
+        from rag_ime.agent_block_store import AgentBlockStore
+        from rag_ime.agent_blocks import normalize_trusted_agent_blocks
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            old_migrations = root / "old"
+            old_migrations.mkdir()
+            for migration in load_migrations():
+                if migration.version <= 224:
+                    shutil.copyfile(migration.path, old_migrations / migration.path.name)
+            database = root / "upgrade.sqlite"
+            with closing(sqlite3.connect(database)) as conn:
+                self.assertEqual(apply_database_migrations(conn, migrations_dir=old_migrations).current_version, 224)
+            store = AgentBlockStore(database)
+            message = {"id": "original:assistant", "sessionId": "session:public", "blocks": list(normalize_trusted_agent_blocks([{"id": "public-file", "type": "file", "data": {"fileName": "result.txt", "mediaId": "media_public_upgrade_00000000"}}], source_kind="pi_runtime_event", source_ref="original:assistant"))}
+            store.persist_message(message)
+            self.assertEqual(store.initialize(), 227)
+            with closing(sqlite3.connect(database)) as conn:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM agent_block_native_aliases").fetchone()[0], 0)
+            plain = {**message, "id": "native:unknown", "blocks": []}
+            self.assertEqual(store.hydrate_recent_messages("session:public", [plain]), [plain])
+            exact = {**message, "blocks": []}
+            self.assertEqual(len(store.hydrate_recent_messages("session:public", [exact])[0]["blocks"]), 1)
+
     def test_room_journal_upgrade_preserves_original_session_delivery(self) -> None:
         import shutil
         import tempfile
@@ -37,7 +61,7 @@ class DatabaseMigrationTests(unittest.TestCase):
             conn.execute("INSERT INTO agent_coordinator_result_deliveries(delivery_id,coordinator_id,source_session_id,target_session_id,attempt_id,context_item_id,result_sha256,source_client_message_id,phase,created_at_ms) VALUES ('d','c','source','target','a','i','hash','client','pending',1)")
             conn.commit()
             upgraded = apply_database_migrations(conn)
-            self.assertEqual(upgraded.applied_versions, (226,))
+            self.assertEqual(upgraded.applied_versions, (226, 227))
             self.assertEqual(conn.execute("SELECT target_session_id,target_kind,target_room_id,phase FROM agent_coordinator_result_deliveries WHERE delivery_id='d'").fetchone(), ("target", "session", "", "pending"))
             self.assertEqual(apply_database_migrations(conn).applied_versions, ())
             with self.assertRaises(sqlite3.IntegrityError):

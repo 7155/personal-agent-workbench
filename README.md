@@ -100,7 +100,7 @@ Agent 围绕同一项目推进材料、运行、结果和交付。每轮改了�
 1. 打开 [Releases](https://github.com/7155/personal-agent-workbench/releases)，选择所需版本的 `macOS-arm64-unsigned.dmg`，按同页 `SHA256SUMS.txt` 核对文件。
 2. 打开 DMG，运行 **Install Personal Agent Workbench**。安装到当前用户的 `~/Applications`。
 3. 启动 PAW，在设置中连接模型服务：填写自己的 API Key，或使用该 Provider 支持的 OAuth 登录。
-4. 打开 **Agent**，选择一个可用模型，完成下面的第一个教程。
+4. 打开 **Session 与 Room**，选择一个可用模型，完成下面的第一个教程。
 
 需要 **Apple Silicon、macOS 14+**。离线安装包包含所需运行组件，无需单独安装 Git、Node 或 Python。当前为未经过 Developer ID 签名和 Apple 公证的预览版；macOS 可能要求在“隐私与安全性”中选择“仍要打开”。可选 Squirrel 输入法与本地模型权重单独安装。[完整安装、升级与回滚说明](release/README.md)。
 

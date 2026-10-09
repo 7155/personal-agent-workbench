@@ -125,6 +125,13 @@ class _ClassificationCall:
     on_settled: Callable[[], None] | None = None
 
 
+def _message_binding_key(binding: Mapping[str, object] | None) -> tuple[object, ...]:
+    value = binding or {}
+    return tuple(value.get(key) for key in (
+        "driverId", "runtimeKind", "externalSessionId", "transcriptRef", "generation",
+    ))
+
+
 def _session_resource_snapshot(
     skill_allowlist: list[str] | None,
 ) -> dict[str, object]:
@@ -3026,6 +3033,13 @@ class PiRuntimeHostManager:
         )
         return {
             "messages": result,
+            "nativePiSessionId": (
+                snapshot["piSessionId"]
+                if isinstance(snapshot.get("piSessionId"), str) and snapshot["piSessionId"]
+                else str((binding or {}).get("externalSessionId") or "")
+                if _message_binding_key(binding) == _message_binding_key(self.sessions.runtime_binding(session_id))
+                else None
+            ),
             "toolHistoryEvents": tool_history_events,
             "telemetry": dict(telemetry) if isinstance(telemetry, Mapping) else None,
             "messageQueue": message_queue,
@@ -3042,6 +3056,22 @@ class PiRuntimeHostManager:
         }
 
     def recent_session_snapshot(self, session_id: str) -> dict[str, object]:
+        binding = self.sessions.runtime_binding(session_id)
+        snapshot = self._recent_session_snapshot(session_id, binding=binding)
+        if "nativePiSessionId" in snapshot:
+            return snapshot
+        # Capture one proven native namespace for the returned rows. A binding
+        # epoch change during this read cannot label old rows with a new Pi ID.
+        native_identity = (
+            str((binding or {}).get("externalSessionId") or "")
+            if _message_binding_key(binding) == _message_binding_key(self.sessions.runtime_binding(session_id))
+            else None
+        )
+        return {**snapshot, "nativePiSessionId": native_identity}
+
+    def _recent_session_snapshot(
+        self, session_id: str, *, binding: Mapping[str, object] | None,
+    ) -> dict[str, object]:
         """Project a bounded durable first paint without contacting Pi Host.
 
         The append-only transcript is the only authority used here. Missing,
@@ -3056,7 +3086,6 @@ class PiRuntimeHostManager:
             return self.session_snapshot(session_id, _view="recent")
 
         session = self.sessions.get(session_id)
-        binding = self.sessions.runtime_binding(session_id)
         effective_codemode_mode = self._effective_codemode_mode(
             session,
             binding=binding,
@@ -3076,11 +3105,11 @@ class PiRuntimeHostManager:
                 # bounded reader is the only cheap way to notice a durable
                 # terminal settlement before trusting that cache.
                 try:
-                    binding = self.sessions.runtime_binding(session_id) or {}
+                    current_binding = self.sessions.runtime_binding(session_id) or {}
                     probe_terminal = (
                         int(projection_identity.get("transcriptMtimeNs") or 0)
                         // 1_000_000
-                        > as_integer(binding.get("updatedAtMs"))
+                        > as_integer(current_binding.get("updatedAtMs"))
                     )
                 except (KeyError, OSError, ValueError, sqlite3.Error):
                     probe_terminal = False
@@ -3180,12 +3209,13 @@ class PiRuntimeHostManager:
             projected_messages=messages,
             session_id=session_id,
         )
-        self._save_recent_message_projection(
-            session_id,
-            projection_identity,
-            messages,
-            tool_history_events,
-        )
+        if _message_binding_key(binding) == _message_binding_key(self.sessions.runtime_binding(session_id)):
+            self._save_recent_message_projection(
+                session_id,
+                projection_identity,
+                messages,
+                tool_history_events,
+            )
         return {
             "messages": messages,
             "toolHistoryEvents": tool_history_events,
@@ -5761,6 +5791,9 @@ class PiRuntimeHostManager:
                 "message_completed",
                 {
                     "message": message.to_payload(),
+                    **({"nativeMessageId": raw["entryId"], "nativePiSessionId": raw["nativePiSessionId"]}
+                       if isinstance(raw.get("entryId"), str) and raw["entryId"]
+                       and isinstance(raw.get("nativePiSessionId"), str) and raw["nativePiSessionId"] else {}),
                     "usage": public_usage(raw.get("message")),
                     **public_usage_evidence(raw_message),
                     "telemetry": dict(as_mapping(raw.get("telemetry"))),

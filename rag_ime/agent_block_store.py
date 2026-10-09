@@ -13,6 +13,7 @@ from .agent_blocks import bind_block_scope, provider_block_projection
 from .db import apply_database_migrations
 
 
+MAX_RECENT_MESSAGE_HYDRATION = 96
 MAX_ROOT_BLOCK_BYTES = 8 * 1024 * 1024
 
 
@@ -38,6 +39,8 @@ class AgentBlockStore:
         invocation_id: str = "",
         generation: int = 0,
         created_at_ms: int | None = None,
+        native_message_id: str = "",
+        native_pi_session_id: str = "",
     ) -> dict[str, object]:
         session_id = _required(message.get("sessionId"), "sessionId")
         message_id = _required(message.get("id"), "message id")
@@ -74,6 +77,7 @@ class AgentBlockStore:
             if existing_envelope is not None and str(existing_envelope[0]) != message_hash:
                 raise AgentBlockConflict("Agent block message envelope changed after persistence")
             if existing_envelope is not None:
+                self._bind_native_alias(conn, session_id, native_pi_session_id, native_message_id, message_id, generation)
                 persisted_receipt = conn.execute(
                     "SELECT before_bytes,after_bytes,estimated_tokens_before,estimated_tokens_after,block_count,projection_hash FROM agent_block_projection_receipts WHERE session_id=? AND message_id=? AND generation=?",
                     (session_id, message_id, max(0, int(generation))),
@@ -112,6 +116,7 @@ class AgentBlockStore:
                     message_hash, _canonical_json(base_message), now,
                 ),
             )
+            self._bind_native_alias(conn, session_id, native_pi_session_id, native_message_id, message_id, generation)
             receipt_id = f"block-projection:{uuid.uuid4()}"
             projection_hash = hashlib.sha256(projection.encode("utf-8")).hexdigest()
             conn.execute(
@@ -160,8 +165,102 @@ class AgentBlockStore:
             ).fetchall()
         return [json.loads(str(row[0])) for row in rows]
 
+    def _bind_native_alias(
+        self, conn: sqlite3.Connection, session_id: str, native_pi_session_id: str, native_message_id: str,
+        source_message_id: str, generation: int,
+    ) -> None:
+        if not native_message_id:
+            return
+        native_id = _required(native_message_id, "native message id")
+        target = (source_message_id, max(0, int(generation)))
+        existing = conn.execute(
+            "SELECT source_message_id,generation FROM agent_block_native_aliases WHERE session_id=? AND native_pi_session_id=? AND native_message_id=?",
+            (session_id, native_pi_session_id, native_id),
+        ).fetchone()
+        if existing is not None and tuple(existing) != target:
+            raise AgentBlockConflict("Agent block native alias was rebound")
+        claimed = conn.execute(
+            "SELECT native_message_id FROM agent_block_native_aliases WHERE session_id=? AND native_pi_session_id=? AND source_message_id=? AND generation=?",
+            (session_id, native_pi_session_id, *target),
+        ).fetchone()
+        if claimed is not None and str(claimed[0]) != native_id:
+            raise AgentBlockConflict("Agent block source already has a different native alias")
+        conn.execute(
+            "INSERT OR IGNORE INTO agent_block_native_aliases(session_id,native_pi_session_id,native_message_id,source_message_id,generation) VALUES (?,?,?,?,?)",
+            (session_id, native_pi_session_id, native_id, *target),
+        )
+
+    def hydrate_recent_messages(
+        self, session_id: str, runtime_messages: Sequence[Mapping[str, object]],
+        *, native_pi_session_id: str = "",
+    ) -> list[dict[str, object]]:
+        """Hydrate only returned IDs; never restore history or infer native aliases."""
+        messages = [dict(message) for message in runtime_messages]
+        # An unexpected oversized projection stays truthful/plain, without an
+        # unbounded query or silently dropping messages from Pi's projection.
+        if len(messages) > MAX_RECENT_MESSAGE_HYDRATION:
+            return messages
+        ids = list(dict.fromkeys(
+            message["id"] for message in messages
+            if message.get("sessionId") == session_id
+            and isinstance(message.get("id"), str) and message["id"]
+        ))
+        if not ids:
+            return messages
+        values = ",".join("(?)" for _ in ids)
+        with self._connect() as conn:
+            bindings = conn.execute(
+                f"""
+                WITH requested(id) AS (VALUES {values})
+                SELECT requested.id, COALESCE(alias.source_message_id,envelope.message_id) AS source_id,
+                       COALESCE(alias.generation,envelope.generation) AS generation
+                FROM requested
+                LEFT JOIN agent_block_native_aliases AS alias
+                  ON alias.session_id=? AND alias.native_pi_session_id=? AND alias.native_message_id=requested.id
+                LEFT JOIN agent_block_message_envelopes AS envelope
+                  ON ?='' AND envelope.session_id=? AND envelope.message_id=requested.id
+                 AND envelope.generation=(SELECT MAX(generation) FROM agent_block_message_envelopes
+                     WHERE session_id=? AND message_id=requested.id)
+                """, (*ids, session_id, native_pi_session_id, native_pi_session_id, session_id, session_id),
+            ).fetchall()
+            targets = list(dict.fromkeys(
+                (str(row["source_id"]), int(row["generation"]))
+                for row in bindings if row["source_id"] is not None
+            ))
+            if not targets:
+                return messages
+            pair_values = ",".join("(?,?)" for _ in targets)
+            rows = conn.execute(
+                f"""
+                WITH requested(message_id,generation) AS (VALUES {pair_values})
+                SELECT sidecar.message_id,sidecar.generation,sidecar.raw_json
+                FROM requested JOIN agent_message_block_sidecars AS sidecar
+                  ON sidecar.session_id=? AND sidecar.message_id=requested.message_id
+                 AND sidecar.generation=requested.generation
+                WHERE sidecar.lifecycle_status IN ('active','completed')
+                ORDER BY sidecar.created_at_ms,sidecar.block_ref
+                """, (*[value for target in targets for value in target], session_id),
+            ).fetchall()
+        blocks_by_target: dict[tuple[str, int], list[dict[str, object]]] = {}
+        for row in rows:
+            blocks_by_target.setdefault((str(row["message_id"]), int(row["generation"])), []).append(json.loads(str(row["raw_json"])))
+        target_by_id = {str(row["id"]): (str(row["source_id"]), int(row["generation"])) for row in bindings if row["source_id"] is not None}
+        for message in messages:
+            if message.get("sessionId") != session_id:
+                continue
+            target = target_by_id.get(str(message.get("id") or ""))
+            stored = blocks_by_target.get(target, []) if target is not None else []
+            if target is None:
+                continue
+            # Once a persisted envelope owns this entry, active sidecars own
+            # its rich blocks, including revocation. Keep ordinary Runtime text.
+            original = [dict(block) for block in message.get("blocks", []) if isinstance(block, Mapping) and block.get("schemaVersion") != "rag-ime.agent-block.v1"]
+            message["blocks"] = [*original, *stored]
+        return messages
+
     def hydrate_messages(
-        self, session_id: str, runtime_messages: Sequence[Mapping[str, object]]
+        self, session_id: str, runtime_messages: Sequence[Mapping[str, object]],
+        *, native_pi_session_id: str | None = "",
     ) -> list[dict[str, object]]:
         """Hydrate runtime history and recover rich messages omitted after compaction/restart."""
 
@@ -176,40 +275,41 @@ class AgentBlockStore:
         with self._connect() as conn:
             rows = conn.execute(
                 """
-                SELECT envelope.* FROM agent_block_message_envelopes AS envelope
+                SELECT envelope.*, alias.native_message_id, alias.native_pi_session_id FROM agent_block_message_envelopes AS envelope
                 JOIN (
                     SELECT message_id, MAX(generation) AS generation
                     FROM agent_block_message_envelopes WHERE session_id=? GROUP BY message_id
                 ) AS latest
-                  ON latest.message_id=envelope.message_id AND latest.generation=envelope.generation
+                  ON latest.message_id=envelope.message_id
+                 AND (latest.generation=envelope.generation OR EXISTS (
+                     SELECT 1 FROM agent_block_native_aliases AS exact_alias
+                     WHERE exact_alias.session_id=envelope.session_id
+                       AND exact_alias.source_message_id=envelope.message_id
+                       AND exact_alias.generation=envelope.generation
+                       AND exact_alias.native_pi_session_id=?
+                 ))
+                LEFT JOIN agent_block_native_aliases AS alias
+                  ON alias.session_id=envelope.session_id AND alias.source_message_id=envelope.message_id
+                 AND alias.generation=envelope.generation
                 WHERE envelope.session_id=? ORDER BY envelope.created_at_ms,envelope.message_id
                 """,
-                (session_id, session_id),
+                (session_id, native_pi_session_id, session_id),
             ).fetchall()
-        persisted_message_ids = {str(row["message_id"]) for row in rows}
-        claimed_alias_ids: set[str] = set()
         missing_envelopes: list[tuple[int, str, dict[str, object]]] = []
         for row in rows:
             message_id = str(row["message_id"])
-            base = runtime_by_id.get(message_id)
-            target_message_id = message_id
+            native_id = str(row["native_message_id"] or "")
+            native_scope = str(row["native_pi_session_id"] or "")
+            # A historic native namespace retains its own persisted source ID.
+            # Only the snapshot's proven Pi scope may use that native entry ID.
+            current_native = native_id and native_pi_session_id is not None and native_scope == native_pi_session_id
+            target_message_id = native_id if current_native else message_id
+            base = runtime_by_id.get(target_message_id)
             if base is None:
                 value = json.loads(str(row["message_json"]))
                 if not isinstance(value, dict):
                     raise RuntimeError("Agent block message envelope is corrupt")
-                alias_id = _runtime_message_alias(
-                    value,
-                    runtime_order=runtime_order,
-                    runtime_by_id=runtime_by_id,
-                    persisted_message_ids=persisted_message_ids,
-                    claimed_alias_ids=claimed_alias_ids,
-                )
-                if alias_id:
-                    target_message_id = alias_id
-                    claimed_alias_ids.add(alias_id)
-                    base = runtime_by_id[alias_id]
-                else:
-                    base = value
+                base = {**value, "id": target_message_id}
             base_blocks = [
                 dict(item) for item in base.get("blocks", [])
                 if isinstance(item, Mapping)
@@ -316,95 +416,6 @@ class AgentBlockStore:
 def _canonical_json(value: object) -> str:
     return json.dumps(
         value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
-    )
-
-
-def _runtime_message_alias(
-    envelope: Mapping[str, object],
-    *,
-    runtime_order: Sequence[str],
-    runtime_by_id: Mapping[str, Mapping[str, object]],
-    persisted_message_ids: set[str],
-    claimed_alias_ids: set[str],
-) -> str:
-    """Match one live-event envelope to its differently keyed Pi history row."""
-
-    fingerprint = _message_projection_fingerprint(envelope)
-    if not fingerprint:
-        return ""
-    # Rich live-event envelopes use the turn-owned assistant identity while Pi
-    # history assigns a separate durable message id. Ordinary persisted message
-    # ids can legitimately repeat the same text in a later turn and must never
-    # be collapsed merely because their projection matches.
-    if (
-        str(envelope.get("role") or "") != "assistant"
-        or not str(envelope.get("id") or "").endswith(":assistant")
-    ):
-        return ""
-    envelope_time = max(0, int(envelope.get("createdAtMs") or 0))
-    candidates = [
-        message_id
-        for message_id in runtime_order
-        if message_id not in persisted_message_ids
-        and message_id not in claimed_alias_ids
-        and envelope_time > 0
-        and max(
-            0,
-            int(runtime_by_id[message_id].get("createdAtMs") or 0),
-        ) > 0
-        and _message_projection_fingerprint(runtime_by_id[message_id])
-        == fingerprint
-    ]
-    if not candidates:
-        return ""
-    runtime_position = {
-        message_id: index
-        for index, message_id in enumerate(runtime_order)
-    }
-    return min(
-        candidates,
-        key=lambda message_id: (
-            abs(
-                max(
-                    0,
-                    int(runtime_by_id[message_id].get("createdAtMs") or 0),
-                )
-                - envelope_time
-            ),
-            runtime_position[message_id],
-        ),
-    )
-
-
-def _message_projection_fingerprint(message: Mapping[str, object]) -> str:
-    role = str(message.get("role") or "")
-    if role not in {"assistant", "user"}:
-        return ""
-    blocks = [
-        {
-            key: block.get(key)
-            for key in (
-                "type",
-                "status",
-                "presentationKind",
-                "data",
-                "summary",
-            )
-            if block.get(key) is not None
-        }
-        for block in message.get("blocks", [])
-        if isinstance(block, Mapping)
-        and block.get("schemaVersion") != "rag-ime.agent-block.v1"
-    ]
-    if not blocks:
-        return ""
-    return _canonical_json(
-        {
-            "role": role,
-            "blocks": blocks,
-            "attachments": message.get("attachments") or [],
-            "citations": message.get("citations") or [],
-        }
     )
 
 

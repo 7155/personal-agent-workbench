@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import type { UiAgentBlock } from '@/contracts/ui-events';
 import { AgentFileCollection } from '../file-preview/AgentFileCollection';
+import { MessageFileReferences } from './MarkdownRenderer';
 import { UnknownBlockRenderer } from './MediaRenderers';
 import { agentRendererPolicy } from './renderer-registry';
 import { groupConversationEntries } from './conversation-content-groups';
@@ -19,7 +20,7 @@ interface AgentBlocksProps {
 export function AgentBlocks({ allowTraceDiagnosticReceipt = true, blocks, onApprovalDecision, sessionId = '', streaming = false }: AgentBlocksProps) {
   const tailIndex = streaming ? findLastTextBlock(blocks) : -1;
   const displayEntries = groupConversationEntries(blocks);
-  return <div className="agent-blocks" data-has-stream-tail={tailIndex >= 0 || undefined}>
+  return <MessageFileReferences blocks={blocks} sessionId={sessionId}><div className="agent-blocks" data-has-stream-tail={tailIndex >= 0 || undefined}>
     {displayEntries.map(entry => entry.kind === 'images' ? (
       <ConversationImageGallery key={`image-results:${entry.blocks[0]?.id ?? entry.firstIndex}`} blocks={entry.blocks} sessionId={sessionId} />
     ) : entry.kind === 'files' ? (
@@ -28,7 +29,7 @@ export function AgentBlocks({ allowTraceDiagnosticReceipt = true, blocks, onAppr
       <AgentBlock allowTraceDiagnosticReceipt={allowTraceDiagnosticReceipt} key={`${entry.block.id}:${entry.index}`}
         block={entry.block} onApprovalDecision={onApprovalDecision} sessionId={sessionId} streamingTail={entry.index === tailIndex} />
     ))}
-  </div>;
+  </div></MessageFileReferences>;
 }
 export const AgentBlock = memo(function AgentBlock({ allowTraceDiagnosticReceipt = true, block, onApprovalDecision, sessionId = '', streamingTail = false }: {
   block: UiAgentBlock; allowTraceDiagnosticReceipt?: boolean; onApprovalDecision?: AgentBlocksProps['onApprovalDecision']; sessionId?: string; streamingTail?: boolean;

@@ -5,6 +5,18 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Keep managed result files bound to their original persisted Pi message and
+  Session. Preserve distinct file versions and diff receipts; recent history
+  reads only returned message identities, and missing legacy bindings remain
+  explicit instead of being inferred from filenames, text or timestamps.
+- Keep media explanation details behind a keyboard-accessible disclosure while
+  retaining partial-extraction warnings. Use one reading scrollport in short
+  Knowledge windows, fit complete image previews to the available reading area,
+  and keep window content outside active resize handles. Original assets remain
+  available through their existing preview and download owners.
+- Reject new child work on a completed ordinary Room Root. Recheck the original
+  work acceptance inside the result publication transaction so concurrent work
+  admission cannot leave a completed result with an unsettled child.
 - Return an ordinary Room's reviewed Root result to the same StarMate
   conversation through the existing work journal and delivery owner. Preserve
   the original Room, dispatch and Source identities; Stop and unknown delivery
@@ -28,10 +40,11 @@ source checkpoint is not a signed and notarized macOS binary release.
   for Apps using shared chat controls. Preserve the mounted Session, draft and
   attachments when switching; unidentified surfaces retain per-Session settings.
 - Add optional local EmbeddingGemma2 (`google/embeddinggemma-2`) text, native
-  image and PDF-page retrieval with original-source/page references. Model
-  weights and `embedding-local` dependencies are separately provisioned;
-  audio/video intake remains unsupported and existing indexes require an
-  explicit profile change and rebuild.
+  image, PDF-page, audio and sampled-video retrieval with original-source,
+  page and time references. Model weights and `embedding-local` dependencies
+  are separately provisioned; existing indexes require an explicit profile
+  change and rebuild. Sampled frames retain their extraction limits and do not
+  claim continuous video understanding or automatic transcription.
 - Add an opt-in OpenAI Decisions adapter for bounded Jev Choices with
   `gpt-6-luna` and an OpenAI Platform API key. Codex OAuth is not an API-key
   substitute; Pi execution and Room lifecycle owners remain unchanged.

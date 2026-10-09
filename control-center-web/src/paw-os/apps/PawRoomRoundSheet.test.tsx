@@ -1420,7 +1420,7 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
     expect(openRoute).toHaveBeenCalledWith('/files?session=session-earth&path=%2Fwork%2Fpaw%2Fsummary.md');
   });
 
-  it('opens relative workspace files named by a Room result', async () => {
+  it('opens a registered relative file artifact without guessing a target for the unbound result prose', async () => {
     const user = userEvent.setup();
     const openRoute = vi.fn();
     const room = roomWith([participant('participant-earth', 'session-earth', 0)]);
@@ -1464,9 +1464,12 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
 
     const result = screen.getByRole('region', { name: 'Earth 最终结果' });
     await user.click(within(result).getByText('查看完整汇报与运行证据'));
-    expect(within(result).getByRole('button', { name: '打开文件 final-result.md' })).toBeInTheDocument();
-    const resultLink = within(result).getByRole('link', { name: '打开文件 final-result.md' });
-    await user.click(resultLink);
+    expect(result).toHaveTextContent('验收通过，详见 docs/final-result.md。');
+    expect(within(result).queryByRole('link', { name: '打开文件 final-result.md' })).not.toBeInTheDocument();
+    expect(openRoute).not.toHaveBeenCalled();
+    const artifact = within(result).getByRole('button', { name: '打开文件 final-result.md' });
+    await user.click(artifact);
+    expect(openRoute).toHaveBeenCalledTimes(1);
     expect(openRoute).toHaveBeenCalledWith('/files?session=session-earth&path=docs%2Ffinal-result.md');
   });
 
@@ -1478,13 +1481,13 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
       'work-report',
       'turn-1',
       [
-        '查看 [报告](docs/report.md)，并保留 `docs/inline.md`。',
+        '查看 [报告](/work/paw/docs/report.md)，并保留 `docs/inline.md`。',
         '',
         '```text',
         'docs/fenced.md',
         '```',
         '',
-        '补充见 docs/appendix.md。',
+        '补充见 /work/paw/docs/appendix.md；未绑定 [相对报告](docs/unproven.md)。',
       ].join('\n'),
       [],
       4,
@@ -1499,13 +1502,13 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
       projection,
       'result',
       [
-        '查看 [报告](docs/report.md)，并保留 `docs/inline.md`。',
+        '查看 [报告](/work/paw/docs/report.md)，并保留 `docs/inline.md`。',
         '',
         '```text',
         'docs/fenced.md',
         '```',
         '',
-        '补充见 docs/appendix.md。',
+        '补充见 /work/paw/docs/appendix.md；未绑定 [相对报告](docs/unproven.md)。',
       ].join('\n'),
     );
 
@@ -1524,12 +1527,16 @@ describe('PawRoomRoundSheet (UR-170/172)', () => {
     expect(within(detail).getByText('docs/fenced.md')).toBeInTheDocument();
     expect(within(detail).queryByRole('link', { name: '打开文件 inline.md' })).not.toBeInTheDocument();
     expect(within(detail).queryByRole('link', { name: '打开文件 fenced.md' })).not.toBeInTheDocument();
-    expect(detail).toHaveTextContent('docs/appendix.md。');
+    expect(detail).toHaveTextContent('/work/paw/docs/appendix.md；');
+    expect(within(detail).getByText('相对报告').closest('a')).toBeNull();
+    expect(within(detail).queryByRole('link', { name: '打开文件 unproven.md' })).not.toBeInTheDocument();
+    expect(within(detail).getAllByRole('link', { name: /打开文件/ })).toHaveLength(2);
 
     await user.click(within(detail).getByRole('link', { name: '打开文件 report.md' }));
-    expect(openRoute).toHaveBeenCalledWith('/files?session=session-earth&path=docs%2Freport.md');
+    expect(openRoute).toHaveBeenCalledWith('/files?session=session-earth&path=%2Fwork%2Fpaw%2Fdocs%2Freport.md');
     await user.click(within(detail).getByRole('link', { name: '打开文件 appendix.md' }));
-    expect(openRoute).toHaveBeenCalledWith('/files?session=session-earth&path=docs%2Fappendix.md');
+    expect(openRoute).toHaveBeenCalledWith('/files?session=session-earth&path=%2Fwork%2Fpaw%2Fdocs%2Fappendix.md');
+    expect(openRoute).toHaveBeenCalledTimes(2);
   });
 
   it('renders current task and progress as safe Markdown instead of leaking formatting tokens', () => {

@@ -6,6 +6,7 @@ import { ControlTransportProvider } from '@/app/control-transport';
 import { TooltipProvider } from '@/components/primitives';
 import type { UiAgentBlock, UiAgentMessage } from '@/contracts/ui-events';
 import { PawOsDesktopProvider } from '@/features/paw-os/surface-context';
+import { useFilePreviewStore } from '../file-preview/file-preview-store';
 import { messageWithWorkspaceContext } from '@/paw-os/apps/workspace-draft';
 import { agentEventFixture } from '@/test/fixtures/events';
 import { StubControlTransport } from '@/test/stub-control-transport';
@@ -29,6 +30,7 @@ import { resetActivityDisclosureOverrides } from './ActivitySummary';
 
 afterEach(() => {
   cleanup();
+  useFilePreviewStore.getState().reset();
   vi.useRealTimers();
   resetActivityDisclosureOverrides();
   resetAgentTurnDisclosureOverrides();
@@ -1277,20 +1279,20 @@ describe('Agent chat rendering', () => {
       <PawOsDesktopProvider openRoute={openRoute} openWindow={() => undefined}>
         <MarkdownBody
           sessionId="session-files"
-          text={'已读取 acceptance.md 和 src/features/rooms/RoomTurn.tsx。\n\n不要把 `ordinary-code.md` 当作文件入口；另有 [room-runtime-handoff.md](room-runtime-handoff.md)。\n\n命令：\ngit diff -- src/ignored.ts'}
+          text={'已读取 /workspace/acceptance.md 和 /workspace/src/features/rooms/RoomTurn.tsx。\n\n不要把 `ordinary-code.md` 当作文件入口；另有 [room-runtime-handoff.md](/workspace/room-runtime-handoff.md)。\n\n命令：\ngit diff -- src/ignored.ts'}
         />
       </PawOsDesktopProvider>,
     );
 
     const acceptance = screen.getByRole('link', { name: '打开文件 acceptance.md' });
     const source = screen.getByRole('link', { name: '打开文件 RoomTurn.tsx' });
-    expect(acceptance).toHaveAttribute('title', 'acceptance.md');
-    expect(source).toHaveAttribute('title', 'src/features/rooms/RoomTurn.tsx');
+    expect(acceptance).toHaveAttribute('title', '/workspace/acceptance.md');
+    expect(source).toHaveAttribute('title', '/workspace/src/features/rooms/RoomTurn.tsx');
     expect(screen.getByText('ordinary-code.md').tagName).toBe('CODE');
     expect(screen.getByRole('link', { name: '打开文件 room-runtime-handoff.md' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: '打开文件 ignored.ts' })).not.toBeInTheDocument();
     await user.click(acceptance);
-    expect(openRoute).toHaveBeenCalledWith('/files?session=session-files&path=acceptance.md');
+    expect(openRoute).toHaveBeenCalledWith('/files?session=session-files&path=%2Fworkspace%2Facceptance.md');
   });
 
   it('renders inline unified diffs and lets the user switch to a split view', () => {
@@ -1562,7 +1564,7 @@ describe('Agent chat rendering', () => {
     expect(container).not.toHaveTextContent('Do not show');
   });
 
-  it('flattens repeated file receipts to one latest block per logical file', () => {
+  it('deduplicates exact receipts without guessing same-name version lineage', () => {
     const blocks: UiAgentBlock[] = [
       fileBlock('tui-v1', 'tui.py', 'media_tui_version_0001', '1'.repeat(64)),
       fileBlock('tui-diff-v1', 'tui.py.diff', 'media_tui_diff_000001', '2'.repeat(64)),
@@ -1581,8 +1583,8 @@ describe('Agent chat rendering', () => {
     expect(collection).toBeInTheDocument();
     expect(container.querySelectorAll('.agent-file-collection__file')).toHaveLength(0);
     expect(container.querySelectorAll('.agent-file-collection__version')).toHaveLength(0);
-    expect(container.querySelectorAll('.agent-file-block-shell')).toHaveLength(2);
-    expect(screen.getByRole('button', { name: 'tui.py.diff 的预览回执不可用' })).toBeDisabled();
+    expect(container.querySelectorAll('.agent-file-block-shell')).toHaveLength(6);
+    expect(screen.getAllByRole('button', { name: 'tui.py.diff 的预览回执不可用' })).toHaveLength(2);
     expect(screen.getByRole('button', { name: 'test_tui.py.diff 的预览回执不可用' })).toBeDisabled();
   });
 
@@ -2515,3 +2517,100 @@ function assistantMessage(sessionId: string, turnId: string, value: string, crea
     completedAtMs: createdAtMs,
   };
 }
+
+
+describe('message file target authority', () => {
+  const sessionId = 'session-file-links';
+  const textBlock = (source: string): UiAgentBlock => ({ id: 'answer', type: 'text', presentationKind: 'markdown', status: 'completed', data: { text: source } });
+  function file(id: string, name = 'result.txt', sha = '1'.repeat(64), owner = sessionId): UiAgentBlock {
+    return { id, type: 'file', presentationKind: 'file', status: 'completed', data: { fileName: name, mediaId: `media_${id}_receipt_001`,
+      sessionId: owner, sha256: sha, byteSize: 55, mimeType: 'text/plain',
+      receiptUrl: `/api/agent/media/media_${id}_receipt_001/content?sessionId=${encodeURIComponent(owner)}` } };
+  }
+  function setup(blocks: UiAgentBlock[]) {
+    const transport = new StubControlTransport('mock', { 'agent.media.preview': () => new Promise(() => {}) });
+    const openRoute = vi.fn();
+    const view = render(<ControlTransportProvider transport={transport}><TooltipProvider>
+      <PawOsDesktopProvider openRoute={openRoute} openWindow={() => undefined}>
+        <AgentBlocks blocks={blocks} sessionId={sessionId} />
+      </PawOsDesktopProvider>
+    </TooltipProvider></ControlTransportProvider>);
+    return { transport, openRoute, ...view, user: userEvent.setup() };
+  }
+  it('does not invent a root-relative file from an unbound basename or subdirectory', () => {
+    const { openRoute, transport } = setup([textBlock('**result.txt** and subdir/result.txt and [explicit](result.txt)')]);
+    expect(screen.queryByRole('link', { name: /打开文件/ })).not.toBeInTheDocument();
+    expect(document.querySelector('strong')).toHaveTextContent('result.txt');
+    expect(openRoute).not.toHaveBeenCalled(); expect(transport.requests).toHaveLength(0);
+  });
+  it('opens a unique same-message receipt by original media/Session/hash rather than basename path', async () => {
+    const { user, transport, openRoute } = setup([textBlock('**result.txt**'), file('original')]);
+    await user.click(screen.getByRole('link', { name: '打开文件 result.txt' }));
+    expect(openRoute).not.toHaveBeenCalled();
+    expect(transport.requests).toEqual([expect.objectContaining({ pathId: 'agent.media.preview',
+      params: { mediaId: 'media_original_receipt_001' }, query: { sessionId, sha256: '1'.repeat(64) } })]);
+    expect(useFilePreviewStore.getState()).toMatchObject({ presentation: 'dialog', request: { sessionId, mediaId: 'media_original_receipt_001' } });
+  });
+  it('does not guess the latest of same-name versions and keeps both original receipts clickable', async () => {
+    const { user, transport } = setup([textBlock('**result.txt**'), file('old'), file('new', 'result.txt', '2'.repeat(64))]);
+    expect(screen.queryByRole('link', { name: '打开文件 result.txt' })).not.toBeInTheDocument();
+    const buttons = screen.getAllByRole('button', { name: '展开 result.txt' }); expect(buttons).toHaveLength(2);
+    await user.click(buttons[0]!); await user.click(buttons[1]!);
+    expect(transport.requests.map(request => [request.params?.mediaId, request.query?.sha256])).toEqual([
+      ['media_old_receipt_001', '1'.repeat(64)], ['media_new_receipt_001', '2'.repeat(64)],
+    ]);
+  });
+  it('keeps different media receipts even when adjacent same-name files have identical bytes', () => {
+    const left = file('left');
+    const right = { ...file('right'), id: left.id };
+    const errors = vi.spyOn(console, 'error');
+    setup([textBlock('result.txt'), left, right]);
+    expect(errors).not.toHaveBeenCalled();
+    errors.mockRestore();
+    expect(screen.queryByRole('link', { name: '打开文件 result.txt' })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: '展开 result.txt' })).toHaveLength(2);
+  });
+  it('does not borrow another Session receipt', () => {
+    const { rerender } = setup([textBlock('result.txt'), file('foreign', 'result.txt', '1'.repeat(64), 'other-session')]);
+    expect(screen.queryByRole('link', { name: '打开文件 result.txt' })).not.toBeInTheDocument();
+    rerender(<AgentBlocks blocks={[textBlock('result.txt')]} sessionId={sessionId} />);
+    expect(screen.queryByRole('link', { name: '打开文件 result.txt' })).not.toBeInTheDocument();
+  });
+  it('does not borrow an adjacent message receipt within the same Session', () => {
+    const transport = new StubControlTransport('mock', {});
+    render(<ControlTransportProvider transport={transport}><TooltipProvider>
+      <AgentBlocks blocks={[textBlock('result.txt')]} sessionId={sessionId} />
+      <AgentBlocks blocks={[file('adjacent-message')]} sessionId={sessionId} />
+    </TooltipProvider></ControlTransportProvider>);
+    expect(screen.queryByRole('link', { name: '打开文件 result.txt' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '展开 result.txt' })).toBeInTheDocument();
+    expect(transport.requests).toHaveLength(0);
+  });
+  it('does not bind a named subdirectory to an unrelated same-basename media receipt', () => {
+    setup([textBlock('subdir/result.txt'), file('another-directory')]);
+    expect(screen.queryByRole('link', { name: '打开文件 result.txt' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /subdir/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '展开 result.txt' })).toBeInTheDocument();
+  });
+  it('deduplicates the exact same receipt without making a unique reference ambiguous', async () => {
+    const receipt = file('repeat');
+    const { user, transport } = setup([textBlock('result.txt'), receipt, { ...receipt, id: 'replayed-block' }]);
+    expect(screen.getAllByRole('button', { name: '展开 result.txt' })).toHaveLength(1);
+    await user.click(screen.getByRole('link', { name: '打开文件 result.txt' }));
+    expect(transport.requests).toHaveLength(1);
+    expect(transport.requests[0]?.params?.mediaId).toBe('media_repeat_receipt_001');
+  });
+  it('retains an explicit absolute path with encoded spaces exactly on the Files route', async () => {
+    const { user, openRoute } = setup([textBlock('[result](/Volumes/test%20directory/result.txt)')]);
+    const link = screen.getByRole('link', { name: '打开文件 result.txt' });
+    expect(link).toHaveAttribute('title', '/Volumes/test directory/result.txt');
+    await user.click(link);
+    expect(openRoute).toHaveBeenCalledWith(`/files?session=${sessionId}&path=%2FVolumes%2Ftest%20directory%2Fresult.txt`);
+  });
+  it('keeps an explicit absolute subdirectory path on the original Files route without artifact name guessing', async () => {
+    const { user, openRoute, transport } = setup([textBlock('[result](/workspace/subdir/result.txt)'), file('elsewhere')]);
+    await user.click(screen.getByRole('link', { name: '打开文件 result.txt' }));
+    expect(openRoute).toHaveBeenCalledWith(`/files?session=${sessionId}&path=%2Fworkspace%2Fsubdir%2Fresult.txt`);
+    expect(transport.requests).toHaveLength(0);
+  });
+});

@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-09T05:40:01.529615+00:00",
+  "generatedAt": "2026-10-09T08:25:59.806946+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "undo/paw-acceptance-20261009",
     "baseCommit": "55fc923944ffcee72a2c90b04a891c1106485227",
-    "candidateCommitPolicy": "Committed source checkpoint of user-authorized frontend polish, persistent Agent coordination and exact Room result return; source checks do not establish complete foreground acceptance."
+    "candidateCommitPolicy": "Committed source checkpoint of user-authorized frontend polish, persistent Agent coordination, exact Room result return and native message receipt recovery; source checks do not establish complete foreground acceptance."
   },
   "dispositions": {
     "keep_release": "Retain this source maintenance change.",
@@ -208,13 +208,17 @@
     "room_result_return": {
       "description": "Original reviewed Room Root return through existing work and delivery owners, with append-only typed migration and regressions.",
       "pathCount": 4
+    },
+    "native_message_receipts": {
+      "description": "Persist and recover exact native message/file receipts through existing Pi and PAW owners.",
+      "pathCount": 5
     }
   },
   "summary": {
-    "pathCount": 2242,
+    "pathCount": 2247,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1926
+      "keep_release": 1931
     },
     "groupCounts": {
       "local_docs": 121,
@@ -265,7 +269,8 @@
       "release_scope": 1,
       "refactor_verification": 66,
       "startup_failure_diagnostics": 2,
-      "room_result_return": 4
+      "room_result_return": 4,
+      "native_message_receipts": 5
     },
     "unclassifiedPathCount": 0,
     "otherWorkNotInReleasePathCount": 0
@@ -15964,6 +15969,41 @@
       "disposition": "keep_release",
       "group": "room_result_return",
       "reason": "Verify completed original Room Roots cannot admit late child work, including registry and caller-owned SQLite publication races."
+    },
+    {
+      "path": "control-center-web/src/features/agent/file-preview/AgentFileCollection.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "native_message_receipts",
+      "reason": "Keep managed file receipts and their exact message identities under the existing PAW and Pi owners."
+    },
+    {
+      "path": "rag_ime/agent_block_store.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "native_message_receipts",
+      "reason": "Keep managed file receipts and their exact message identities under the existing PAW and Pi owners."
+    },
+    {
+      "path": "rag_ime/db/migrations/0227_agent_block_native_aliases.sql",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "native_message_receipts",
+      "reason": "Bind managed result receipts to producer-supplied native Pi Session and transcript entry identities without guessed legacy aliases."
+    },
+    {
+      "path": "tests/test_agent_block_store.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "native_message_receipts",
+      "reason": "Keep managed file receipts and their exact message identities under the existing PAW and Pi owners."
+    },
+    {
+      "path": "tests/test_native_receipt_snapshot_identity.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "native_message_receipts",
+      "reason": "Verify read-time native snapshot identity, cache binding races, same-Pi rebind and historical receipt recovery under original source IDs."
     }
   ]
 }
