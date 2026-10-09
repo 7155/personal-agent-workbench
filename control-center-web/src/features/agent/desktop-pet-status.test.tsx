@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MotionProvider, useMotionPreference } from '@/design/motion';
+import { MotionActivityBoundary, MotionProvider, useMotionPreference } from '@/design/motion';
 import { ChatPresentationProvider } from '@/features/conversation-ui/reading/chat-presentation';
 import { PetStatusSignal } from './desktop-pet-status';
 import type { PetConversationState } from './desktop-pet-snapshot';
@@ -35,7 +35,7 @@ describe('planet task status shapes', () => {
       expect(getComputedStyle(signal).animation).toBe('none');
     }
     const arc = container.querySelector('.desktop-pet-status__orbit')!;
-    expect(getComputedStyle(arc).animation).toBe('none');
+    expect(getComputedStyle(arc).animationPlayState).toBe('paused');
     expect(arc).toHaveAttribute('d', 'M 12 3 A 9 9 0 1 1 3 12');
   });
 
@@ -58,7 +58,7 @@ describe('planet task status shapes', () => {
     fireEvent.click(screen.getByRole('button', { name: '减少动态效果' }));
     expect(signal).toHaveAttribute('data-state', 'running');
     expect(signal).toHaveAttribute('data-motion-active', 'false');
-    expect(getComputedStyle(arc).animation).toBe('none');
+    expect(getComputedStyle(arc).animationPlayState).toBe('paused');
     expect(arc.getAttribute('d')).toBeTruthy();
   });
 
@@ -101,4 +101,51 @@ describe('directory signal display palette', () => {
     expect(view.container.querySelector('svg')).not.toHaveAttribute('data-palette');
     expect(view.container.querySelector('svg')).toHaveAttribute('data-state', 'unknown');
   });
+});
+
+
+describe('one-shot signal arrival across activity changes', () => {
+  it.each(['attention', 'error'] as const)('does not replay %s after blur/focus or an inactive entry', state => {
+    const tree = (active: boolean, next: PetConversationState = state) => <MotionProvider><style>{petCss}</style><MotionActivityBoundary active={active}><PetStatusSignal state={next} animate /></MotionActivityBoundary></MotionProvider>;
+    const view = render(tree(true)); const signal = view.container.querySelector('svg')!;
+    const arrival = state === 'attention' ? 'pet-status-arrive' : 'pet-status-notice';
+    expect(getComputedStyle(signal).animation).toContain(arrival);
+    view.rerender(tree(false)); expect(getComputedStyle(signal).animation).not.toContain(arrival);
+    view.rerender(tree(true)); expect(getComputedStyle(signal).animation).not.toContain(arrival);
+    expect(signal).toHaveAttribute('data-arrival-active', 'false');
+    view.rerender(tree(false, 'idle')); view.rerender(tree(false, state));
+    view.rerender(tree(true, state)); expect(signal).toHaveAttribute('data-arrival-active', 'false');
+    view.rerender(tree(true, 'idle')); view.rerender(tree(true, state));
+    expect(signal).toHaveAttribute('data-arrival-active', 'true');
+  });
+  it('finishes a notice once and cancels its timer on unmount', () => {
+    vi.useFakeTimers();
+    try {
+      const view = render(<MotionProvider><PetStatusSignal state="error" animate /></MotionProvider>);
+      const signal = view.container.querySelector('svg')!;
+      expect(signal).toHaveAttribute('data-arrival-active', 'true');
+      act(() => vi.advanceTimersByTime(419));
+      expect(signal).toHaveAttribute('data-arrival-active', 'true');
+      act(() => vi.advanceTimersByTime(1));
+      expect(signal).toHaveAttribute('data-arrival-active', 'false');
+      view.rerender(<MotionProvider><PetStatusSignal state="attention" animate /></MotionProvider>);
+      expect(signal).toHaveAttribute('data-arrival-active', 'true');
+      view.unmount(); expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('pauses an existing running arc in place and resumes the same CSS timeline instead of recreating it', () => {
+    const tree = (active: boolean) => <MotionProvider><style>{petCss}</style><MotionActivityBoundary active={active}><PetStatusSignal state="running" animate /></MotionActivityBoundary></MotionProvider>;
+    const view = render(tree(true)); const arc = view.container.querySelector('.desktop-pet-status__orbit')!;
+    const declaration = getComputedStyle(arc).animation;
+    expect(declaration).toContain('pet-status-orbit');
+    view.rerender(tree(false));
+    expect(getComputedStyle(arc).animation).toBe(declaration);
+    expect(getComputedStyle(arc).animationPlayState).toBe('paused');
+    view.rerender(tree(true));
+    expect(view.container.querySelector('.desktop-pet-status__orbit')).toBe(arc);
+    expect(getComputedStyle(arc).animation).toBe(declaration);
+    expect(getComputedStyle(arc).animationPlayState).toBe('running');
+  });
+
 });

@@ -40,6 +40,7 @@ html:has(.desktop-pet), body:has(.desktop-pet), #root:has(.desktop-pet) {
 }
 .desktop-pet__actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; max-width: 100%; gap: 1px; padding: 3px; border: 1px solid var(--color-border); border-radius: 24px; background: var(--color-surface); box-shadow: 0 2px 10px rgb(30 54 74 / .07); }
 .desktop-pet__actions button { display: grid; place-items: center; min-width: 44px; min-height: 44px; border: 0; border-radius: 20px; background: transparent; color: var(--color-text); cursor: pointer; }
+.desktop-pet__actions button > span { padding-inline: 5px; font-size: 11px; }
 .desktop-pet__actions button + button { border-left: 1px solid var(--color-border); border-top-left-radius: 0; border-bottom-left-radius: 0; }
 .desktop-pet__actions button:hover { background: var(--color-accent-soft); }
 .desktop-pet__actions button:active { transform: scale(.96); }
@@ -85,13 +86,14 @@ html:has(.desktop-pet), body:has(.desktop-pet), #root:has(.desktop-pet) {
   filter: drop-shadow(0 1px 2px rgb(0 0 0 / .16));
 }
 .desktop-pet[data-expanded='true'] .desktop-pet__signal { width: 24px; height: 24px; right: -4px; bottom: 0; }
-.desktop-pet-status[data-motion-active='true'][data-state='running'] .desktop-pet-status__orbit {
-  transform-origin: 12px 12px; animation: pet-status-orbit 1.8s linear infinite;
+.desktop-pet-status[data-state='running'] .desktop-pet-status__orbit {
+  transform-origin: 12px 12px; animation: pet-status-orbit 1.8s linear infinite; animation-play-state: paused;
 }
-.desktop-pet-status[data-motion-active='true'][data-state='attention'] {
+.desktop-pet-status[data-motion-active='true'][data-state='running'] .desktop-pet-status__orbit { animation-play-state: running; }
+.desktop-pet-status[data-motion-active='true'][data-arrival-active='true'][data-state='attention'] {
   animation: pet-status-arrive 260ms ease-out 1;
 }
-.desktop-pet-status[data-motion-active='true'][data-state='error'] {
+.desktop-pet-status[data-motion-active='true'][data-arrival-active='true'][data-state='error'] {
   animation: pet-status-notice 420ms ease-out 1;
 }
 @keyframes pet-status-orbit { to { transform: rotate(360deg); } }
@@ -104,11 +106,10 @@ html:has(.desktop-pet), body:has(.desktop-pet), #root:has(.desktop-pet) {
 /* CSS also guards first paint before the motion preference hook subscribes.
    The arc, punctuation, pause bars and idle dot remain visible when frozen. */
 .desktop-pet-status[data-motion-active='false'],
+:root[data-reduce-motion='true'] .desktop-pet-status { animation: none; transform: none; }
 .desktop-pet-status[data-motion-active='false'] .desktop-pet-status__orbit,
-:root[data-reduce-motion='true'] .desktop-pet-status,
-:root[data-reduce-motion='true'] .desktop-pet-status .desktop-pet-status__orbit {
-  animation: none; transform: none;
-}
+:root[data-reduce-motion='true'] .desktop-pet-status .desktop-pet-status__orbit { animation-play-state: paused; }
 @media (prefers-reduced-motion: reduce) {
-  .desktop-pet-status, .desktop-pet-status .desktop-pet-status__orbit { animation: none; transform: none; }
+  .desktop-pet-status { animation: none; transform: none; }
+  .desktop-pet-status .desktop-pet-status__orbit { animation-play-state: paused; }
 }

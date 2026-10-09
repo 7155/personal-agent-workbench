@@ -26,6 +26,8 @@ declare global { interface Window {
 } }
 
 export function DesktopPetSurface() {
+  // The native host uses showInactive: visible background presentation stays
+  // active. The existing motion owner still gates visibility and reduced motion.
   return <ChatPresentationProvider ownerKey="builtin:desktop-pet" defaultVersion="v2"><DesktopPetBody/></ChatPresentationProvider>;
 }
 function DesktopPetBody() {
@@ -38,6 +40,7 @@ function DesktopPetBody() {
   const [keyboardMoving, setKeyboardMoving] = useState(false);
   const expansionRequest = useRef(0);
   const planet = useRef<HTMLButtonElement>(null);
+  const directory = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const focusedConversation = useRef<HTMLElement | null>(null);
   const host = window.pawDesktopPet;
@@ -59,7 +62,7 @@ function DesktopPetBody() {
     focusedConversation.current = null;
     // Recover only a removed control in this focused window. A directory
     // refresh must never move focus away from another control or application.
-    if (document.hasFocus() && (document.activeElement === document.body || document.activeElement === document.documentElement)) planet.current?.focus();
+    if (document.hasFocus() && (document.activeElement === document.body || document.activeElement === document.documentElement)) directory.current?.focus();
   }, [expanded, snapshot]);
   const presentation = petPresentation(snapshot);
   const total = Object.values(snapshot.counts).reduce((sum, count) => sum + count, 0);
@@ -70,7 +73,7 @@ function DesktopPetBody() {
     void host.setExpanded(next).then(() => {
       if (request !== expansionRequest.current) return;
       setExpanded(next); setError('');
-      if (!next && document.hasFocus()) planet.current?.focus();
+      if (!next && document.hasFocus()) directory.current?.focus();
     }).catch(() => { if (request === expansionRequest.current) setError('操作未完成，请重试'); });
   };
   const finish = (event: PointerEvent<HTMLButtonElement>, cancelled = false) => {
@@ -109,15 +112,15 @@ function DesktopPetBody() {
       <span aria-hidden="true">⠿</span><span>PAW</span>
     </button>
     <button className="desktop-pet__hide" type="button" aria-label="隐藏桌面伙伴" disabled={!host} onClick={() => invoke(host?.hide())}>×</button>
-    <button className="desktop-pet__planet" type="button" aria-label="查看后台对话" aria-expanded={expanded}
-      aria-controls="pet-conversations" aria-describedby="pet-status" disabled={!host} ref={planet} title="点击查看对话 · 拖动上方把手移动"
-      onClick={() => { if (gesture.current.canActivate(Date.now())) expand(!expanded); }}>
+    <button className="desktop-pet__planet" type="button" aria-label="与星伴对话"
+      aria-describedby="pet-status" disabled={!host} ref={planet} title="与星伴对话 · 拖动上方把手移动"
+      onClick={() => { if (gesture.current.canActivate(Date.now())) invoke(host?.openAssistant()); }}>
       <RoomPlanetAvatar variant={avatarPresentation?.version === 'v2' ? 'sphere' : 'classic'} showSignal={false} signal={presentation.state === 'running' ? 'working' : 'idle'} interactive={Boolean(host)} motion="full" ordinal={0} activity="static" size={expanded ? 64 : 112} decorative />
       <PetStatusSignal key={presentation.state} state={presentation.state} animate className="desktop-pet__signal" />
     </button>
     <span className="desktop-pet__hint" id="pet-status" role="status" aria-live="polite" aria-atomic="true">{keyboardMoving ? '方向键移动，Esc 结束' : host ? presentation.label : '请从 PAW 桌面端开启'}</span>
     <nav className="desktop-pet__actions" aria-label="星伴入口">
-      <button aria-label="与星伴对话" title="与星伴对话" type="button" disabled={!host} onClick={() => invoke(host?.openAssistant())}><MessageSquare size={19} aria-hidden="true" /></button>
+      <button aria-label="查看后台对话" title="查看后台对话" type="button" aria-expanded={expanded} aria-controls="pet-conversations" ref={directory} disabled={!host} onClick={() => { if (gesture.current.canActivate(Date.now())) expand(!expanded); }}><MessageSquare size={19} aria-hidden="true" /><span>对话近况</span></button>
       {host?.openVoiceSettings ? <button aria-label="语音输入设置" title="语音输入设置" type="button" onClick={() => invoke(host.openVoiceSettings?.())}><Mic size={19} aria-hidden="true" /></button> : null}
     </nav>
     {expanded ? <section className="desktop-pet__panel" id="pet-conversations" aria-label="后台对话">
