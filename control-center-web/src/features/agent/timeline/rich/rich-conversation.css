@@ -226,9 +226,9 @@
 
 /* Existing controls keep their owner and behaviors. These rules only unify skins. */
 .paw-desktop-root :is(.paw-session-workspace[data-design='workbench'], .paw-room-workspace--jev) :is(.agent-file-block, .agent-file-preview-inline, .agent-html-output, .agent-rich-card, .agent-rich-status, .agent-task-plan) { box-shadow: none; border-radius: 10px; }
-.paw-desktop-root :is(.paw-session-workspace[data-design='workbench'], .paw-room-workspace--jev) .agent-file-block { padding: 15px 17px; border-color: var(--wb-line); background: var(--wb-surface); gap: 13px; }
-.paw-desktop-root :is(.paw-session-workspace[data-design='workbench'], .paw-room-workspace--jev) .agent-file-block strong { font-size: 14px; font-weight: 500; line-height: 1.6; }
-.paw-desktop-root :is(.paw-session-workspace[data-design='workbench'], .paw-room-workspace--jev) .agent-file-block small { margin-top: 4px; font-size: 11px; }
+.paw-desktop-root :is(.paw-session-workspace[data-design='workbench'], .paw-room-workspace--jev) .agent-file-block { padding: 8px 11px; border-color: var(--wb-line); background: var(--wb-surface); gap: 10px; }
+.paw-desktop-root :is(.paw-session-workspace[data-design='workbench'], .paw-room-workspace--jev) .agent-file-block strong { font-size: 14px; font-weight: 600; line-height: 20px; }
+.paw-desktop-root :is(.paw-session-workspace[data-design='workbench'], .paw-room-workspace--jev) .agent-file-block small { margin-top: 0; font-size: 12px; line-height: 18px; }
 .paw-desktop-root :is(.paw-session-workspace[data-design='workbench'], .paw-room-workspace--jev) .agent-html-output__header { min-height: 44px; padding: 6px 12px 6px 16px; background: var(--wb-sunken); }
 .paw-desktop-root :is(.paw-session-workspace[data-design='workbench'], .paw-room-workspace--jev) .agent-html-output__label { font-size: 12px; font-weight: 500; }
 .paw-desktop-root :is(.paw-session-workspace[data-design='workbench'], .paw-room-workspace--jev) .agent-rich-collapsible { margin-block: 14px; }

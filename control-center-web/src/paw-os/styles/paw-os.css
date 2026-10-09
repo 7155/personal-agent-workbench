@@ -27,6 +27,7 @@
   /* One chrome scale. The menu bar and titlebar heights are shared tokens so
      the viewport offset, drag surfaces and body padding can never drift. */
   --paw-menu-h: 34px;
+  --paw-menu-control-size: 32px;
   --paw-titlebar-h: 40px;
   --paw-window-control-size: 32px;
   --paw-dock-h: 62px;
@@ -1236,6 +1237,9 @@ html[data-paw-native-host='macos'] .paw-menu-bar > .paw-menu-status { grid-colum
   .paw-wayfinder-work__bucket { grid-template-columns: 1fr; }
 }
 @media (max-width: 820px) {
+  /* Keep responsive menu geometry with its default. The shared structural
+     stylesheet may arrive after the visual shell as a lazy CSS chunk. */
+  .paw-desktop-root { --paw-menu-h: 44px; --paw-menu-control-size: 40px; }
   .paw-window { --paw-window-control-size: 40px; --paw-titlebar-h: 48px; }
   .paw-menu-bar { padding-inline: 8px; gap: 9px; }
   .paw-menu-status > span { display: none; }
@@ -1267,6 +1271,7 @@ html[data-paw-native-host='macos'] .paw-menu-bar > .paw-menu-status { grid-colum
   .paw-launchpad section > div { grid-template-columns: repeat(3, 1fr); }
 }
 @media (max-width: 480px) {
+  .paw-desktop-root { --paw-menu-h: 48px; --paw-menu-control-size: 44px; }
   .paw-window { --paw-window-control-size: 44px; --paw-titlebar-h: 52px; }
 }
 /* Window chrome ladder. The acceptance widths are 760 / 560 / 375 and they are

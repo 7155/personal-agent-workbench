@@ -23,14 +23,14 @@
 .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] .agent-composer__editor { position: relative; display: flex; flex: none; min-width: 0; padding: 0; }
 .paw-desktop-root .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] textarea,
 .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] textarea {
-  display: block; flex: 1; width: 100%; min-width: 0; min-height: 86px; max-height: min(320px, 38dvh);
+  display: block; flex: 1; width: 100%; min-width: 0; min-height: min(86px, var(--composer-editor-available-height, 86px)); max-height: min(320px, 38dvh, var(--composer-editor-available-height, 360px));
   box-sizing: border-box; margin: 0; padding: 20px 52px 12px 20px;
   border: 0; border-radius: var(--radius-composer) var(--radius-composer) 0 0; outline: none; background: transparent;
   color: var(--wb-ink); font-family: var(--wb-font); font-size: 16px; line-height: 1.65;
   resize: none; overflow-y: auto; scrollbar-width: thin; caret-color: var(--wb-accent);
 }
 .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] textarea::placeholder { color: var(--wb-faint); opacity: 1; }
-.agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'][data-expanded] textarea { max-height: none; min-height: 210px; }
+.agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'][data-expanded] textarea { max-height: var(--composer-editor-available-height, none); min-height: min(210px, var(--composer-editor-available-height, 210px)); }
 .paw-desktop-root .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] .agent-composer__toolbar,
 .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] .agent-composer__toolbar {
   display: flex; flex: none; align-items: center; gap: 12px; min-height: 52px;
@@ -53,6 +53,9 @@
 .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] .agent-composer__picker-thinking { margin-inline-start: 0; font-size: inherit; font-weight: inherit; line-height: inherit; color: var(--wb-muted); }
 .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] .agent-composer__picker .caret { flex: none; }
 .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] .agent-composer__actions > button { flex: none; }
+.agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] .agent-context-usage__trigger {
+  min-width: 32px; min-height: 32px;
+}
 .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] .agent-composer__actions > .agent-composer__model-picker {
   flex: 0 1 auto; min-width: 0;
 }
@@ -110,7 +113,7 @@
 }
 @container workbench-composer (max-width: 460px) {
   .paw-desktop-root .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] textarea,
-  .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] textarea { padding: 14px 48px 10px 14px; font-size: 16px; }
+  .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] textarea { padding: 14px 64px 10px 14px; font-size: 16px; }
   .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] :is(.agent-composer__controls button, .agent-composer__editor > button) { min-width: 40px; min-height: 40px; }
   .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] .agent-composer__send { min-width: 44px; min-height: 44px; }
   .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] .agent-composer__toolbar { gap: 7px; padding: 6px 10px 10px; }
@@ -122,6 +125,7 @@
 
 @container workbench-composer (max-width: 460px) {
   .paw-desktop-root .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] :is(.agent-composer__controls button, .agent-composer__editor > button) { min-width: 40px; min-height: 40px; }
+  .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] .agent-context-usage__trigger { min-width: 40px; min-height: 40px; }
   .paw-desktop-root .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] .agent-composer__send { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
 }
 
@@ -165,3 +169,38 @@
 
 /* Reading tokens are selected locally; vertical Apps retain v1 by default. */
 [data-chat-presentation-version="v2"] { --text-reading: 16px; --text-reading-lh: 27px; }
+
+/* A short full workspace needs readable text, not two permanent toolbar rows.
+   The editor marks only its real fixed host's dock; v1/embedded stay unchanged.
+   Original controls keep their DOM, accessible names and native Popovers. */
+.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer)[data-composer-height='compact']:has(.agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2']) {
+  padding-block: 6px;
+}
+.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer)[data-composer-height='compact'] :is(.agent-composer-wrap, .room-composer-wrap) {
+  padding-block: 0; margin-block: 0;
+}
+.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer)[data-composer-height='compact'] .agent-composer[data-chat-presentation-version='v2'] textarea {
+  padding-block: 8px; min-height: min(64px, var(--composer-editor-available-height, 64px));
+}
+.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer)[data-composer-height='compact'] .agent-composer[data-chat-presentation-version='v2'] .agent-composer__toolbar {
+  flex-wrap: nowrap; gap: 4px; min-height: 52px; margin: 0; padding: 4px 0;
+}
+.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer)[data-composer-height='compact'] .agent-composer[data-chat-presentation-version='v2'] .agent-composer__controls {
+  flex: 1 1 auto; flex-wrap: nowrap; gap: 0; min-width: 0; overflow: visible;
+}
+.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer)[data-composer-height='compact'] .agent-composer[data-chat-presentation-version='v2'] .agent-composer__actions {
+  flex: 0 0 auto; gap: 0; justify-content: flex-end;
+}
+.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer)[data-composer-height='compact'] .agent-composer[data-chat-presentation-version='v2'] :is(.agent-composer__controls button, .agent-composer__model-picker, .agent-context-usage__trigger, .room-composer__queue) {
+  flex: 0 0 32px; width: 32px; min-width: 32px; max-width: 32px;
+  height: 32px; min-height: 32px; padding-inline: 0;
+}
+.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer)[data-composer-height='compact'] .agent-composer[data-chat-presentation-version='v2'] .agent-composer__picker .ui-button__label {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer)[data-composer-height='compact'] .agent-composer[data-chat-presentation-version='v2'] .agent-composer__jump-slot {
+  flex-basis: 32px; width: 32px; height: 32px;
+}
+.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer)[data-composer-height='compact'] .agent-composer[data-chat-presentation-version='v2'] :is(.agent-composer__send, .agent-composer__stop, .room-composer__stop) {
+  flex: 0 0 44px; width: 44px; min-width: 44px; height: 44px; min-height: 44px;
+}

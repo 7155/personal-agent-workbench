@@ -192,7 +192,7 @@ class AgentBlockStore:
 
     def hydrate_recent_messages(
         self, session_id: str, runtime_messages: Sequence[Mapping[str, object]],
-        *, native_pi_session_id: str = "",
+        *, native_pi_session_id: str = "", durable_message_ids: Sequence[str] | None = None,
     ) -> list[dict[str, object]]:
         """Hydrate only returned IDs; never restore history or infer native aliases."""
         messages = [dict(message) for message in runtime_messages]
@@ -200,6 +200,8 @@ class AgentBlockStore:
         # unbounded query or silently dropping messages from Pi's projection.
         if len(messages) > MAX_RECENT_MESSAGE_HYDRATION:
             return messages
+        if durable_message_ids is not None:
+            return self._hydrate_durable_messages(session_id, messages, native_pi_session_id, durable_message_ids)
         ids = list(dict.fromkeys(
             message["id"] for message in messages
             if message.get("sessionId") == session_id
@@ -258,11 +260,70 @@ class AgentBlockStore:
             message["blocks"] = [*original, *stored]
         return messages
 
+    def _hydrate_durable_messages(
+        self, session_id: str, runtime_messages: Sequence[Mapping[str, object]],
+        native_pi_session_id: str | None, durable_message_ids: Sequence[str],
+    ) -> list[dict[str, object]]:
+        messages = [dict(message) for message in runtime_messages]
+        if not native_pi_session_id or not durable_message_ids:
+            return messages
+        visible_ids = set(durable_message_ids)
+        targets = list(dict.fromkeys(
+            (str(message["id"]), str(message["turnId"]), str(message["clientMessageId"]))
+            for message in messages
+            if message.get("sessionId") == session_id and message.get("role") == "assistant" and message.get("id") in visible_ids
+            and isinstance(message.get("id"), str) and str(message["id"]).startswith("durable:task:")
+            and isinstance(message.get("turnId"), str) and message["turnId"]
+            and isinstance(message.get("clientMessageId"), str) and message["clientMessageId"]
+        ))
+        if not targets:
+            return messages
+        values = ",".join("(?,?,?)" for _ in targets)
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                WITH requested(id,turn_id,client_id) AS (VALUES {values})
+                SELECT requested.id,requested.turn_id,requested.client_id,envelope.generation,sidecar.raw_json
+                FROM requested JOIN agent_block_message_envelopes AS envelope
+                  ON envelope.session_id=? AND envelope.message_id=requested.id
+                 AND json_extract(envelope.message_json,'$.turnId')=requested.turn_id
+                 AND json_extract(envelope.message_json,'$.clientMessageId')=requested.client_id
+                 AND envelope.generation=(SELECT MAX(current.generation) FROM agent_block_message_envelopes AS current
+                     WHERE current.session_id=? AND current.message_id=requested.id
+                       AND json_extract(current.message_json,'$.turnId')=requested.turn_id
+                       AND json_extract(current.message_json,'$.clientMessageId')=requested.client_id)
+                LEFT JOIN agent_message_block_sidecars AS sidecar
+                  ON sidecar.session_id=envelope.session_id AND sidecar.message_id=envelope.message_id
+                 AND sidecar.generation=envelope.generation AND sidecar.turn_id=requested.turn_id
+                 AND sidecar.lifecycle_status IN ('active','completed')
+                ORDER BY sidecar.created_at_ms,sidecar.block_ref
+                """, (*[value for target in targets for value in target], session_id, session_id),
+            ).fetchall()
+        blocks: dict[tuple[str, str, str], list[dict[str, object]]] = {}
+        for row in rows:
+            key = (str(row["id"]), str(row["turn_id"]), str(row["client_id"]))
+            stored = blocks.setdefault(key, [])
+            if row["raw_json"] is not None:
+                stored.append(json.loads(str(row["raw_json"])))
+        for message in messages:
+            key = (str(message.get("id") or ""), str(message.get("turnId") or ""), str(message.get("clientMessageId") or ""))
+            if message.get("sessionId") == session_id and key in blocks:
+                raw_blocks = message.get("blocks")
+                original = [dict(block) for block in (raw_blocks if isinstance(raw_blocks, list) else []) if isinstance(block, Mapping) and block.get("schemaVersion") != "rag-ime.agent-block.v1"]
+                message["blocks"] = [*original, *blocks[key]]
+        return messages
+
     def hydrate_messages(
         self, session_id: str, runtime_messages: Sequence[Mapping[str, object]],
-        *, native_pi_session_id: str | None = "",
+        *, native_pi_session_id: str | None = "", durable_message_ids: Sequence[str] | None = None,
     ) -> list[dict[str, object]]:
         """Hydrate runtime history and recover rich messages omitted after compaction/restart."""
+
+        if durable_message_ids is not None:
+            # Durable's canonical SQLite projection owns history and synthetic
+            # IDs. Only returned original entries may receive exact sidecars;
+            # Classic alias/history recovery cannot supply a native namespace.
+            return self._hydrate_durable_messages(session_id, runtime_messages, native_pi_session_id, durable_message_ids)
 
         runtime_order: list[str] = []
         runtime_by_id: dict[str, dict[str, object]] = {}

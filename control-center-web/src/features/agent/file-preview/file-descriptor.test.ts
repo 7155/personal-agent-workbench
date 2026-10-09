@@ -59,6 +59,12 @@ describe('managed file descriptors', () => {
 
   it('formats compact file sizes without pretending unknown bytes are known', () => {
     expect(fileSizeLabel(0)).toBe('');
+    expect(fileSizeLabel(Number.NaN)).toBe('');
+    expect(fileSizeLabel(-1)).toBe('');
+    expect(fileSizeLabel(72)).toBe('72 B');
+    expect(fileSizeLabel(124)).toBe('124 B');
+    expect(fileSizeLabel(1_023)).toBe('1023 B');
+    expect(fileSizeLabel(1_024)).toBe('1 KB');
     expect(fileSizeLabel(2_049)).toBe('3 KB');
     expect(fileSizeLabel(1_572_864)).toBe('1.5 MB');
   });

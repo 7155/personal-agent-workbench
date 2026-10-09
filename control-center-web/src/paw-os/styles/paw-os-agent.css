@@ -307,6 +307,8 @@
 }
 
 .paw-desktop-root .paw-session-workspace__tools > nav > button {
+  /* Tools are text rows; compact caption-nav icon widths must not leak in. */
+  width: 100%;
   min-width: 0;
   min-height: 34px;
   display: flex;
@@ -318,6 +320,12 @@
   color: var(--paw-chat-text-secondary);
   font-size: 13px;
   white-space: nowrap;
+}
+
+/* History stays in the existing tools menu instead of the runtime's 29px
+   icon grid. Keep its original pointer target at the window's control scale. */
+.paw-desktop-root .paw-session-workspace__tools > nav > .paw-session-history-load {
+  min-height: max(34px, var(--paw-window-control-size, 32px));
 }
 
 .paw-desktop-root .paw-session-workspace__tools > nav > button:is(:hover, [data-active]) {
@@ -631,8 +639,7 @@
 .paw-desktop-root .paw-session-workspace__conversation[data-message-flow='separated'] :is(
   .agent-inline-diff,
   .agent-rich-artifact,
-  .agent-file-block,
-  .agent-file-collection
+  .agent-file-block
 ) {
   border-color: var(--paw-chat-border);
   border-left-width: 1px;
@@ -647,8 +654,7 @@
 .paw-desktop-root .paw-session-workspace__conversation[data-message-flow='separated'] :is(
   .agent-inline-diff,
   .agent-rich-artifact,
-  .agent-file-block,
-  .agent-file-collection
+  .agent-file-block
 ):hover {
   border-color: color-mix(in srgb, var(--paw-chat-accent) 24%, var(--paw-chat-border));
   box-shadow: 0 1px 2px rgb(24 32 43 / 4%), 0 10px 26px rgb(24 32 43 / 7%);

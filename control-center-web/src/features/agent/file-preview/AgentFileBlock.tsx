@@ -17,7 +17,7 @@ import {
   RefreshCw,
   TriangleAlert,
 } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { useOptionalControlTransport } from '@/app/control-transport';
 import { Button, IconButton } from '@/components/primitives';
 import { AgentHtmlReportCard } from './AgentHtmlReportCard';
@@ -51,6 +51,55 @@ export function AgentFileBlock({ data, sessionId = '' }: { data: Record<string, 
     && samePreviewRequest(request, activeRequest),
   );
   const regionId = request ? `agent-file-preview-${request.mediaId}` : undefined;
+  const regionRef = useRef<HTMLElement>(null);
+  const revealRequested = useRef(false);
+
+  useLayoutEffect(() => {
+    if (!expanded) { revealRequested.current = false; return undefined; }
+    const region = regionRef.current;
+    const reader = region?.closest<HTMLElement>('[data-virtuoso-scroller="true"]');
+    const row = region?.parentElement?.querySelector<HTMLElement>('.agent-file-block');
+    if (!region || !reader) return undefined;
+    // The workspace owns dock clearance. Read its native scroll-padding,
+    // instead of assuming a composer height or changing the saved turn anchor.
+    const resize = () => {
+      const box = reader.getBoundingClientRect();
+      const style = getComputedStyle(reader);
+      const pixels = (value: string) => value === 'auto' ? 0
+        : /^\d+(?:\.\d+)?px$/u.test(value) ? Number.parseFloat(value) : NaN;
+      const padding = pixels(style.scrollPaddingTop) + pixels(style.scrollPaddingBottom);
+      if (!Number.isFinite(padding)) return;
+      const available = Math.max(0, Math.min(box.bottom, window.innerHeight) - Math.max(0, box.top) - padding - (row?.getBoundingClientRect().height ?? 0));
+      region.style.setProperty('--agent-file-preview-available-height', `${available}px`);
+    };
+    const cancelReveal = () => { revealRequested.current = false; };
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(reader);
+    // useComposerClearance publishes changes directly to this existing host.
+    const host = reader.closest('.paw-session-workspace__primary');
+    const dockChanges = new MutationObserver(resize);
+    if (host) dockChanges.observe(host, { attributes: true, attributeFilter: ['style'] });
+    for (const name of ['wheel', 'touchmove', 'pointerdown', 'keydown']) reader.addEventListener(name, cancelReveal, { passive: true });
+    return () => {
+      observer.disconnect(); dockChanges.disconnect();
+      for (const name of ['wheel', 'touchmove', 'pointerdown', 'keydown']) reader.removeEventListener(name, cancelReveal);
+    };
+  }, [expanded]);
+
+  useEffect(() => {
+    if (!expanded || !revealRequested.current || !['ready', 'error'].includes(status)) return undefined;
+    const region = regionRef.current;
+    if (!region?.closest('[data-virtuoso-scroller="true"]')) return undefined;
+    const frame = requestAnimationFrame(() => {
+      if (!revealRequested.current || !region.isConnected) return;
+      revealRequested.current = false;
+      // Reveal this original row and its region together, not the latest turn.
+      // Native scroll-padding reserves the dock and keeps row focus visible.
+      region.parentElement?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'auto' });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [expanded, status]);
 
   if (request && isHtmlReport(fileName, request.mimeTypeHint)) {
     return <AgentHtmlReportCard fileName={fileName} request={request} transport={transport ?? null} />;
@@ -69,7 +118,7 @@ export function AgentFileBlock({ data, sessionId = '' }: { data: Record<string, 
         onClick={() => {
           if (!request || !transport) return;
           if (expanded) closePreview();
-          else openPreview(request, transport, 'inline');
+          else { revealRequested.current = true; openPreview(request, transport, 'inline'); }
         }}
         type="button"
       >
@@ -86,6 +135,7 @@ export function AgentFileBlock({ data, sessionId = '' }: { data: Record<string, 
           className="agent-file-preview-inline"
           data-status={status}
           id={regionId}
+          ref={regionRef}
         >
           <header>
             <span>{inlinePreviewCaption(status, preview?.truncated ?? false, preview?.content)}</span>
@@ -104,7 +154,7 @@ export function AgentFileBlock({ data, sessionId = '' }: { data: Record<string, 
               ) : null}
             </span>
           </header>
-          <div className="agent-file-preview-inline__body" data-preview-kind={status === 'ready' ? preview?.descriptor.previewKind : undefined}>
+          <div aria-label={`${fileName} 预览内容`} className="agent-file-preview-inline__body" role="group" tabIndex={0} data-preview-kind={status === 'ready' ? preview?.descriptor.previewKind : undefined}>
             {status === 'loading' ? <div className="agent-file-preview-inline__state"><LoaderCircle size={19} /><span>正在读取文件</span></div> : null}
             {status === 'error' ? (
               <div className="agent-file-preview-inline__state" role="alert">

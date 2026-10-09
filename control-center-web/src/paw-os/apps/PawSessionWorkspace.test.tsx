@@ -18,12 +18,75 @@ import { usePluginCatalog } from '@/features/plugins/api';
 import { StubControlTransport } from '@/test/stub-control-transport';
 import { ControlTransportHttpError, HttpControlTransport } from '@/platform/http-transport';
 import type { ControlEventObserver, ControlRequest } from '@/platform/transport';
+import { CONTROL_ROUTES } from '@/platform/routes';
 import { parseTraceAgentHandoff } from '@/features/trace-agent/handoff';
 import agentMigratedCss from '../styles/paw-os-agent.css?raw';
 import appsCss from './paw-apps.css?raw';
 import { PawWindowFrame } from '../shell/PawWindowLayer';
 import { PawSessionWorkspace, sessionWorkspaceProjectionSlice, latestPublicSessionMessageId } from './PawSessionWorkspace';
 import { messageWithWorkspaceContext } from './workspace-draft';
+
+/* jsdom does not evaluate media queries or layout. Parse the real owners,
+   activate the observed viewport, and check their width cascade on the real
+   portalled menu; pixel containment remains a separate browser requirement. */
+function activeToolsMenuWidths(css: string, width: number, agentShellWidth: number): string {
+  const source = document.createElement('style');
+  source.textContent = css;
+  document.head.append(source);
+  try {
+    if (!source.sheet) throw new Error('tools menu stylesheet did not parse');
+    const visit = (rules: CSSRuleList): string => Array.from(rules).map(rule => {
+      if (rule.type === CSSRule.MEDIA_RULE) {
+        const media = rule as CSSMediaRule;
+        const condition = /^\((max|min)-width:\s*(\d+)px\)$/.exec(media.conditionText);
+        if (!condition) return '';
+        return (condition[1] === 'max' ? width <= Number(condition[2]) : width >= Number(condition[2]))
+          ? visit(media.cssRules) : '';
+      }
+      if (rule.cssText.startsWith('@container ')) {
+        const container = rule as CSSGroupingRule & { conditionText: string };
+        const condition = /^paw-agent-shell \(max-width:\s*(\d+)px\)$/.exec(container.conditionText);
+        return condition && agentShellWidth <= Number(condition[1]) ? visit(container.cssRules) : '';
+      }
+      if (rule.type !== CSSRule.STYLE_RULE) return '';
+      const style = rule as CSSStyleRule;
+      const value = style.style.getPropertyValue('width');
+      return value ? `${style.selectorText}{width:${value};}` : '';
+    }).join('\n');
+    return visit(source.sheet.cssRules);
+  } finally {
+    source.remove();
+  }
+}
+
+/* jsdom applies matching style rules in insertion order without browser
+   specificity. Resolve only these simple, matched width selectors from CSSOM;
+   reject unfamiliar selector syntax instead of approximating its cascade. */
+function toolsMenuWidth(element: HTMLElement, css: string): string {
+  const style = document.createElement('style');
+  style.textContent = css;
+  document.head.append(style);
+  try {
+    if (!style.sheet) throw new Error('tools widths did not parse');
+    const candidates: { value: string; classes: number; types: number; order: number }[] = [];
+    Array.from(style.sheet.cssRules).forEach((rule, order) => {
+      const owner = rule as CSSStyleRule;
+      if (!element.matches(owner.selectorText)) return;
+      if (/[:#\[\]()]/.test(owner.selectorText)) throw new Error(`unsupported matched width selector: ${owner.selectorText}`);
+      for (const selector of owner.selectorText.split(',')) {
+        if (!element.matches(selector)) continue;
+        if (!/^[\s>a-zA-Z0-9_.-]+$/.test(selector)) throw new Error(`unsupported matched width selector: ${selector}`);
+        const classes = (selector.match(/\.[a-zA-Z0-9_-]+/g) ?? []).length;
+        const types = (selector.replace(/\.[a-zA-Z0-9_-]+/g, '').match(/[a-zA-Z][a-zA-Z0-9-]*/g) ?? []).length;
+        candidates.push({ value: owner.style.getPropertyValue('width'), classes, types, order });
+      }
+    });
+    candidates.sort((a, b) => a.classes - b.classes || a.types - b.types || a.order - b.order);
+    return candidates.at(-1)?.value ?? 'auto';
+  } finally {
+    style.remove();
+  }
+}
 
 /* jsdom gives every row zero height, so the real virtualizer would keep the
    transcript empty and no timeline assertion here would mean anything. */
@@ -1309,7 +1372,13 @@ describe('PAWOS Agent Session structural migration', () => {
     act(() => repairObservers.at(-1)!.stable?.(''));
     expect(screen.queryByText('Session 操作没有完成，请重新同步后重试。')).not.toBeInTheDocument();
     expect(screen.getByText('正在恢复连接')).toBeVisible();
+    const beforeRepairStreams = observers.length;
     failSnapshot = false;
+    await waitFor(() => expect(observers.length).toBeGreaterThan(beforeRepairStreams), { timeout: 6000 });
+    // Recovery's recent read replaces the old stream. Its accepted snapshot
+    // cannot borrow the heartbeat from the discarded subscription.
+    expect(screen.getByText('正在恢复连接')).toBeVisible();
+    act(() => observers.at(-1)!.stable?.(''));
     await waitFor(() => expect(screen.queryByText('正在恢复连接')).not.toBeInTheDocument(), { timeout: 6000 });
     expect(screen.queryByRole('button', { name: '立即重连' })).not.toBeInTheDocument();
     expect(transport.requests.filter((request) => request.pathId === 'agent.session.prompt')).toHaveLength(0);
@@ -1633,7 +1702,9 @@ describe('PAWOS Agent Session structural migration', () => {
     expect(within(screen.getByRole('navigation', { name: '当前 Session 视图' })).getByRole('button', { name: 'Agent 轨迹' })).toBeInTheDocument();
     expect(within(screen.getByRole('navigation', { name: '当前 Session 视图' })).getByRole('button', { name: '星空' })).toBeInTheDocument();
     expect(within(titlebar).getByRole('button', { name: '对话工具' })).toBeInTheDocument();
-    expect(within(titlebar).getByRole('button', { name: '加载完整记录' })).toBeInTheDocument();
+    fireEvent.click(within(titlebar).getByRole('button', { name: '对话工具' }));
+    expect(screen.getByRole('menuitem', { name: '加载完整记录' })).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole('menuitem', { name: '加载完整记录' }), { key: 'Escape' });
     expect(within(titlebar).queryByRole('button', { name: '打开 Session 文件' })).not.toBeInTheDocument();
     expect(within(titlebar).queryByRole('button', { name: '打开子 Agent 工作台' })).not.toBeInTheDocument();
     expect(within(titlebar).queryByRole('button', { name: '打开 Session 任务中心' })).not.toBeInTheDocument();
@@ -1641,6 +1712,133 @@ describe('PAWOS Agent Session structural migration', () => {
     const conversationNav = window.querySelector('.agent-conversation-nav');
     expect(conversationNav).not.toBeNull();
     expect(conversationNav?.querySelectorAll('button')).toHaveLength(2);
+  });
+
+  it.each([true, false])('keeps history feedback and task state tied to an actually stable stream (%s)', async (stable) => {
+    const sessionId = `history-feedback-${stable}`;
+    const archive = deferred<unknown>();
+    const stopped = parseAgentEvent({ schemaVersion: 'rag-ime.agent-event.v1', eventId: `${sessionId}:1`,
+      sessionId, turnId: 'original-stopped-turn', sequence: 1, createdAtMs: 1,
+      eventType: 'turn_completed', payload: { status: 'aborted' }, resumeToken: `${sessionId}:1` });
+    const snapshot = (full: boolean) => ({ messages: [{ schemaVersion: 'rag-ime.agent-message.v1',
+      id: `${sessionId}:stopped-answer`, sessionId, turnId: 'original-stopped-turn', role: 'assistant',
+      status: 'aborted', blocks: [], attachments: [], citations: [], createdAtMs: 1, completedAtMs: 2 }],
+      liveEvents: [stopped], lastSequence: full ? 2 : 1,
+      resumeToken: `${sessionId}:${full ? 2 : 1}`, status: 'idle', partial: !full,
+      snapshotScope: full ? 'full' : 'recent' });
+    const transport = new StubControlTransport('mock', { ...idleSessionRoutes(),
+      'agent.session.snapshot': (r: ControlRequest) => r.query?.view === 'recent' ? snapshot(false) : archive.promise });
+    const streams = vi.spyOn(transport, 'subscribe');
+    const view = render(<ControlTransportProvider transport={transport}><TooltipProvider>
+      <PawWindowFrame active appId="agent" bounds={{ x: 0, y: 0, width: 700, height: 720 }}
+        onBoundsCommit={() => undefined} onClose={() => undefined} onFocus={() => undefined}
+        onMinimize={() => undefined} onToggleMaximize={() => undefined} title="Original stopped Session"
+        windowChrome="agent-session" windowId={sessionId} zIndex={10}>
+        <PawSessionWorkspace record={{ ...liveSession(), id: sessionId }} recordId={sessionId}
+          initialDraft="原未发送草稿" onNewWork={vi.fn()} onSessionCreated={vi.fn()} onSessionUpdated={vi.fn()} />
+      </PawWindowFrame></TooltipProvider></ControlTransportProvider>);
+    const editor = await screen.findByRole('textbox', { name: '消息' });
+    await waitFor(() => expect(streams).toHaveBeenCalled());
+    if (stable) act(() => streams.mock.calls[0][1].stable?.(`${sessionId}:1`));
+    fireEvent.click(screen.getByRole('button', { name: '对话工具' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '加载完整记录' }));
+    await act(async () => { archive.resolve(snapshot(true)); await archive.promise; });
+    const header = document.querySelector('.paw-session-workspace__runtime')!;
+    const taskbar = screen.getByRole('region', { name: '当前工作' });
+    if (stable) {
+      await waitFor(() => expect(taskbar).toHaveTextContent('本轮已停止'));
+      expect(header).toHaveTextContent('已同步');
+    } else {
+      expect(taskbar).toHaveTextContent('连接恢复中 · 上次状态');
+      expect(header).toHaveTextContent('正在恢复连接');
+      expect(header).not.toHaveTextContent('已同步');
+    }
+    expect(screen.getByRole('textbox', { name: '消息' })).toBe(editor);
+    expect(editor).toHaveValue('原未发送草稿');
+    expect(transport.requests.filter(r => r.pathId === 'agent.session.snapshot' && r.query?.view === undefined)).toHaveLength(1);
+    expect(transport.requests.some(r => ['agent.session.prompt', 'agent.session.abort', 'agent.runtime.ensure'].includes(r.pathId))).toBe(false);
+    view.unmount();
+  });
+
+  it.each([
+    { width: 375, agentShellWidth: 375 },
+    { width: 720, agentShellWidth: 720 },
+    { width: 1400, agentShellWidth: 1400 },
+    { width: 1400, agentShellWidth: 700 },
+  ].flatMap(sample => ['apps-first', 'apps-last'].map(order => ({ ...sample, order }))))(
+    'keeps full history out of a $width px long-title caption and keyboard-accessible in $order order (shell $agentShellWidth)',
+    async ({ width, agentShellWidth, order }) => {
+    const sessionId = `long-caption-history-${width}`;
+    const title = '公开长标题 /nested/project/result-and-receipt'.repeat(8);
+    const full = deferred<unknown>();
+    const snapshot = (complete: boolean) => ({ messages: [], liveEvents: [], lastSequence: complete ? 2 : 1,
+      resumeToken: `${sessionId}:${complete ? 2 : 1}`, status: 'idle', partial: !complete, snapshotScope: complete ? 'full' : 'recent' });
+    const transport = new StubControlTransport('mock', { ...idleSessionRoutes(),
+      'agent.session.snapshot': (request: ControlRequest) => request.query?.view === 'recent' ? snapshot(false) : full.promise,
+    });
+    render(<ControlTransportProvider transport={transport}><TooltipProvider>
+      <PawWindowFrame active appId="agent" bounds={{ x: 0, y: 0, width, height: 720 }}
+        onBoundsCommit={() => undefined} onClose={() => undefined} onFocus={() => undefined}
+        onMinimize={() => undefined} onToggleMaximize={() => undefined} title={title}
+        windowChrome="agent-session" windowId={sessionId} zIndex={10}>
+        <PawSessionWorkspace record={{ ...liveSession(), id: sessionId, title }} recordId={sessionId}
+          initialDraft="保留原 Session 未发送草稿" onNewWork={vi.fn()} onSessionCreated={vi.fn()} onSessionUpdated={vi.fn()} />
+      </PawWindowFrame>
+    </TooltipProvider></ControlTransportProvider>);
+    const composer = await screen.findByRole('textbox', { name: '消息' });
+    const titlebar = document.querySelector('.paw-window-titlebar') as HTMLElement;
+    expect(within(titlebar).getByText(title)).toBeInTheDocument();
+    // The raw29px runtime-button grid must never host the six-character caption action.
+    expect(titlebar.querySelector('.paw-session-workspace__runtime .paw-session-history-load')).toBeNull();
+    const user = userEvent.setup();
+    const trigger = within(titlebar).getByRole('button', { name: '对话工具' });
+    trigger.focus();
+    await user.keyboard('{ArrowDown}');
+    const menu = screen.getByRole('menu', { name: '对话工具菜单' });
+    const load = within(menu).getByRole('menuitem', { name: '加载完整记录' });
+    const css = document.createElement('style');
+    css.textContent = (order === 'apps-first' ? [appsCss, agentMigratedCss] : [agentMigratedCss, appsCss])
+      .map(sheet => activeToolsMenuWidths(sheet, width, agentShellWidth)).join('\n');
+    document.head.append(css);
+    const root = menu.closest('.paw-window-shell') as HTMLElement;
+    root.classList.add('paw-desktop-root');
+    try {
+      // Caption navigation may use icon squares, but every tools-menu item
+      // (including the existing subagent action) must retain a whole text row.
+      for (const item of within(menu).getAllByRole('menuitem')) {
+        const computed = toolsMenuWidth(item, css.textContent!);
+        expect(['', 'auto', '100%']).toContain(computed);
+      }
+    } finally {
+      css.remove();
+      root.classList.remove('paw-desktop-root');
+    }
+    await user.keyboard('{End}');
+    expect(load).toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(trigger).toHaveFocus();
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(transport.requests.filter(r => r.pathId === 'agent.session.snapshot' && r.query?.view === undefined)).toHaveLength(0);
+    await user.keyboard('{ArrowUp}{Enter}');
+    await waitFor(() => expect(transport.requests.filter(r => r.pathId === 'agent.session.snapshot' && r.query?.view === undefined)).toHaveLength(1));
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    expect(composer).toHaveValue('保留原 Session 未发送草稿');
+    await user.keyboard('{ArrowUp}');
+    expect(screen.getByRole('menuitem', { name: '加载完整记录' })).toBeDisabled();
+    await user.keyboard('{Enter}');
+    expect(transport.requests.filter(r => r.pathId === 'agent.session.snapshot' && r.query?.view === undefined)).toHaveLength(1);
+    // The disabled last item cannot take focus; Enter on the opener only
+    // closes the menu, never dispatches another load. Reopen after the ACK.
+    expect(trigger).toHaveFocus();
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    await act(async () => { full.resolve(snapshot(true)); });
+    await user.keyboard('{ArrowUp}');
+    await waitFor(() => expect(screen.getByRole('menuitem', { name: '加载完整记录' })).toBeEnabled());
+    await user.keyboard('{Escape}');
+    expect(trigger).toHaveFocus();
+    expect(composer).toHaveValue('保留原 Session 未发送草稿');
+    expect(transport.requests.some(r => CONTROL_ROUTES[r.pathId].method === 'POST')).toBe(false);
   });
 
   it('does not repeat workspace and permission context as a conversation header strip', async () => {

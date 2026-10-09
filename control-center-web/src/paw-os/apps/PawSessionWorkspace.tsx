@@ -1821,6 +1821,26 @@ function PawSessionWorkspaceBody({
     closeToolMenu(true);
   }
 
+  // Full history is a low-frequency read. The window caption keeps only its
+  // view/status/tools; the existing tools menu owns this labelled action.
+  const historyLoadControl = !evaluationSnapshot ? (
+    <button
+      aria-label="加载完整记录"
+      aria-busy={contextSnapshotState === 'restoring' || undefined}
+      className="paw-session-history-load"
+      disabled={contextSnapshotState === 'restoring'}
+      onClick={() => { if (windowChromeTarget) closeToolMenu(true); void loadFullSnapshot(); }}
+      role={windowChromeTarget ? 'menuitem' : undefined}
+      title={contextSnapshotState === 'restoring' ? '正在加载完整记录' : '加载完整记录'}
+      type="button"
+    >
+      {contextSnapshotState === 'restoring'
+        ? <LoaderCircle className="ui-spin" size={15} />
+        : <History size={15} />}
+      <span>加载完整记录</span>
+    </button>
+  ) : null;
+
   const title = workspaceRecord.title || '未命名 Session';
   const sessionChrome = (
       <div className="paw-session-workspace__header" data-controls-expanded={controlsExpanded} data-status={stopping ? 'stopping' : durablePaused ? 'paused' : busy ? 'busy' : 'idle'}>
@@ -1844,7 +1864,7 @@ function PawSessionWorkspaceBody({
         <div className="paw-session-workspace__runtime">
           <span data-context={contextSnapshotState}><i />{evaluationSnapshot
             ? '只读证据'
-            : syncError && syncState !== 'synced'
+            : syncState !== 'synced' && (syncError || contextSnapshotState === undefined)
               ? '正在恢复连接'
             : stopping
             ? '正在停止'
@@ -1857,21 +1877,7 @@ function PawSessionWorkspaceBody({
               : contextSnapshotState === 'partial'
                 ? '最近消息'
                 : '已同步'}</span>
-          {!evaluationSnapshot ? (
-            <button
-              aria-label="加载完整记录"
-              className="paw-session-history-load"
-              disabled={contextSnapshotState === 'restoring'}
-              onClick={() => void loadFullSnapshot()}
-              title={contextSnapshotState === 'restoring' ? '正在加载完整记录' : '加载完整记录'}
-              type="button"
-            >
-              {contextSnapshotState === 'restoring'
-                ? <LoaderCircle className="ui-spin" size={15} />
-                : <History size={15} />}
-              <span>加载完整记录</span>
-            </button>
-          ) : null}
+          {!windowChromeTarget ? historyLoadControl : null}
           {!windowChromeTarget && !evaluationSnapshot && busy && !compactionTarget ? <button aria-label="停止当前回合" disabled={stopping} onClick={() => void stop()} type="button"><StopCircle size={16} /></button> : null}
         </div>
         {!evaluationSnapshot ? <div className="paw-session-workspace__tools" data-open={toolMenuOpen || undefined} ref={toolMenuContainerRef}>
@@ -1900,6 +1906,7 @@ function PawSessionWorkspaceBody({
             {!windowChromeTarget ? <button data-active={panel === 'status' || undefined} onClick={() => openToolPanel('status')} role="menuitem" type="button"><ListChecks size={15} /><span>任务与状态</span></button> : null}
             <button data-active={panel === 'subagents' || undefined} onClick={() => openToolPanel('subagents')} role="menuitem" type="button"><Network size={15} /><span>子 Agent</span></button>
             {!windowChromeTarget ? <button data-active={panel === 'files' || undefined} onClick={() => openToolPanel('files')} role="menuitem" type="button"><FolderTree size={15} /><span>文件</span></button> : null}
+            {windowChromeTarget ? historyLoadControl : null}
             {!windowChromeTarget && contextSnapshotState ? <button disabled={contextSnapshotState === 'restoring'} onClick={() => { closeToolMenu(true); void loadFullSnapshot(); }} role="menuitem" type="button"><History size={15} /><span>{contextSnapshotState === 'restoring' ? '正在恢复完整对话' : '恢复完整对话与待办'}</span></button> : null}
           </nav> : null}
         </div> : null}

@@ -5,6 +5,47 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Keep the original v2 chat controls in one compact row in very short full
+  Session and Room windows, leaving a readable editor and preserving the
+  primary Send/Stop targets and existing permissions and pickers.
+
+- Keep explicitly opened file previews within the transcript's measured editor
+  clearance, preserving row focus and reading position when a reply arrives late.
+  Long inline diffs share one keyboard-accessible preview reader.
+
+- Fit long and expanded v2 Session and Room editors to their current window
+  height, including toolbar and attachment changes, while preserving the input.
+
+- Keep narrow v2 chat text clear of the larger editor expand control by
+  reserving enough padding for its full hit target.
+
+- Keep the v2 chat context meter aligned with its toolbar: use a 32px minimum
+  target on desktop and a 40px target in the narrow composer.
+
+- Give Full Session conversations more room around the floating editor. Remove
+  its opaque outer band and reduce empty collapsed input height while preserving
+  the editor card, controls, growing drafts and expanded editing.
+
+- Keep full-history connection feedback tied to the current live stream. Reuse
+  an already stable subscription after an accepted read; new or failed streams
+  continue to show recovery until their own connection is confirmed.
+
+- Restore original Durable file results in recent and full conversations using
+  the current native message, turn and client identity. Keep distinct versions
+  and revocation; unknown or changing bindings retain the native text while
+  awaiting a current snapshot.
+
+- Keep Session tool-menu labels and keyboard focus on full-width text rows in
+  compact windows. Group file results with spacing instead of a shared slab;
+  preserve each clickable receipt and display exact bytes for small snapshots.
+
+- Keep responsive menu and window dimensions aligned when shared styles load
+  after the App shell, preserving usable controls in narrow and zoomed windows.
+
+- Keep the full-history action in the existing Session tools menu so its label
+  stays readable and reachable in narrow window captions, with keyboard return
+  and duplicate-load protection preserved.
+
 - Restore unsent Knowledge search drafts and reading selections after reload,
   separately for each App window and library. Keep results and active request
   state in memory; restoring local input does not repeat a search.

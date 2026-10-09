@@ -2,8 +2,75 @@ import { describe, expect, it } from 'vitest';
 import { pawDockAppIds } from './app-registry';
 import { pawExtensionApps } from '../extensions/registry';
 import { createPawDesktopStore, pawFocusWindowLayerSize, pawWindowArea, pawWindowLayerSize } from './desktop-store';
+import structureCss from '../styles/paw-os.css?raw';
+import shellCss from '../styles/paw-os-shell.css?raw';
+
+/* jsdom parses the real stylesheet CSSOM but does not evaluate viewport media.
+   Project only the active menu geometry declarations through its real cascade;
+   the production bounds consumer then reads the resulting computed token. */
+function activeMenuGeometry(css: string, width: number): string {
+  const source = document.createElement('style');
+  source.textContent = css;
+  document.head.append(source);
+  try {
+    if (!source.sheet) throw new Error('menu owner stylesheet did not parse');
+    const visit = (rules: CSSRuleList): string => Array.from(rules).map((rule) => {
+      if (rule.type === CSSRule.MEDIA_RULE) {
+        const media = rule as CSSMediaRule;
+        const condition = /^\((max|min)-width:\s*(\d+)px\)$/.exec(media.conditionText);
+        if (!condition) return '';
+        const active = condition[1] === 'max' ? width <= Number(condition[2]) : width >= Number(condition[2]);
+        return active ? visit(media.cssRules) : '';
+      }
+      if (rule.type !== CSSRule.STYLE_RULE) return '';
+      const style = rule as CSSStyleRule;
+      const declarations = ['--paw-menu-h', '--paw-menu-control-size'].flatMap((name) => {
+        const value = style.style.getPropertyValue(name);
+        return value ? [`${name}:${value};`] : [];
+      });
+      return declarations.length ? `${style.selectorText}{${declarations.join('')}}` : '';
+    }).join('\n');
+    return visit(source.sheet.cssRules);
+  } finally {
+    source.remove();
+  }
+}
 
 describe('PAWOS desktop store', () => {
+  it.each([
+    { width: 375, menuHeight: 48, controlSize: 44 },
+    { width: 720, menuHeight: 44, controlSize: 40 },
+    { width: 1440, menuHeight: 34, controlSize: 32 },
+  ].flatMap(sample => [
+    { ...sample, loadOrder: 'shared-late', stylesheets: [shellCss, structureCss] },
+    { ...sample, loadOrder: 'entry-order', stylesheets: [structureCss, shellCss] },
+  ]))('keeps the $width menu and window plane aligned in $loadOrder order', ({ width, menuHeight, controlSize, stylesheets }) => {
+    const beforeWidth = window.innerWidth;
+    const root = document.createElement('div');
+    root.className = 'paw-desktop-root';
+    document.body.append(root);
+    const styles: HTMLStyleElement[] = [];
+    try {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
+      // The product's lazy shared paw-os chunk can arrive after PawOsApp's shell.
+      for (const css of stylesheets) {
+        const style = document.createElement('style');
+        style.textContent = activeMenuGeometry(css, width);
+        document.head.append(style);
+        styles.push(style);
+      }
+      const computed = getComputedStyle(root);
+      expect(Number.parseFloat(computed.getPropertyValue('--paw-menu-h'))).toBe(menuHeight);
+      expect(Number.parseFloat(computed.getPropertyValue('--paw-menu-control-size')) || 32).toBe(controlSize);
+      expect(pawWindowLayerSize()).toEqual({ width, height: window.innerHeight - menuHeight });
+      expect(pawFocusWindowLayerSize()).toEqual({ width, height: window.innerHeight - menuHeight });
+      expect(pawWindowArea().height).toBe(window.innerHeight - menuHeight - 86);
+    } finally {
+      styles.forEach(style => style.remove());
+      root.remove();
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: beforeWidth });
+    }
+  });
   it('reserves the actual responsive menu-bar height for ordinary and focused windows', () => {
     const root = document.createElement('div');
     root.className = 'paw-desktop-root';

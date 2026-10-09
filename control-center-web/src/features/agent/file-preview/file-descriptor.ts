@@ -81,6 +81,7 @@ export function isHtmlReport(fileName: string, mimeType: string): boolean {
 
 export function fileSizeLabel(byteSize: number): string {
   if (!Number.isFinite(byteSize) || byteSize <= 0) return '';
+  if (byteSize < 1_024) return `${Math.round(byteSize)} B`;
   if (byteSize >= 1_048_576) return `${(byteSize / 1_048_576).toFixed(1)} MB`;
   return `${Math.max(1, Math.ceil(byteSize / 1_024))} KB`;
 }

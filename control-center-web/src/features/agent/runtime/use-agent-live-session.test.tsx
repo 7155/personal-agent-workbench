@@ -17,6 +17,40 @@ afterEach(() => {
 });
 
 describe('useAgentLiveSession shared ownership', () => {
+  it.each(['stable', 'not-yet-stable', 'failed-during-read'] as const)(
+    'settles a full history read using only the existing %s stream authority', async (connection) => {
+      let resolveFull!: (value: unknown) => void;
+      const full = new Promise(resolve => { resolveFull = resolve; });
+      const snapshot = (sequence: number) => ({ sessionId: SESSION_ID, messages: [], liveEvents: [],
+        lastSequence: sequence, resumeToken: `${SESSION_ID}:${sequence}`, status: 'idle' });
+      const transport = new MockControlTransport({ stableOnOpen: connection === 'stable', routes: {
+        'agent.session.snapshot': (request: ControlRequest) => request.query?.view === 'recent' ? snapshot(0) : full,
+      } });
+      const recovery = vi.fn();
+      const restored = vi.fn();
+      const view = renderHook(() => useAgentLiveSession({ sessionId: SESSION_ID, transport,
+        onRecoveryState: recovery, onConnectionRestored: restored }));
+      await waitFor(() => expect(transport.activeSubscriptionCount()).toBe(1));
+      if (connection === 'failed-during-read') {
+        act(() => transport.emit('agent.session.events', { ...agentEventFixture(1, 'turn_completed', { status: 'completed' }),
+          sessionId: SESSION_ID, eventId: `${SESSION_ID}:1`, resumeToken: `${SESSION_ID}:1` }));
+        expect(recovery).toHaveBeenLastCalledWith('synced');
+      }
+      let read!: Promise<boolean>;
+      act(() => { read = view.result.current({ view: 'full' }); });
+      await waitFor(() => expect(transport.requests.filter(r => r.request.pathId === 'agent.session.snapshot')).toHaveLength(2));
+      if (connection === 'failed-during-read') act(() => { transport.fail('agent.session.events', new Error('original stream dropped')); });
+      await act(async () => { resolveFull(snapshot(2)); expect(await read).toBe(true); });
+      // No new heartbeat/event: history ACK may reuse known connectivity, never create it.
+      expect(recovery).toHaveBeenLastCalledWith(connection === 'stable' ? 'synced' : 'recovering');
+      if (connection === 'not-yet-stable') expect(restored).not.toHaveBeenCalled();
+      expect(transport.requests).toHaveLength(2);
+      expect(transport.requests.every(r => r.request.pathId === 'agent.session.snapshot')).toBe(true);
+      expect(transport.activeSubscriptionCount()).toBe(1);
+      view.unmount();
+    },
+  );
+
   it('hydrates current compaction metadata at an equal recent cursor without reviving an old completed turn', async () => {
     const target = { kind: 'compaction', runtimeSessionId: 'runtime-1', taskIds: ['durable:task:1'] };
     let compacting = false;
