@@ -104,8 +104,13 @@ describe('PAWOS appearance settings', () => {
     const apps = screen.getByRole('list', { name: 'App 身份色' });
     const items = within(apps).getAllByRole('listitem');
     expect(items).toHaveLength(pawOsAppRegistry.length);
-    expect(within(apps).getByText('Agent')).toBeInTheDocument();
+    expect(within(apps).getByText('星伴')).toBeInTheDocument();
+    expect(within(apps).getByText('Session 与 Room')).toBeInTheDocument();
     expect(within(apps).getByText('System Settings')).toBeInTheDocument();
-    for (const item of items) expect(item.querySelector('i')).not.toBeNull();
+    for (const app of pawOsAppRegistry) {
+      const item = within(apps).getByText(app.label).closest('li');
+      expect(item).toHaveAttribute('data-app', app.id);
+      expect(item?.querySelector('i')).toHaveAttribute('aria-hidden', 'true');
+    }
   });
 });

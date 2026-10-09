@@ -79,10 +79,10 @@ describe('generated contract ESM build asset', () => {
     expect(assetCode).not.toMatch(/unsafe-eval|new Function|require\("|eval\(/u);
   });
 
-  it('retains all 172 synchronous validators and identical errors', () => {
+  it('retains all 173 synchronous validators and identical errors', () => {
     const expected = original as unknown as ValidatorModule;
     const names = Object.keys(expected.contractValidators).sort();
-    expect(names).toHaveLength(172);
+    expect(names).toHaveLength(173);
     expect(Object.keys(built.contractValidators).sort()).toEqual(names);
     const inputs = [null, {}, [], '', 0, true, approvalFixture, eventFixture,
       mediaFixture, maintenanceFixture, messageFixture, sessionFixture,
