@@ -14,7 +14,7 @@ vi.mock('react-virtuoso', () => ({
   Virtuoso: ({ data, itemContent }: { data: unknown[]; itemContent: (index: number, item: unknown) => ReactNode }) => <div>{data.map((item, index) => <div key={index}>{itemContent(index, item)}</div>)}</div>,
 }));
 
-afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); localStorage.clear(); });
 
 describe('Knowledge reading recovery', () => {
   it('does not call a pending materials list an empty library', async () => {
