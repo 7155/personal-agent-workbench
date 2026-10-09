@@ -590,7 +590,7 @@ class PiDurableRuntimeTests(unittest.TestCase):
 
     def test_public_full_and_recent_snapshot_preserve_authoritative_recovery_identity(self):
         blocks = Mock()
-        def hydrate_original(_id, messages, *, native_pi_session_id):
+        def hydrate_original(_id, messages, *, native_pi_session_id, durable_message_ids=None):
             self.assertEqual(_id, self.session_id)
             self.assertEqual(native_pi_session_id, self.host.snapshot["piSessionId"])
             return messages
@@ -632,7 +632,7 @@ class PiDurableRuntimeTests(unittest.TestCase):
 
         self.host.send = send
         blocks = Mock()
-        def hydrate_original(_id, messages, *, native_pi_session_id):
+        def hydrate_original(_id, messages, *, native_pi_session_id, durable_message_ids=None):
             self.assertEqual(_id, self.session_id)
             self.assertEqual(native_pi_session_id, self.host.snapshot["piSessionId"])
             return messages
@@ -736,7 +736,7 @@ class PiDurableRuntimeTests(unittest.TestCase):
     def test_compaction_projection_preserves_target_full_and_recent(self):
         target = self.compaction_host()
         blocks = Mock()
-        def hydrate_original(_id, messages, *, native_pi_session_id):
+        def hydrate_original(_id, messages, *, native_pi_session_id, durable_message_ids=None):
             self.assertEqual(_id, self.session_id)
             self.assertEqual(native_pi_session_id, self.host.snapshot["piSessionId"])
             return messages
@@ -1093,7 +1093,7 @@ class PiDurableRuntimeTests(unittest.TestCase):
         self.store.set_status(self.session_id, "busy", message_count=64)
         self.host.snapshot.update(partial=True, historyCursor="older")
         blocks = Mock()
-        def hydrate_original(_id, messages, *, native_pi_session_id):
+        def hydrate_original(_id, messages, *, native_pi_session_id, durable_message_ids=None):
             self.assertEqual(_id, self.session_id)
             self.assertEqual(native_pi_session_id, self.host.snapshot["piSessionId"])
             return messages

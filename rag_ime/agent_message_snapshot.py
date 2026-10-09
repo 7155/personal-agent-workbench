@@ -316,15 +316,14 @@ class AgentMessageSnapshotService:
             if isinstance(runtime_snapshot, Mapping)
             else self.runtime.messages(session_id)
         )
+        messages = [message for message in messages if isinstance(message, Mapping)]
+        binding_after = self.sessions.runtime_binding(session_id)
+        native_identity = _snapshot_native_identity(runtime_snapshot, binding_before, binding_after)
+        durable_snapshot = _verified_durable_message_snapshot(session_id, session, runtime_snapshot, binding_before, binding_after)
         messages = self.agent_blocks.hydrate_messages(
-            session_id,
-            [
-                message
-                for message in messages
-                if isinstance(message, Mapping)
-            ],
-            native_pi_session_id=_snapshot_native_identity(
-                runtime_snapshot, binding_before, self.sessions.runtime_binding(session_id)),
+            session_id, messages, native_pi_session_id=native_identity,
+            **({"durable_message_ids": [str(message["id"]) for message in messages] if durable_snapshot else []}
+               if session.get("runtimeEngine") == "durable" else {}),
         )
         messages = _recover_managed_html_links(
             session_id,
@@ -617,11 +616,14 @@ class AgentMessageSnapshotService:
             if isinstance(runtime_snapshot, Mapping)
             else []
         )
-        native_identity = _snapshot_native_identity(
-            runtime_snapshot, binding_before, self.sessions.runtime_binding(session_id))
+        binding_after = self.sessions.runtime_binding(session_id)
+        native_identity = _snapshot_native_identity(runtime_snapshot, binding_before, binding_after)
+        durable_snapshot = _verified_durable_message_snapshot(session_id, session, runtime_snapshot, binding_before, binding_after)
         if native_identity is not None:
             messages = self.agent_blocks.hydrate_recent_messages(
                 session_id, messages, native_pi_session_id=native_identity,
+                **({"durable_message_ids": [str(message["id"]) for message in messages] if durable_snapshot else []}
+                   if session.get("runtimeEngine") == "durable" else {}),
             )
         last_sequence = self.sessions.max_event_sequence(session_id)
         replayed, _gap = self.events.replay(session_id)
@@ -1447,6 +1449,44 @@ def _snapshot_native_identity(
     if tuple((before or {}).get(key) for key in keys) != tuple((after or {}).get(key) for key in keys):
         return None
     return str((before or {}).get("externalSessionId") or "")
+
+
+def _verified_durable_message_snapshot(
+    session_id: str, session: Mapping[str, object], snapshot: object,
+    before: Mapping[str, object] | None, after: Mapping[str, object] | None,
+) -> bool:
+    if session.get("runtimeEngine") != "durable" or not isinstance(snapshot, Mapping):
+        return False
+    if snapshot.get("runtimeEngine") != "durable" or snapshot.get("projectionCurrent") is not True:
+        return False
+    identity = snapshot.get("nativePiSessionId")
+    if not isinstance(identity, str) or not identity or not before or not after:
+        return False
+    keys = ("driverId", "runtimeKind", "externalSessionId", "transcriptRef", "generation")
+    if tuple(before.get(key) for key in keys) != tuple(after.get(key) for key in keys):
+        return False
+    metadata = after.get("metadata")
+    generation = after.get("generation")
+    if (before.get("sessionId") != session_id or after.get("sessionId") != session_id
+        or after.get("driverId") != "managed-pi" or after.get("runtimeKind") != "pi_durable"
+        or after.get("externalSessionId") != identity or before.get("state") != "active"
+        or after.get("state") != "active" or not after.get("transcriptRef")
+        or not isinstance(generation, int) or isinstance(generation, bool) or generation < 1
+        or not isinstance(metadata, Mapping) or metadata.get("runtimeEngine") != "durable"
+        or not str(metadata.get("durableConversationId") or "")):
+        return False
+    messages = snapshot.get("messages")
+    if not isinstance(messages, list):
+        return False
+    return all(
+        isinstance(message, Mapping) and message.get("sessionId") == session_id
+        and isinstance(message.get("turnId"), str) and bool(message["turnId"])
+        and isinstance(message.get("clientMessageId"), str) and bool(message["clientMessageId"])
+        and isinstance(message.get("id"), str) and (
+            (message.get("role") == "assistant" and re.fullmatch(r"durable:task:[1-9][0-9]*:assistant", message["id"]) is not None)
+            or (message.get("role") == "user" and re.fullmatch(r"durable:[1-9][0-9]*:[0-9]+", message["id"]) is not None)
+        ) for message in messages
+    )
 
 
 def _verified_codemode_mode(value: object) -> str | None:

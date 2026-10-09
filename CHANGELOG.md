@@ -5,6 +5,11 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Restore original Durable file results in recent and full conversations using
+  the current native message, turn and client identity. Keep distinct versions
+  and revocation; unknown or changing bindings retain the native text while
+  awaiting a current snapshot.
+
 - Keep Session tool-menu labels and keyboard focus on full-width text rows in
   compact windows. Group file results with spacing instead of a shared slab;
   preserve each clickable receipt and display exact bytes for small snapshots.

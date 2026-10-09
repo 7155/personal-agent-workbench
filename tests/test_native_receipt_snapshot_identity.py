@@ -1,11 +1,125 @@
 from __future__ import annotations
 
 import json
+import copy
+import hashlib
 import unittest
 from unittest.mock import patch
 
 from rag_ime.agent_blocks import normalize_trusted_agent_blocks
 from tests import test_agent_service as fixtures
+
+
+class DurableExactReceiptSnapshotTests(unittest.TestCase):
+    """Real Store/projector; the native wire is explicitly a deterministic double."""
+    setUp = fixtures.AgentServiceTests.setUp
+    tearDown = fixtures.AgentServiceTests.tearDown
+
+    def prepare(self):
+        self.sid = self.service.sessions.create(title='Public Durable receipts', runtime_engine='durable')['id']
+        self.native = 'public-durable-native'
+        self.message_id = 'durable:task:47:assistant'
+        self.turn = 'public-original-turn'
+        self.client = 'public-original-client'
+        self.bind()
+        seed = b'PAW paired receipt fixture bf336d6e.\nOriginal seed must stay unchanged.\n'
+        final = seed + b'PAW_DURABLE_BF336_durable_bf336_run_1\n'
+        # The public seed/final bytes match the real native witness; diff bodies
+        # are sanitized public data. Each version retains its own managed ID/SHA.
+        data = [('result.txt', seed), ('result.txt', final), ('result.txt.diff', b'public original diff\n'), ('result.txt.diff', b'public final diff\n')]
+        raw = [{'id': f'file:{i}', 'type': 'file', 'data': {
+            'fileName': name, 'mediaId': f'media_public_receipt_{i:016d}', 'sessionId': self.sid,
+            'sha256': hashlib.sha256(content).hexdigest(), 'byteSize': len(content)}} for i, (name, content) in enumerate(data)]
+        self.blocks = list(normalize_trusted_agent_blocks(raw, source_kind='pi_runtime_event', source_ref=self.message_id))
+        self.message = {'id': self.message_id, 'sessionId': self.sid, 'turnId': self.turn,
+            'clientMessageId': self.client, 'role': 'assistant', 'status': 'completed',
+            'blocks': [{'type': 'text', 'data': {'text': 'Original native answer'}}, *self.blocks],
+            'attachments': [], 'citations': [], 'createdAtMs': 101}
+        self.service.agent_blocks.persist_message(self.message, generation=0)
+        self.snapshot = {'runtimeEngine': 'durable', 'nativePiSessionId': self.native,
+            'projectionCurrent': True, 'paused': False, 'recoverable': False,
+            'messages': [{**self.message, 'blocks': [self.message['blocks'][0]]}]}
+
+    def bind(self, native=None):
+        self.service.sessions.bind_runtime_session(self.sid, driver_id='managed-pi', runtime_kind='pi_durable',
+            external_session_id=native or self.native, transcript_ref=str(self.root / 'public-durable-store'),
+            metadata={'runtimeEngine': 'durable', 'durableConversationId': '1'})
+
+    def read(self, *, view='recent', after_read=None):
+        def snapshot(_sid):
+            result = copy.deepcopy(self.snapshot)
+            if after_read: after_read()
+            return result
+        owner = 'recent_session_snapshot' if view == 'recent' else 'session_snapshot'
+        with patch('subprocess.Popen', side_effect=AssertionError('No Host/Provider permitted')), \
+             patch.object(self.service.runtime, owner, side_effect=snapshot):
+            return self.service.message_snapshot.messages(self.sid, view=view)['items']
+
+    def test_original_durable_recent_exact_message_retains_all_four_versions_without_alias(self):
+        self.prepare()
+        actual = self.read()
+        self.assertEqual(len(actual), 1)
+        self.assertEqual(actual[0]['id'], self.message_id)
+        self.assertCountEqual([b['data'] for b in actual[0]['blocks'] if b['type'] == 'file'], [b['data'] for b in self.blocks])
+        self.assertEqual(actual[0]['blocks'][0], self.message['blocks'][0])
+        with self.service.agent_blocks._connect() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM agent_block_native_aliases WHERE session_id=?', (self.sid,)).fetchone()[0], 0)
+
+    def test_durable_rebind_and_binding_epoch_aba_cannot_attach_old_synthetic_entry(self):
+        self.prepare()
+        for change in (lambda: self.bind('replacement'), lambda: (self.bind('replacement'), self.bind())):
+            with self.subTest(change=change):
+                self.bind()
+                actual = self.read(after_read=change)
+                self.assertFalse(any(b['type'] == 'file' for b in actual[0]['blocks']))
+
+    def test_unknown_or_mixed_or_non_durable_native_snapshot_has_no_exact_fallback(self):
+        self.prepare()
+        original = copy.deepcopy(self.snapshot)
+        for change in ('classic', 'missingidentity', 'mismatchidentity', 'notcurrent', 'mixed', 'foreignsession', 'unknownentry', 'wrongturn', 'wrongclient'):
+            with self.subTest(change=change):
+                self.snapshot = copy.deepcopy(original)
+                if change == 'classic': self.snapshot['runtimeEngine'] = 'classic'
+                elif change == 'missingidentity': self.snapshot['nativePiSessionId'] = None
+                elif change == 'mismatchidentity': self.snapshot['nativePiSessionId'] = 'other'
+                elif change == 'notcurrent': self.snapshot['projectionCurrent'] = False
+                elif change == 'mixed': self.snapshot['messages'].append({**self.snapshot['messages'][0], 'id': 'pi:other:47'})
+                elif change == 'foreignsession': self.snapshot['messages'][0]['sessionId'] = 'foreign'
+                elif change == 'unknownentry': self.snapshot['messages'][0]['id'] = 'durable:task:999:assistant'
+                elif change == 'wrongturn': self.snapshot['messages'][0]['turnId'] = 'other-turn'
+                else: self.snapshot['messages'][0]['clientMessageId'] = 'other-client'
+                for view in ('recent', 'full'):
+                    self.assertFalse(any(b['type'] == 'file' for m in self.read(view=view) for b in m['blocks']))
+
+    def test_generation_revoke_and_adjacent_receipts_do_not_borrow_or_restore(self):
+        self.prepare()
+        adjacent = {**self.message, 'id': 'durable:task:99:assistant'}
+        self.service.agent_blocks.persist_message(adjacent, generation=0)
+        actual = self.read()
+        self.assertEqual([m['id'] for m in actual], [self.message_id])
+        ref = self.service.agent_blocks.blocks_for_message(self.sid, self.message_id, generation=0)[0]['ref']
+        self.service.agent_blocks.revoke(ref, root_id=f'session:{self.sid}', session_id=self.sid)
+        self.assertEqual(len([b for b in self.read()[0]['blocks'] if b['type'] == 'file']), 3)
+        newer = {**self.message, 'turnId': 'different-generation-turn', 'clientMessageId': 'different-generation-client'}
+        self.service.agent_blocks.persist_message(newer, generation=1)
+        actual = self.read()
+        self.assertEqual(len([b for b in actual[0]['blocks'] if b['type'] == 'file']), 3)
+
+    def test_original_durable_full_attaches_visible_receipts_without_inventing_history(self):
+        self.prepare()
+        self.service.agent_blocks.persist_message({**self.message, 'id': 'durable:task:99:assistant'}, generation=0)
+        actual = self.read(view='full')
+        self.assertEqual([m['id'] for m in actual], [self.message_id])
+        self.assertEqual(len([b for b in actual[0]['blocks'] if b['type'] == 'file']), 4)
+
+    def test_unverified_binding_metadata_and_epoch_never_grant_exact_hydration(self):
+        self.prepare()
+        original = self.service.sessions.runtime_binding(self.sid)
+        for key, value in (('state', 'stale'), ('runtimeKind', 'pi'), ('generation', None),
+                           ('generation', True), ('metadata', {}), ('sessionId', 'foreign')):
+            with self.subTest(key=key, value=value), patch.object(self.service.sessions, 'runtime_binding', return_value={**original, key: value}):
+                for view in ('recent', 'full'):
+                    self.assertFalse(any(b['type'] == 'file' for m in self.read(view=view) for b in m['blocks']))
 
 
 class NativeReceiptSnapshotIdentityTests(unittest.TestCase):
