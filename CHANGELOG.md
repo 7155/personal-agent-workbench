@@ -5,6 +5,12 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Open the Session and Room creator directly in the chat App. Keep existing
+  conversations in the work-record sidebar and the persistent assistant in
+  StarMate; opening the chat creator no longer initializes the primary assistant.
+- Connect the existing code-orchestration selector to the current Session's
+  native mode and acknowledged changes. Preserve drafts and the last confirmed
+  mode when a change fails, and ignore replies from superseded workspaces.
 - Restore the original Files Session and path when reopening the App. Keep
   text drafts and disk reconciliation under the existing exact-file owner;
   explicit navigation and current workspace permissions remain authoritative.

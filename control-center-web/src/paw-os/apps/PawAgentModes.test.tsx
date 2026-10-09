@@ -119,8 +119,8 @@ describe('Agent traditional / Jev modes', () => {
     await user.type(input, '先不要开始，保留草稿');
     await user.click(screen.getByRole('button', { name: 'Jev' }));
     expect(screen.getByRole('heading', { name: '今天想完成什么？' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '继续工作' })).toBeInTheDocument();
-    expect(input.compareDocumentPosition(screen.getByRole('region', { name: '项目复工' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: '继续工作' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: '项目复工' })).not.toBeInTheDocument();
     expect(input).toHaveValue('先不要开始，保留草稿'); expect(input.isConnected).toBe(true);
     view.unmount(); mount('/agent?new=advanced');
     await waitFor(() => expect(within(screen.getByRole('group', { name: 'Agent 界面模式' })).getByRole('button', { name: 'Jev' })).toHaveAttribute('aria-pressed', 'true'));
