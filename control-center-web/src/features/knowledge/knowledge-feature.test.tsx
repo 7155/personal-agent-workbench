@@ -8,6 +8,7 @@ import { ControlTransportProvider } from '@/app/control-transport';
 import { TooltipProvider } from '@/components/primitives';
 import { PawOsAppSurfaceProvider } from '@/features/paw-os/surface-context';
 import type { ControlRequest } from '@/platform/transport';
+import { controlRoute } from '@/platform/routes';
 import { MockControlTransport } from '@/test/mock-transport';
 import { KnowledgeFeature } from './index';
 
@@ -30,6 +31,20 @@ afterEach(() => {
 });
 
 describe('document knowledge library', () => {
+  it('restores an unsent search draft after recreating the App and QueryClient without searching', async () => {
+    const transport = createTransport();
+    const client = renderKnowledge(transport, '/knowledge?base=kb-runtime&tab=search', true);
+    fireEvent.change(await screen.findByRole('textbox', { name: '搜索知识库' }), { target: { value: '刷新后保留的未发送草稿' } });
+    cleanup();
+    client.clear();
+    const fresh = renderKnowledge(transport, '/knowledge?base=kb-runtime&tab=search', true);
+    expect(await screen.findByRole('textbox', { name: '搜索知识库' })).toHaveValue('刷新后保留的未发送草稿');
+    expect(transport.requests.filter(({ request }) => request.pathId === 'knowledgeBases.search')).toHaveLength(0);
+    expect(transport.requests.every(({ request }) => controlRoute(request.pathId).method === 'GET')).toBe(true);
+    cleanup();
+    fresh.clear();
+  });
+
   it('shows native media time and truthful sampling copy while opening the original hit identity', async () => {
     const user = userEvent.setup(); const transport = createTransport();
     const original = transport.request.bind(transport);

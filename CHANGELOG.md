@@ -5,6 +5,9 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Restore unsent Knowledge search drafts and reading selections after reload,
+  separately for each App window and library. Keep results and active request
+  state in memory; restoring local input does not repeat a search.
 - Keep managed result files bound to their original persisted Pi message and
   Session. Preserve distinct file versions and diff receipts; recent history
   reads only returned message identities, and missing legacy bindings remain

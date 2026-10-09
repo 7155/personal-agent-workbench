@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-09T08:25:59.806946+00:00",
+  "generatedAt": "2026-10-09T10:59:32.087496+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "undo/paw-acceptance-20261009",
     "baseCommit": "55fc923944ffcee72a2c90b04a891c1106485227",
-    "candidateCommitPolicy": "Committed source checkpoint of user-authorized frontend polish, persistent Agent coordination, exact Room result return and native message receipt recovery; source checks do not establish complete foreground acceptance."
+    "candidateCommitPolicy": "Committed source checkpoint of user-authorized frontend polish, persistent Agent coordination, exact Room result return and native message receipt recovery; source checks do not establish complete foreground acceptance. Recover local Knowledge drafts without search replay; real browser and installed acceptance remain separate."
   },
   "dispositions": {
     "keep_release": "Retain this source maintenance change.",
@@ -19,7 +19,7 @@
     },
     "product_integration": {
       "description": "Integrate current product source and public contribution guidance.",
-      "pathCount": 58
+      "pathCount": 56
     },
     "react_os_docs": {
       "description": "Current React OS naming, architecture and development entrypoints.",
@@ -63,7 +63,7 @@
     },
     "verification": {
       "description": "Regression checks for the included product changes.",
-      "pathCount": 126
+      "pathCount": 125
     },
     "voice_desktop": {
       "description": "App naming and desktop voice integration.",
@@ -212,17 +212,21 @@
     "native_message_receipts": {
       "description": "Persist and recover exact native message/file receipts through existing Pi and PAW owners.",
       "pathCount": 5
+    },
+    "knowledge_draft_recovery": {
+      "description": "Local Knowledge draft and reading-choice recovery, isolated per App window and library; request results and active state remain in memory.",
+      "pathCount": 4
     }
   },
   "summary": {
-    "pathCount": 2247,
+    "pathCount": 2248,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1931
+      "keep_release": 1932
     },
     "groupCounts": {
       "local_docs": 121,
-      "product_integration": 58,
+      "product_integration": 56,
       "react_os_docs": 3,
       "pi1_final_integration": 237,
       "refactor_docs_examples": 9,
@@ -240,7 +244,7 @@
       "pi1_experience_iteration": 38,
       "primary_assistant_iteration": 83,
       "paw_experience_20261007": 96,
-      "verification": 126,
+      "verification": 125,
       "voice_desktop": 19,
       "composition_refactor": 32,
       "portable_agent_ui": 8,
@@ -256,6 +260,7 @@
       "lab_frontend": 55,
       "second_brain": 24,
       "knowledge_runtime": 13,
+      "knowledge_draft_recovery": 4,
       "room_frontend": 21,
       "portable_guarded_acceptance": 14,
       "refactor_integration": 23,
@@ -6041,8 +6046,8 @@
       "path": "control-center-web/src/features/knowledge/knowledge-feature.test.tsx",
       "status": "modified",
       "disposition": "keep_release",
-      "group": "verification",
-      "reason": "Regression checks for the included product changes."
+      "group": "knowledge_draft_recovery",
+      "reason": "Recover unsent Knowledge input and reading choices under the existing window/library owner without request replay."
     },
     {
       "path": "control-center-web/src/features/knowledge/knowledge-operation-ownership.test.tsx",
@@ -6055,8 +6060,8 @@
       "path": "control-center-web/src/features/knowledge/knowledge-recovery.test.tsx",
       "status": "modified",
       "disposition": "keep_release",
-      "group": "product_integration",
-      "reason": "Knowledge search recovery and recorded retrieval parameters, ranking and reranker evidence."
+      "group": "knowledge_draft_recovery",
+      "reason": "Recover unsent Knowledge input and reading choices under the existing window/library owner without request replay."
     },
     {
       "path": "control-center-web/src/features/knowledge/knowledge-search-api.test.ts",
@@ -6097,8 +6102,8 @@
       "path": "control-center-web/src/features/knowledge/reading-context.ts",
       "status": "modified",
       "disposition": "keep_release",
-      "group": "product_integration",
-      "reason": "Knowledge search recovery and recorded retrieval parameters, ranking and reranker evidence."
+      "group": "knowledge_draft_recovery",
+      "reason": "Recover unsent Knowledge input and reading choices under the existing window/library owner without request replay."
     },
     {
       "path": "control-center-web/src/features/knowledge/structured-reading.test.ts",
@@ -16004,6 +16009,13 @@
       "disposition": "keep_release",
       "group": "native_message_receipts",
       "reason": "Verify read-time native snapshot identity, cache binding races, same-Pi rebind and historical receipt recovery under original source IDs."
+    },
+    {
+      "path": "control-center-web/src/features/knowledge/reading-context.test.tsx",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "knowledge_draft_recovery",
+      "reason": "Recover unsent Knowledge input and reading choices under the existing window/library owner without request replay."
     }
   ]
 }
