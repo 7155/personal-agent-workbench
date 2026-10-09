@@ -5,6 +5,9 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Keep responsive menu and window dimensions aligned when shared styles load
+  after the App shell, preserving usable controls in narrow and zoomed windows.
+
 - Keep the full-history action in the existing Session tools menu so its label
   stays readable and reachable in narrow window captions, with keyboard return
   and duplicate-load protection preserved.

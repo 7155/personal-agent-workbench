@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-09T11:56:43.322995+00:00",
+  "generatedAt": "2026-10-09T13:22:08.053109+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "undo/paw-acceptance-20261009",
     "baseCommit": "55fc923944ffcee72a2c90b04a891c1106485227",
-    "candidateCommitPolicy": "Committed source checkpoint of user-authorized frontend polish, persistent Agent coordination, exact Room result return and native message receipt recovery; source checks do not establish complete foreground acceptance. Recover local Knowledge drafts without search replay; real browser and installed acceptance remain separate. Keep the Session caption compact while preserving explicit history access and keyboard focus; current-source Chrome verification remains separate."
+    "candidateCommitPolicy": "Committed source checkpoint of user-authorized frontend polish, persistent Agent coordination, exact Room result return and native message receipt recovery; source checks do not establish complete foreground acceptance. Recover local Knowledge drafts without search replay; real browser and installed acceptance remain separate. Keep the Session caption compact while preserving explicit history access and keyboard focus; current-source Chrome verification remains separate. Keep responsive menu dimensions under the structural CSS owner regardless of lazy chunk arrival order; current-source Chrome validation remains required."
   },
   "dispositions": {
     "keep_release": "Retain this source maintenance change.",
@@ -71,7 +71,7 @@
     },
     "composition_refactor": {
       "description": "Typed application dependencies and construction using existing Runtime and store owners.",
-      "pathCount": 32
+      "pathCount": 31
     },
     "portable_agent_ui": {
       "description": "Shared Agent controls and their standalone bundle entry.",
@@ -83,7 +83,7 @@
     },
     "conversation_controls": {
       "description": "Explicit collaboration layout, persistent background resource observers, opt-in memory, Session resource controls, and actionable model account recovery.",
-      "pathCount": 64
+      "pathCount": 63
     },
     "trace_optimization": {
       "description": "Trace diagnosis and bounded optimization source, contracts and executable regressions.",
@@ -163,7 +163,7 @@
     },
     "pi1_final_integration": {
       "description": "Complete the paired Pi 1.0 source candidate: canonical frontend recovery, Gateway execution identity, current model defaults, and isolated deterministic verification. Local source checkpoint only; installed and native foreground acceptance remain separate.",
-      "pathCount": 236
+      "pathCount": 235
     },
     "durable_desktop_iteration": {
       "description": "Explicit native Durable Session ownership/recovery and unified readable desktop/Room presentation; preserve existing data, Classic execution and independent installed acceptance.",
@@ -220,6 +220,10 @@
     "session_history_caption": {
       "description": "Move the original full-history read into existing Session tools for readable narrow captions; retain original request and focus owners.",
       "pathCount": 3
+    },
+    "responsive_menu_geometry": {
+      "description": "Keep responsive menu geometry with its shared structural owner so lazy stylesheet order cannot overlap narrow or zoomed window controls.",
+      "pathCount": 3
     }
   },
   "summary": {
@@ -232,7 +236,7 @@
       "local_docs": 121,
       "product_integration": 56,
       "react_os_docs": 3,
-      "pi1_final_integration": 236,
+      "pi1_final_integration": 235,
       "refactor_docs_examples": 9,
       "earth_research": 113,
       "brand_stellar": 60,
@@ -250,10 +254,10 @@
       "paw_experience_20261007": 96,
       "verification": 125,
       "voice_desktop": 19,
-      "composition_refactor": 32,
+      "composition_refactor": 31,
       "portable_agent_ui": 8,
       "owner_boundaries": 15,
-      "conversation_controls": 64,
+      "conversation_controls": 63,
       "durable_desktop_iteration": 28,
       "trace_optimization": 63,
       "architecture_recovery_20261008": 17,
@@ -267,6 +271,7 @@
       "knowledge_draft_recovery": 4,
       "room_frontend": 21,
       "session_history_caption": 3,
+      "responsive_menu_geometry": 3,
       "portable_guarded_acceptance": 14,
       "refactor_integration": 23,
       "offline_installer": 12,
@@ -9110,8 +9115,8 @@
       "path": "control-center-web/src/paw-os/runtime/desktop-store.test.ts",
       "status": "modified",
       "disposition": "keep_release",
-      "group": "conversation_controls",
-      "reason": "Explicit Agent policy and workspace controls with durable Session behavior."
+      "group": "responsive_menu_geometry",
+      "reason": "Keep responsive menu geometry with its shared structural owner so lazy stylesheet order cannot overlap narrow or zoomed window controls."
     },
     {
       "path": "control-center-web/src/paw-os/runtime/desktop-store.ts",
@@ -9536,8 +9541,8 @@
     {
       "path": "control-center-web/src/paw-os/styles/paw-os-shell.css",
       "status": "added",
-      "group": "pi1_final_integration",
-      "reason": "User-authorized paired Pi 1.0 source integration and isolated regression coverage; no installed or foreground-release claim.",
+      "group": "responsive_menu_geometry",
+      "reason": "Keep responsive menu geometry with its shared structural owner so lazy stylesheet order cannot overlap narrow or zoomed window controls.",
       "disposition": "keep_release"
     },
     {
@@ -9634,8 +9639,8 @@
     {
       "path": "control-center-web/src/paw-os/styles/paw-os.css",
       "disposition": "keep_release",
-      "group": "composition_refactor",
-      "reason": "Typed application dependencies and construction using existing Runtime and store owners.",
+      "group": "responsive_menu_geometry",
+      "reason": "Keep responsive menu geometry with its shared structural owner so lazy stylesheet order cannot overlap narrow or zoomed window controls.",
       "status": "modified"
     },
     {
