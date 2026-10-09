@@ -5,6 +5,10 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Keep explicitly opened file previews within the transcript's measured editor
+  clearance, preserving row focus and reading position when a reply arrives late.
+  Long inline diffs share one keyboard-accessible preview reader.
+
 - Fit long and expanded v2 Session and Room editors to their current window
   height, including toolbar and attachment changes, while preserving the input.
 

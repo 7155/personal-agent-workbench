@@ -91,6 +91,10 @@
 .agent-file-collection > .agent-file-block-shell { margin: 0; }
 
 .agent-file-preview-inline {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  max-height: var(--agent-file-preview-available-height, none);
   overflow: hidden;
   border: 1px solid var(--color-code-border);
   border-top: 0;
@@ -103,6 +107,7 @@
   border-left-color: var(--color-accent);
 }
 .agent-file-preview-inline > header {
+  flex: 0 0 auto;
   display: flex;
   min-height: 34px;
   align-items: center;
@@ -153,10 +158,15 @@
 }
 :root[data-reduce-motion='true'] .agent-copy-text { transition: none; }
 .agent-file-preview-inline__body {
+  flex: 1 1 auto;
   max-height: min(620px, 68dvh);
-  min-height: 120px;
+  min-height: 0;
   overflow: auto;
 }
+.agent-file-preview-inline__body:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -3px; }
+/* Inline previews have one vertical reader; the dialog keeps its own panes. */
+.agent-file-preview-inline .agent-diff-preview__files { max-height: none; overflow: visible; overscroll-behavior: auto; }
+
 .agent-file-preview-inline__state {
   display: flex;
   min-height: 150px;
