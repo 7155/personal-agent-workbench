@@ -5,6 +5,9 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Show complete file paths in diff previews with naturally wrapping headers;
+  keep change counts readable beside long paths and retain the original hunk reader.
+
 - Keep unavailable chat context details concise while preserving reported token
   totals and compression history. Show the original failure reason and next
   step, and provide a full-size close target without enabling raw context access.

@@ -354,9 +354,11 @@
 .agent-diff-preview__files { display: grid; min-height: 0; max-height: min(560px, 66dvh); align-content: start; gap: 14px; padding: 14px; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .agent-diff-preview__files:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -3px; }
 .agent-diff-file { min-width: 0; overflow: hidden; border: 1px solid var(--color-code-border); border-radius: var(--radius-2); background: var(--color-code-surface); }
-.agent-diff-file > header { display: flex; min-width: 0; height: 34px; align-items: center; justify-content: space-between; gap: 12px; padding: 0 10px; border-bottom: 1px solid var(--color-code-border); font: 13px var(--font-mono); }
-.agent-diff-file > header strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.agent-diff-file > header span { color: var(--color-code-muted); font-size: 12px; }
+/* Paths identify the exact changed file. Let the header grow independently
+   of the horizontally scrolling hunk, including long unbroken path segments. */
+.agent-diff-file > header { display: flex; flex-wrap: wrap; min-width: 0; min-height: 34px; align-items: center; justify-content: space-between; gap: 4px 12px; padding: 6px 10px; border-bottom: 1px solid var(--color-code-border); font: 13px/1.5 var(--font-mono); }
+.agent-diff-file > header strong { flex: 1 1 240px; min-width: 0; overflow-wrap: anywhere; white-space: normal; }
+.agent-diff-file > header span { flex: 0 0 auto; color: var(--color-code-muted); font-size: 12px; white-space: nowrap; }
 .agent-diff-file__scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-gutter: stable; }
 .agent-diff-file__scroll:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -3px; }
 .agent-diff-hunk__header { padding: 5px 10px; background: var(--color-diff-hunk); color: var(--color-diff-hunk-text); font: 12px/1.5 var(--font-mono); white-space: pre; }
