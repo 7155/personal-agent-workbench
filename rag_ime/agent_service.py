@@ -377,6 +377,7 @@ class AgentService:
         self.rooms = room_stores.rooms
         self.room_start_gates = room_stores.start_gates
         self.room_work = room_stores.work
+        self.room_work.set_admission_fence(self.room_turns.lock, self.room_turns.is_cancelled)
         self.room_partner_dispatches = room_stores.partner_dispatches
         self.governance_projection = GovernanceProjectionStore(db_path)
         self.governance_projection.initialize()

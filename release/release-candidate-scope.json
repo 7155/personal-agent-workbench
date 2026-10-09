@@ -1,6 +1,6 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-09T04:57:12.285136+00:00",
+  "generatedAt": "2026-10-09T05:40:01.529615+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "undo/paw-acceptance-20261009",
@@ -207,14 +207,14 @@
     },
     "room_result_return": {
       "description": "Original reviewed Room Root return through existing work and delivery owners, with append-only typed migration and regressions.",
-      "pathCount": 3
+      "pathCount": 4
     }
   },
   "summary": {
-    "pathCount": 2241,
+    "pathCount": 2242,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1925
+      "keep_release": 1926
     },
     "groupCounts": {
       "local_docs": 121,
@@ -265,7 +265,7 @@
       "release_scope": 1,
       "refactor_verification": 66,
       "startup_failure_diagnostics": 2,
-      "room_result_return": 3
+      "room_result_return": 4
     },
     "unclassifiedPathCount": 0,
     "otherWorkNotInReleasePathCount": 0
@@ -15957,6 +15957,13 @@
       "disposition": "keep_release",
       "group": "room_result_return",
       "reason": "Return the original reviewed Room Root to the same StarMate Source through typed persisted work and existing delivery, with Stop and unknown-acknowledgement regression checks."
+    },
+    {
+      "path": "tests/test_room_closed_root_admission.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_result_return",
+      "reason": "Verify completed original Room Roots cannot admit late child work, including registry and caller-owned SQLite publication races."
     }
   ]
 }

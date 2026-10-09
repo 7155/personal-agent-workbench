@@ -1863,6 +1863,7 @@ class AgentRoomStore:
         topic_id: str = "",
         created_at_ms: int | None = None,
         retain_per_room: int | None = None,
+        projection_guard: Callable[[], None] | None = None,
     ) -> tuple[dict[str, object] | None, bool]:
         """Append one durable public projection exactly once.
 
@@ -1884,6 +1885,7 @@ class AgentRoomStore:
             created_at_ms=created_at_ms,
             retain_per_room=retain_per_room,
             projection_key=normalized_key,
+            projection_guard=projection_guard,
         )
 
     def has_projection(self, projection_key: str) -> bool:
@@ -2017,6 +2019,7 @@ class AgentRoomStore:
         retain_per_room: int | None,
         projection_key: str,
         child_terminal_identity: tuple[str, str] | None = None,
+        projection_guard: Callable[[], None] | None = None,
     ) -> tuple[dict[str, object] | None, bool]:
         if event_type not in ROOM_EVENT_TYPES:
             raise ValueError(f"unsupported agent room event type: {event_type}")
@@ -2033,7 +2036,7 @@ class AgentRoomStore:
             topic_id=topic_id,
         )
         with self._connect() as conn:
-            if child_terminal_identity is not None:
+            if child_terminal_identity is not None or projection_guard is not None:
                 # A live callback and startup recovery can race, including
                 # through separate EventHub instances sharing this database.
                 conn.execute("BEGIN IMMEDIATE")
@@ -2107,6 +2110,11 @@ class AgentRoomStore:
                         (projection_key, room_id, existing["eventId"], projection_hash, timestamp),
                     )
                     return existing, False
+            if projection_guard is not None:
+                # Hold the original SQLite writer through validation and receipt
+                # commit. Caller-owned Work transactions can neither slip between
+                # the review and publication nor acquire the registry backwards.
+                projection_guard()
             room = conn.execute("SELECT * FROM agent_rooms WHERE id = ?", (room_id,)).fetchone()
             if room is None:
                 raise AgentRoomNotFound(room_id)
