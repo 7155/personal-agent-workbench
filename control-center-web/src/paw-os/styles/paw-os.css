@@ -872,7 +872,7 @@ html[data-paw-native-host='macos'] .paw-menu-bar > .paw-menu-status { grid-colum
    box. */
 .paw-dock button {
   position: relative; width: 44px; height: 44px; display: grid; place-items: center;
-  border-radius: 12px; color: var(--paw-ink); cursor: pointer;
+  border-radius: 7px; color: var(--paw-ink); cursor: pointer;
   transform: translate3d(calc(var(--paw-dock-shift, 0) * 1px), calc(var(--paw-dock-mag, 0) * -12px), 0)
     scale(calc((1 + var(--paw-dock-mag, 0) * .32) * var(--paw-dock-press, 1)));
   transform-origin: 50% 92%;

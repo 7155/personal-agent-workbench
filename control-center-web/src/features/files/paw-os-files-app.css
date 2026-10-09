@@ -2027,6 +2027,16 @@ i.paw-files-tree__disclosure {
   display: inline-flex;
   margin-left: 6px;
 }
+/* Whole attribute/button areas are readable stops for native keyboard
+   scrolling. Only the scroller itself enables snapping: focused descendants
+   retain their existing one-frame focus reveal without snap adjustment. */
+.paw-files-app[data-editing] .paw-files-preview__id[open] > .paw-files-crumbs:focus {
+  scroll-snap-type: x mandatory;
+}
+.paw-files-app[data-editing] .paw-files-preview__id[open] > .paw-files-crumbs > :is(.paw-files-crumbs__segment, .paw-files-crumbs__meta, .paw-files-preview__back),
+.paw-files-app[data-editing] .paw-files-preview__id[open] > .paw-files-crumbs > .paw-files-preview__actions > button {
+  scroll-snap-align: center;
+}
 .paw-files-app[data-editing] .paw-files-crumbs:focus-visible {
   outline: 2px solid var(--paw-files-focus-line);
   outline-offset: -2px;

@@ -630,6 +630,41 @@ describe('PawOsFilesApp', () => {
     expect(input).toHaveFocus();
   });
 
+  it('leaves the focused details scroller native arrow keys and cancels an older descendant reveal without touching its draft', async () => {
+    const user = userEvent.setup();
+    const transport = savedMetadataTransport(() => savedMetadataReceipt());
+    renderApp(transport, <PawOsFilesApp />);
+    await user.click(await screen.findByRole('treeitem', { name: '打开文件 notes.md' }));
+    await user.click(await screen.findByRole('button', { name: '编辑文本' }));
+    const input = await screen.findByRole('textbox', { name: '编辑 notes.md' }) as HTMLTextAreaElement;
+    const draft = Array.from({ length: 350 }, (_, i) => `line ${i} — unsaved`).join('\n');
+    fireEvent.change(input, { target: { value: draft } });
+    input.setSelectionRange(17, 29); input.scrollTop = 120;
+    await user.click(screen.getByRole('heading', { name: 'notes.md', level: 2 }).closest('summary')!);
+    const owner = screen.getByRole('group', { name: '文件路径与属性' });
+    const path = within(owner).getByRole('button', { name: '复制文件路径' });
+    const frames: FrameRequestCallback[] = [];
+    const request = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((frame) => { frames.push(frame); return frames.length; });
+    const cancel = vi.spyOn(window, 'cancelAnimationFrame');
+    try {
+      path.focus(); expect(path).toHaveFocus(); expect(request).toHaveBeenCalledTimes(1);
+      const previousReveal = frames.shift()!;
+      owner.focus(); expect(owner).toHaveFocus(); expect(cancel).toHaveBeenCalledWith(1);
+      for (const key of ['ArrowLeft', 'ArrowRight', 'Home', 'End']) {
+        const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+        act(() => { owner.dispatchEvent(event); });
+        expect(event.defaultPrevented).toBe(false);
+      }
+      act(() => previousReveal(0));
+      expect(request).toHaveBeenCalledTimes(1); expect(owner).toHaveFocus();
+      expect(screen.getByRole('textbox', { name: '编辑 notes.md' })).toBe(input);
+      expect([input.value, input.selectionStart, input.selectionEnd, input.scrollTop]).toEqual([draft, 17, 29, 120]);
+      expect(within(owner).getByText('350 行')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: '保存文件' })).toBeEnabled();
+      expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.workspace.save')).toBe(false);
+    } finally { request.mockRestore(); cancel.mockRestore(); }
+  });
+
   it('reveals the original nested path action horizontally without moving or submitting its draft', async () => {
     const user = userEvent.setup();
     const transport = savedMetadataTransport(() => savedMetadataReceipt());
