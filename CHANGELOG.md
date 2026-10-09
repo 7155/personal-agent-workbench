@@ -5,6 +5,9 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Show complete file paths in diff previews with naturally wrapping headers;
+  keep change counts readable beside long paths and retain the original hunk reader.
+
 - Keep the original v2 chat controls in one compact row in very short full
   Session and Room windows, leaving a readable editor and preserving the
   primary Send/Stop targets and existing permissions and pickers.
