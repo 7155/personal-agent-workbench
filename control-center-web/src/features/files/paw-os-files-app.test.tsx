@@ -6,7 +6,8 @@ import { ControlTransportProvider } from '@/app/control-transport';
 import { TooltipProvider } from '@/components/primitives';
 import type { ControlRequest } from '@/platform/transport';
 import { MockControlTransport, type MockRouteHandler } from '@/test/mock-transport';
-import { PawOsFilesApp } from './PawOsFilesApp';
+import { PawOsFilesApp, nextFileCrumbScrollLeft } from './PawOsFilesApp';
+import { MotionActivityBoundary } from '@/design/motion';
 import { PawWindowFrame } from '@/paw-os/shell/PawWindowLayer';
 import filesCss from './paw-os-files-app.css?raw';
 
@@ -156,7 +157,7 @@ describe('PawOsFilesApp', () => {
     expect([...app.children].map((child) => child.className)).toEqual([
       'paw-files-app__title',
       'paw-files-app__toolbar',
-      'paw-files-location',
+      'paw-files-location-disclosure',
       'paw-files-app__workspace',
       'paw-files-statusbar',
     ]);
@@ -328,6 +329,34 @@ describe('PawOsFilesApp', () => {
     ))).toBe(true));
   });
 
+  it.each([
+    { name: 'workspace root', root: '/workspace/paw', directory: '/workspace/paw', sessionId: 'session-work', sessionOrigin: true },
+    { name: 'deep directory', root: '/workspace/paw', directory: '/workspace/paw/docs/nested', sessionId: 'session-work', sessionOrigin: true },
+    { name: 'neighboring prefix', root: '/workspace/paw', directory: '/workspace/paw-other', sessionId: 'session-work', sessionOrigin: false },
+    { name: 'outside directory', root: '/workspace/paw', directory: '/outside', sessionId: 'session-work', sessionOrigin: false },
+    { name: 'local mode within a workspace', root: '/workspace/paw', directory: '/workspace/paw/docs', sessionId: '', sessionOrigin: false },
+    { name: 'filesystem-root workspace', root: '/', directory: '/workspace/docs', sessionId: 'session-work', sessionOrigin: true },
+  ])('keeps the file-origin footer aligned with the selected Session for $name', async ({ root, directory, sessionId, sessionOrigin }) => {
+    const path = `${directory}/notes.md`;
+    const transport = new MockControlTransport({ routes: {
+      'agent.sessions.list': { ok: true, activeSessionId: 'session-work', items: [{ id: 'session-work', title: 'Original Session', updatedAtMs: 1, workspaceRoots: [root], status: 'idle' }] },
+      'files.list': (request: ControlRequest) => {
+        const requested = String(request.query?.path || '/home/qa');
+        const canonical = requested === path ? directory : requested;
+        return { ok: true, scope: 'local', path: canonical, homePath: '/home/qa', selectedPath: requested === path ? path : '', items: canonical === directory ? [{ path, name: 'notes.md', kind: 'file' }] : [] };
+      },
+      'files.read': (request: ControlRequest) => ({ ok: true, scope: 'local', path, requestedPath: path, sessionId: request.query?.sessionId || '', content: '# Scoped preview', byteSize: 16, nextOffset: 16, editability: { editable: false, reason: 'Read-only fixture' } }),
+    } });
+    renderApp(transport, <PawOsFilesApp initialRoute={filesRoute(sessionId, path)} />);
+    await screen.findByRole('heading', { name: 'Scoped preview' });
+    expect(screen.getByRole('combobox', { name: '选择文件所属 Session' })).toHaveValue(sessionId);
+    expect(screen.getByText(sessionOrigin ? 'Session 工作区快捷入口 · 本机读取' : '本机文件 · 无需 Session')).toBeInTheDocument();
+    const reads = transport.requests.filter(({ request }) => request.pathId === 'files.read');
+    expect(reads.length).toBeGreaterThan(0);
+    expect(reads.every(({ request }) => request.query?.path === path && (request.query?.sessionId || '') === sessionId)).toBe(true);
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.workspace.save')).toBe(false);
+  });
+
   it('opens a root-relative file path from a Session evidence link', async () => {
     const relativePath = 'docs/room-runtime-handoff.md';
     const absolutePath = `/workspace/paw/${relativePath}`;
@@ -437,6 +466,288 @@ describe('PawOsFilesApp', () => {
     await act(async () => finishOld({ ok: true, activeSessionId: 'reader', items: scopedSessions().items.filter((item) => item.id === 'reader') }));
     expect(screen.getByRole('combobox', { name: '选择文件所属 Session' })).toHaveValue('writer');
     expect(screen.getByRole('heading', { name: 'writer latest.md', level: 1 })).toBeInTheDocument();
+  });
+
+  it('moves editing location and collaboration into one file-tools popover without replacing the editor', async () => {
+    const user = userEvent.setup();
+    const style = applyNarrowLayout();
+    try {
+      const transport = savedMetadataTransport(() => savedMetadataReceipt());
+      renderApp(transport, <PawOsFilesApp />);
+      await user.click(await screen.findByRole('treeitem', { name: '打开文件 notes.md' }));
+      expect(screen.queryByRole('button', { name: '文件工具' })).not.toBeInTheDocument();
+      await user.click(await screen.findByRole('button', { name: '编辑文本' }));
+      const input = await screen.findByRole('textbox', { name: '编辑 notes.md' }) as HTMLTextAreaElement;
+      fireEvent.change(input, { target: { value: 'unsaved tools draft' } });
+      input.setSelectionRange(3, 7); input.scrollTop = 120;
+      const body = input.closest('.paw-files-preview__body')!;
+      expect(body.querySelector('.paw-files-location')).toBeNull();
+      expect(body.querySelector('.paw-files-collaboration')).toBeNull();
+      const trigger = screen.getByRole('button', { name: '文件工具' });
+      await user.click(trigger);
+      const panel = await screen.findByRole('dialog', { name: '文件工具' });
+      const location = within(panel).getByRole('textbox', { name: '文件或文件夹路径' });
+      expect(location).toHaveFocus();
+      expect(within(panel).getByRole('button', { name: '协作与访问' })).toBeInTheDocument();
+      expect(within(panel).getByRole('button', { name: '复制编辑内容' })).toBeInTheDocument();
+      expect(within(panel).getByRole('button', { name: '复制文件路径' })).toBeInTheDocument();
+      expect(screen.getAllByRole('button', { name: '复制文件路径' })).toHaveLength(1);
+      expect(panel.closest('.paw-files-preview__body')).toBeNull();
+      expect(screen.getByRole('textbox', { name: '编辑 notes.md' })).toBe(input);
+      expect(input).toHaveValue('unsaved tools draft');
+      expect([input.selectionStart, input.selectionEnd, input.scrollTop]).toEqual([3, 7, 120]);
+      expect(screen.getByRole('button', { name: '保存文件' })).toBeEnabled();
+      await user.keyboard('{Escape}');
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: '文件工具' })).not.toBeInTheDocument());
+      await waitFor(() => expect(trigger).toHaveFocus());
+      expect(screen.getByRole('textbox', { name: '编辑 notes.md' })).toBe(input);
+      await user.click(trigger);
+      await screen.findByRole('dialog', { name: '文件工具' });
+      await user.click(document.body);
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: '文件工具' })).not.toBeInTheDocument());
+      await waitFor(() => expect(trigger).toHaveFocus());
+      expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.workspace.save')).toBe(false);
+    } finally { style.remove(); }
+  });
+
+  it.each(['neutral-content', 'own-shell'])('returns tools focus after %s clicks within both actual negative-tabindex desktop and shell boundaries', async (target) => {
+    const user = userEvent.setup();
+    const transport = savedMetadataTransport(() => savedMetadataReceipt());
+    renderApp(transport, <main className="paw-desktop-viewport" tabIndex={-1}><section className="paw-window-shell" tabIndex={-1} aria-label="Files test window"><PawOsFilesApp /><div data-testid="neutral-content">Neutral content</div></section></main>);
+    await user.click(await screen.findByRole('treeitem', { name: '打开文件 notes.md' }));
+    await user.click(await screen.findByRole('button', { name: '编辑文本' }));
+    const editor = await screen.findByRole('textbox', { name: '编辑 notes.md' });
+    fireEvent.change(editor, { target: { value: 'shell boundary draft' } });
+    const trigger = screen.getByRole('button', { name: '文件工具' });
+    await user.click(trigger);
+    await screen.findByRole('dialog', { name: '文件工具' });
+    await user.click(target === 'own-shell' ? screen.getByRole('region', { name: 'Files test window' }) : screen.getByTestId('neutral-content'));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '文件工具' })).not.toBeInTheDocument());
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(screen.getByRole('textbox', { name: '编辑 notes.md' })).toBe(editor);
+    expect(editor).toHaveValue('shell boundary draft');
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.workspace.save')).toBe(false);
+  });
+
+  it('preserves explicit local negative-tabindex and other-window focus intent', async () => {
+    const user = userEvent.setup();
+    const transport = savedMetadataTransport(() => savedMetadataReceipt());
+    renderApp(transport, <main className="paw-desktop-viewport" tabIndex={-1}>
+      <section className="paw-window-shell" tabIndex={-1} aria-label="Files test window"><PawOsFilesApp /><div tabIndex={-1} data-testid="local-focus-target" onClick={(event) => event.currentTarget.focus()}><span>Local focus surface</span></div></section>
+      <section className="paw-window-shell" tabIndex={-1} aria-label="Other test window" onPointerDown={(event) => event.currentTarget.focus()}><div data-testid="other-neutral">Other neutral content</div></section>
+      <button type="button" onClick={(event) => event.currentTarget.focus()}>Desktop control</button>
+    </main>);
+    await user.click(await screen.findByRole('treeitem', { name: '打开文件 notes.md' }));
+    await user.click(await screen.findByRole('button', { name: '编辑文本' }));
+    const trigger = screen.getByRole('button', { name: '文件工具' });
+    await user.click(trigger);
+    await screen.findByRole('dialog', { name: '文件工具' });
+    const local = screen.getByTestId('local-focus-target');
+    await user.click(screen.getByText('Local focus surface'));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '文件工具' })).not.toBeInTheDocument());
+    expect(local).toHaveFocus();
+    await user.click(trigger);
+    await screen.findByRole('dialog', { name: '文件工具' });
+    await user.click(screen.getByTestId('other-neutral'));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '文件工具' })).not.toBeInTheDocument());
+    expect(screen.getByRole('region', { name: 'Other test window' })).toHaveFocus();
+    await user.click(trigger);
+    await screen.findByRole('dialog', { name: '文件工具' });
+    const desktopControl = screen.getByRole('button', { name: 'Desktop control' });
+    await user.click(desktopControl);
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '文件工具' })).not.toBeInTheDocument());
+    expect(desktopControl).toHaveFocus();
+  });
+
+  it('closes tools on a file switch, preserves the draft, and does not focus a replacement opener', async () => {
+    const user = userEvent.setup();
+    const transport = savedMetadataTransport(() => savedMetadataReceipt());
+    renderApp(transport, <PawOsFilesApp />);
+    await user.click(await screen.findByRole('treeitem', { name: '打开文件 notes.md' }));
+    await user.click(await screen.findByRole('button', { name: '编辑文本' }));
+    fireEvent.change(await screen.findByRole('textbox', { name: '编辑 notes.md' }), { target: { value: 'keep my notes' } });
+    await user.click(screen.getByRole('button', { name: '文件工具' }));
+    await screen.findByRole('dialog', { name: '文件工具' });
+    const alias = screen.getByRole('treeitem', { name: '打开符号链接 alias.md' });
+    await user.click(alias);
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '文件工具' })).not.toBeInTheDocument());
+    expect(alias).toHaveFocus();
+    await user.click(screen.getByRole('treeitem', { name: '打开文件 notes.md' }));
+    expect(await screen.findByRole('textbox', { name: '编辑 notes.md' })).toHaveValue('keep my notes');
+    expect(screen.queryByRole('dialog', { name: '文件工具' })).not.toBeInTheDocument();
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.workspace.save')).toBe(false);
+  });
+
+  it('closes tools on an external file intent and does not reopen them when the original draft returns', async () => {
+    const user = userEvent.setup();
+    const transport = savedMetadataTransport(() => savedMetadataReceipt());
+    const view = renderApp(transport, <PawOsFilesApp initialRoute={filesRoute('writer', 'notes.md')} />);
+    await user.click(await screen.findByRole('button', { name: '编辑文本' }));
+    fireEvent.change(await screen.findByRole('textbox', { name: '编辑 notes.md' }), { target: { value: 'retain route draft' } });
+    await user.click(screen.getByRole('button', { name: '文件工具' }));
+    await screen.findByRole('dialog', { name: '文件工具' });
+    view.rerender(<PawOsFilesApp initialRoute={filesRoute('writer', 'other.txt')} />);
+    await screen.findByRole('heading', { name: 'other.txt', level: 2 });
+    expect(screen.queryByRole('dialog', { name: '文件工具' })).not.toBeInTheDocument();
+    view.rerender(<PawOsFilesApp initialRoute={filesRoute('writer', 'notes.md')} />);
+    expect(await screen.findByRole('textbox', { name: '编辑 notes.md' })).toHaveValue('retain route draft');
+    expect(screen.queryByRole('dialog', { name: '文件工具' })).not.toBeInTheDocument();
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.workspace.save')).toBe(false);
+  });
+
+  it('keeps inactive tools interactive and lets discard retain its original editor focus', async () => {
+    const user = userEvent.setup();
+    const transport = savedMetadataTransport(() => savedMetadataReceipt());
+    renderApp(transport, <MotionActivityBoundary active={false}><PawOsFilesApp /></MotionActivityBoundary>);
+    await user.click(await screen.findByRole('treeitem', { name: '打开文件 notes.md' }));
+    await user.click(await screen.findByRole('button', { name: '编辑文本' }));
+    const input = await screen.findByRole('textbox', { name: '编辑 notes.md' });
+    fireEvent.change(input, { target: { value: 'discard this draft explicitly' } });
+    await user.click(screen.getByRole('button', { name: '文件工具' }));
+    expect(await screen.findByRole('dialog', { name: '文件工具' })).toHaveAttribute('data-motion-active', 'false');
+    await user.click(screen.getByRole('button', { name: '放弃草稿' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '文件工具' })).not.toBeInTheDocument());
+    expect(input).toHaveFocus();
+    expect(input).toHaveValue('disk');
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.workspace.save')).toBe(false);
+  });
+
+  it('lets keyboard users inspect file details without replacing or submitting the live draft', async () => {
+    const user = userEvent.setup();
+    const transport = savedMetadataTransport(() => savedMetadataReceipt());
+    renderApp(transport, <PawOsFilesApp />);
+    await user.click(await screen.findByRole('treeitem', { name: '打开文件 notes.md' }));
+    await user.click(await screen.findByRole('button', { name: '编辑文本' }));
+    const input = await screen.findByRole('textbox', { name: '编辑 notes.md' }) as HTMLTextAreaElement;
+    const draft = Array.from({ length: 350 }, (_, i) => `line ${i} — unsaved`).join('\n');
+    fireEvent.change(input, { target: { value: draft } });
+    input.setSelectionRange(17, 29);
+    input.scrollTop = 120;
+    const summary = screen.getByRole('heading', { name: 'notes.md', level: 2 }).closest('summary')!;
+    const disclosure = summary.closest('details')!;
+    await user.click(summary);
+    expect(disclosure).toHaveAttribute('open');
+    const metadata = screen.getByRole('group', { name: '文件路径与属性' });
+    expect(metadata).toHaveAttribute('tabindex', '0');
+    metadata.focus();
+    expect(metadata).toHaveFocus();
+    await user.tab();
+    expect(within(metadata).getAllByRole('button')[0]).toHaveFocus();
+    expect(within(metadata).getByText('4 B')).toBeInTheDocument();
+    expect(within(metadata).getByRole('button', { name: '返回文件列表' })).toBeInTheDocument();
+    expect(within(metadata).getByRole('button', { name: '复制编辑内容' })).toBeInTheDocument();
+    expect(within(metadata).getByRole('button', { name: '复制文件路径' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: '复制文件路径' })).toHaveLength(1);
+    await user.click(within(metadata).getByRole('button', { name: '复制编辑内容' }));
+    expect(await navigator.clipboard.readText()).toBe(draft);
+    expect(within(metadata).getByRole('button', { name: '已复制文件内容' })).toHaveFocus();
+    expect(within(metadata).getAllByRole('button').length).toBeGreaterThan(0);
+    await user.click(summary);
+    expect(disclosure).not.toHaveAttribute('open');
+    await user.click(screen.getByRole('button', { name: '文件工具' }));
+    const tools = await screen.findByRole('dialog', { name: '文件工具' });
+    expect(screen.getByRole('button', { name: '复制文件路径' }).closest('.paw-files-tools-popover')).toBe(tools);
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('button', { name: '复制文件路径' })).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: '编辑 notes.md' })).toBe(input);
+    expect(input).toHaveValue(draft);
+    expect([input.selectionStart, input.selectionEnd, input.scrollTop]).toEqual([17, 29, 120]);
+    expect(screen.getByRole('button', { name: '保存文件' })).toBeEnabled();
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.workspace.save')).toBe(false);
+    input.focus();
+    expect(input).toHaveFocus();
+  });
+
+  it('leaves the focused details scroller native arrow keys and cancels an older descendant reveal without touching its draft', async () => {
+    const user = userEvent.setup();
+    const transport = savedMetadataTransport(() => savedMetadataReceipt());
+    renderApp(transport, <PawOsFilesApp />);
+    await user.click(await screen.findByRole('treeitem', { name: '打开文件 notes.md' }));
+    await user.click(await screen.findByRole('button', { name: '编辑文本' }));
+    const input = await screen.findByRole('textbox', { name: '编辑 notes.md' }) as HTMLTextAreaElement;
+    const draft = Array.from({ length: 350 }, (_, i) => `line ${i} — unsaved`).join('\n');
+    fireEvent.change(input, { target: { value: draft } });
+    input.setSelectionRange(17, 29); input.scrollTop = 120;
+    await user.click(screen.getByRole('heading', { name: 'notes.md', level: 2 }).closest('summary')!);
+    const owner = screen.getByRole('group', { name: '文件路径与属性' });
+    const path = within(owner).getByRole('button', { name: '复制文件路径' });
+    const frames: FrameRequestCallback[] = [];
+    const request = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((frame) => { frames.push(frame); return frames.length; });
+    const cancel = vi.spyOn(window, 'cancelAnimationFrame');
+    try {
+      path.focus(); expect(path).toHaveFocus(); expect(request).toHaveBeenCalledTimes(1);
+      const previousReveal = frames.shift()!;
+      owner.focus(); expect(owner).toHaveFocus(); expect(cancel).toHaveBeenCalledWith(1);
+      for (const key of ['ArrowLeft', 'ArrowRight', 'Home', 'End']) {
+        const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+        act(() => { owner.dispatchEvent(event); });
+        expect(event.defaultPrevented).toBe(false);
+      }
+      act(() => previousReveal(0));
+      expect(request).toHaveBeenCalledTimes(1); expect(owner).toHaveFocus();
+      expect(screen.getByRole('textbox', { name: '编辑 notes.md' })).toBe(input);
+      expect([input.value, input.selectionStart, input.selectionEnd, input.scrollTop]).toEqual([draft, 17, 29, 120]);
+      expect(within(owner).getByText('350 行')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: '保存文件' })).toBeEnabled();
+      expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.workspace.save')).toBe(false);
+    } finally { request.mockRestore(); cancel.mockRestore(); }
+  });
+
+  it('reveals the original nested path action horizontally without moving or submitting its draft', async () => {
+    const user = userEvent.setup();
+    const transport = savedMetadataTransport(() => savedMetadataReceipt());
+    renderApp(transport, <PawOsFilesApp />);
+    await user.click(await screen.findByRole('treeitem', { name: '打开文件 notes.md' }));
+    await user.click(await screen.findByRole('button', { name: '编辑文本' }));
+    const input = await screen.findByRole('textbox', { name: '编辑 notes.md' }) as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: 'original unsaved draft' } });
+    input.setSelectionRange(3, 8); input.scrollTop = 120;
+    await user.click(screen.getByRole('heading', { name: 'notes.md', level: 2 }).closest('summary')!);
+    const owner = screen.getByRole('group', { name: '文件路径与属性' });
+    const path = within(owner).getByRole('button', { name: '复制文件路径' });
+    expect(path.parentElement).toHaveClass('paw-files-preview__actions');
+    Object.defineProperties(owner, {
+      offsetWidth: { configurable: true, value: 119 }, clientWidth: { configurable: true, value: 119 },
+      clientLeft: { configurable: true, value: 0 }, scrollWidth: { configurable: true, value: 468 },
+    });
+    vi.spyOn(owner, 'getBoundingClientRect').mockReturnValue({ left: 293.16, right: 412.16, width: 119 } as DOMRect);
+    vi.spyOn(path, 'getBoundingClientRect').mockReturnValue({ left: 380.4490625, right: 424.4490625, width: 44 } as DOMRect);
+    owner.scrollLeft = 273; owner.scrollTop = 7;
+    const frames: FrameRequestCallback[] = [];
+    const request = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((frame) => { frames.push(frame); return frames.length; });
+    const cancel = vi.spyOn(window, 'cancelAnimationFrame');
+    try {
+      path.focus();
+      expect(path).toHaveFocus();
+      expect(owner.scrollLeft).toBe(273);
+      act(() => frames.shift()?.(0));
+      expect(owner.scrollLeft).toBe(286); // Chromium integer rounding must fully cover the 12.289px gap.
+      expect(owner.scrollTop).toBe(7);
+      expect(path).toHaveFocus();
+      expect(screen.getByRole('textbox', { name: '编辑 notes.md' })).toBe(input);
+      expect([input.value, input.selectionStart, input.selectionEnd, input.scrollTop]).toEqual(['original unsaved draft', 3, 8, 120]);
+      const content = within(owner).getByRole('button', { name: '复制编辑内容' });
+      vi.spyOn(content, 'getBoundingClientRect').mockReturnValue({ left: 292.8, right: 336.8, width: 44 } as DOMRect);
+      await user.tab({ shift: true });
+      expect(content).toHaveFocus();
+      act(() => frames.shift()?.(1));
+      expect(owner.scrollLeft).toBe(285);
+      expect(owner.scrollTop).toBe(7);
+      owner.scrollLeft = 286;
+      input.focus(); path.focus();
+      const cancelledOnBlur = frames.shift()!;
+      input.focus();
+      expect(cancel).toHaveBeenCalled();
+      act(() => cancelledOnBlur(2));
+      expect(owner.scrollLeft).toBe(286); // A later editor intent wins over the captured path focus.
+      path.focus();
+      const pending = frames.shift()!;
+      cleanup();
+      expect(cancel).toHaveBeenCalled();
+      act(() => pending(3));
+      expect(owner.scrollLeft).toBe(286);
+      expect(transport.requests.some(({ request: r }) => r.pathId === 'agent.session.workspace.save')).toBe(false);
+    } finally { request.mockRestore(); cancel.mockRestore(); }
   });
 
   it.each(['notes.md', 'alias.md'])('syncs the saved byte count for %s without refreshing or counting a newer draft', async (name) => {
@@ -794,7 +1105,7 @@ describe('PawOsFilesApp', () => {
     expect(screen.getByText('可从上方复制完整路径，用 Terminal 或 Agent 工具检查原始内容。')).toBeInTheDocument();
     const heading = screen.getByRole('heading', { name: 'a-very-long-preview-file-name.png', level: 2 });
     expect(heading).toHaveAttribute('title', 'a-very-long-preview-file-name.png');
-    expect(heading.parentElement?.querySelector('small')).toHaveAttribute('title', binaryPath);
+    expect(heading.closest('details')?.querySelector('small')).toHaveAttribute('title', binaryPath);
     expect(container.querySelector('.paw-files-statusbar__selection')).toHaveAttribute('title', `${binaryPath} · 80 KB`);
     expect(container.querySelector('.agent-file-code')).toBeNull();
   });
@@ -1701,3 +2012,150 @@ function scopedFilesTransport(sessionList: MockRouteHandler = scopedSessions()) 
     },
   } });
 }
+
+describe('Files original selection cold recovery', () => {
+  async function originalDraft(options?: Parameters<typeof recoveryFilesTransport>[0]) {
+    const user = userEvent.setup();
+    const backend = recoveryFilesTransport(options);
+    const view = renderApp(backend, <PawOsFilesApp />);
+    const selection = screen.getByRole('combobox', { name: '选择文件所属 Session' });
+    await waitFor(() => expect(selection).toHaveValue('first'));
+    await user.selectOptions(selection, 'original');
+    await user.click(await screen.findByRole('treeitem', { name: '打开文件 notes.md' }));
+    await user.click(await screen.findByRole('button', { name: '编辑文本' }));
+    const text = Array.from({ length: 350 }, (_, i) => `public line ${i} — retained`).join('\n');
+    fireEvent.change(await screen.findByRole('textbox', { name: '编辑 notes.md' }), { target: { value: text } });
+    return { user, backend, view, text };
+  }
+
+  it('reopens the exact original Session and path with all 350 draft lines despite a different active Session', async () => {
+    const original = await originalDraft();
+    original.view.unmount();
+    const backend = recoveryFilesTransport();
+    renderApp(backend, <PawOsFilesApp />);
+    expect(await screen.findByRole('textbox', { name: '编辑 notes.md' })).toHaveValue(original.text);
+    expect(screen.getByRole('combobox', { name: '选择文件所属 Session' })).toHaveValue('original');
+    expect(screen.getByRole('button', { name: '保存文件' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '核对磁盘版本' })).toBeInTheDocument();
+    expect(backend.requests.filter(({ request }) => request.pathId === 'files.read').every(({ request }) => request.query?.sessionId === 'original')).toBe(true);
+    expect(backend.requests.some(({ request }) => request.pathId === 'agent.session.workspace.save' || request.pathId === 'agent.session.workspace.read')).toBe(false);
+  });
+
+  it('gives the caller a new Session/path before any remembered original selection', async () => {
+    const original = await originalDraft(); original.view.unmount();
+    const backend = recoveryFilesTransport();
+    renderApp(backend, <PawOsFilesApp initialRoute={filesRoute('first', '/workspace/paw/other.txt')} />);
+    await screen.findByRole('heading', { name: 'other.txt', level: 2 });
+    expect(screen.getByRole('combobox', { name: '选择文件所属 Session' })).toHaveValue('first');
+    expect(screen.queryByRole('textbox', { name: '编辑 notes.md' })).toBeNull();
+    expect(backend.requests.filter(({ request }) => request.pathId === 'files.read').every(({ request }) => request.query?.sessionId === 'first')).toBe(true);
+  });
+
+  it('keeps an explicit Session change and does not attach the old selected path or draft to it', async () => {
+    const original = await originalDraft();
+    await original.user.selectOptions(screen.getByRole('combobox', { name: '选择文件所属 Session' }), 'first');
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: '编辑 notes.md' })).toBeNull());
+    original.view.unmount();
+    const backend = recoveryFilesTransport(); renderApp(backend, <PawOsFilesApp />);
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '选择文件所属 Session' })).toHaveValue('first'));
+    expect(screen.queryByRole('textbox', { name: '编辑 notes.md' })).toBeNull();
+    expect(backend.requests.some(({ request }) => request.pathId === 'files.read')).toBe(false);
+    await original.user.selectOptions(screen.getByRole('combobox', { name: '选择文件所属 Session' }), 'original');
+    await original.user.click(await screen.findByRole('treeitem', { name: '打开文件 notes.md' }));
+    expect(await screen.findByRole('textbox', { name: '编辑 notes.md' })).toHaveValue(original.text);
+  });
+
+  it('retains explicitly selected local mode instead of borrowing the active Session on remount', async () => {
+    const original = await originalDraft();
+    await original.user.selectOptions(screen.getByRole('combobox', { name: '选择文件所属 Session' }), '');
+    await waitFor(() => expect(screen.getByRole('textbox', { name: '文件或文件夹路径' })).toHaveValue('/home/public'));
+    original.view.unmount();
+    const backend = recoveryFilesTransport(); renderApp(backend, <PawOsFilesApp />);
+    await screen.findByRole('treeitem', { name: '打开文件 notes.md' });
+    expect(screen.getByRole('combobox', { name: '选择文件所属 Session' })).toHaveValue('');
+    expect(screen.queryByRole('textbox', { name: '编辑 notes.md' })).toBeNull();
+    expect(backend.requests.some(({ request }) => request.pathId === 'agent.session.workspace.read' || request.pathId === 'agent.session.workspace.save')).toBe(false);
+  });
+
+  it.each(['deleted', 'scope-changed'] as const)('does not replay the remembered file under a %s Session or borrow another identity', async (mode) => {
+    const original = await originalDraft(); original.view.unmount();
+    const backend = recoveryFilesTransport({ original: mode });
+    const view = renderApp(backend, <PawOsFilesApp />);
+    await screen.findByRole('treeitem', { name: '打开文件 notes.md' });
+    expect(screen.getByRole('combobox', { name: '选择文件所属 Session' })).toHaveValue(mode === 'deleted' ? '' : 'original');
+    expect(screen.queryByRole('textbox', { name: '编辑 notes.md' })).toBeNull();
+    expect(backend.requests.some(({ request }) => request.pathId === 'files.read')).toBe(false);
+    view.unmount(); renderApp(recoveryFilesTransport(), <PawOsFilesApp />);
+    expect(await screen.findByRole('textbox', { name: '编辑 notes.md' })).toHaveValue(original.text);
+  });
+
+  it('ignores a closed view folder reply after a reopened view has selected a newer original route', async () => {
+    let finish!: (response: unknown) => void;
+    const original = await originalDraft({ slowLocation: () => new Promise(resolve => { finish = resolve; }) });
+    await original.user.click(screen.getByRole('button', { name: '文件工具' }));
+    const location = screen.getByRole('textbox', { name: '文件或文件夹路径' });
+    await original.user.clear(location); await original.user.type(location, '/slow');
+    await original.user.click(screen.getByRole('button', { name: '打开路径' }));
+    expect(finish).toBeTypeOf('function');
+    original.view.unmount();
+    const current = renderApp(recoveryFilesTransport(), <PawOsFilesApp initialRoute={filesRoute('first', '/workspace/paw/other.txt')} />);
+    await screen.findByRole('heading', { name: 'other.txt', level: 2 });
+    current.unmount();
+    await act(async () => finish({ ok: true, path: '/slow', homePath: '/home/public', items: [] }));
+    const backend = recoveryFilesTransport(); renderApp(backend, <PawOsFilesApp />);
+    await screen.findByRole('heading', { name: 'other.txt', level: 2 });
+    expect(screen.getByRole('combobox', { name: '选择文件所属 Session' })).toHaveValue('first');
+    expect(screen.queryByRole('textbox', { name: '编辑 notes.md' })).toBeNull();
+    expect(backend.requests.filter(({ request }) => request.pathId === 'files.read').every(({ request }) => request.query?.sessionId === 'first' && request.query?.path === '/workspace/paw/other.txt')).toBe(true);
+  });
+
+  it.each(['connection', 'kind'] as const)('keeps last-file navigation inside its original %s scope', async (mode) => {
+    const original = await originalDraft(); original.view.unmount();
+    const backend = recoveryFilesTransport({ connection: mode === 'connection' ? 'another-public-backend' : undefined, kind: mode === 'kind' ? 'http' : undefined });
+    renderApp(backend, <PawOsFilesApp />);
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '选择文件所属 Session' })).toHaveValue('first'));
+    expect(screen.queryByRole('textbox', { name: '编辑 notes.md' })).toBeNull();
+    expect(backend.requests.some(({ request }) => request.pathId === 'files.read')).toBe(false);
+  });
+});
+
+function recoveryFilesTransport(options: { original?: 'deleted' | 'scope-changed'; connection?: string; kind?: 'http'; slowLocation?: (request: ControlRequest) => unknown } = {}) {
+  const result = new MockControlTransport({ routes: {
+    'agent.sessions.list': { ok: true, activeSessionId: 'first', items: ['first', ...(options.original === 'deleted' ? [] : ['original'])].map(id => ({ id, title: id, updatedAtMs: 1, status: 'idle', workspaceRoots: id === 'original' && options.original === 'scope-changed' ? ['/elsewhere'] : ['/workspace/paw'] })) },
+    'files.list': (request: ControlRequest) => {
+      if (request.query?.path === '/slow' && options.slowLocation) return options.slowLocation(request);
+      const requested = String(request.query?.path || '/home/public');
+      const selectedPath = /\.(md|txt)$/u.test(requested) ? requested : '';
+      const path = selectedPath ? requested.slice(0, requested.lastIndexOf('/')) : requested;
+      return { ok: true, path, homePath: '/home/public', selectedPath, items: ['notes.md', 'other.txt'].map(name => ({ path: `${path}/${name}`, name, kind: 'file', byteSize: 4 })) };
+    },
+    'files.read': (request: ControlRequest) => ({ ok: true, sessionId: request.query?.sessionId, requestedPath: request.query?.path, path: request.query?.path, content: 'disk', byteSize: 4, nextOffset: 4, truncated: false, resourceRevision: `sha256:${'a'.repeat(64)}`, editability: { editable: true } }),
+    'agent.session.workspace.save': () => { throw new Error('recovery must never automatically save'); },
+    'agent.session.workspace.read': () => { throw new Error('recovery must never automatically reconcile disk'); },
+  } });
+  Object.defineProperty(result, 'connectionIdentity', { value: options.connection ?? 'files-reopen-public-backend' });
+  if (options.kind) Object.defineProperty(result, 'kind', { value: options.kind });
+  return result;
+}
+
+// Geometry seam only: these receipts do not emulate native focus scrolling or hit testing.
+describe('file crumb focus reveal bounds', () => {
+  const owner = { left: 293.16, width: 119, offsetWidth: 119, clientLeft: 0, clientWidth: 119, scrollWidth: 468, scrollLeft: 273 };
+  it.each([
+    ['right fractional gap', { left: 380.4490625, right: 424.4490625 }, 286],
+    ['reverse Tab fractional gap', { left: 292.8, right: 336.8 }, 272],
+    ['already fully visible', { left: 300, right: 344 }, 273],
+    ['exact viewport width', { left: 300, right: 419 }, 280],
+    ['wider than viewport keeps the leading edge reachable', { left: 300, right: 480 }, 280],
+    ['left scroll limit', { left: -1000, right: -956 }, 0],
+    ['right scroll limit', { left: 1000, right: 1044 }, 349],
+  ])('%s', (_name, target, expected) => { expect(nextFileCrumbScrollLeft(owner, target)).toBe(expected); });
+  it('converts visual scale and client borders into horizontal CSS scroll units', () => {
+    expect(nextFileCrumbScrollLeft({ ...owner, left: 100, width: 242, offsetWidth: 121, clientLeft: 1 }, { left: 310, right: 342 })).toBe(274);
+  });
+  it('does nothing for hidden, disconnected-sized or nonfinite layout', () => {
+    expect(nextFileCrumbScrollLeft({ ...owner, clientWidth: 0 }, { left: 300, right: 344 })).toBe(273);
+    expect(nextFileCrumbScrollLeft({ ...owner, width: 0 }, { left: 300, right: 344 })).toBe(273);
+    expect(nextFileCrumbScrollLeft(owner, { left: NaN, right: 344 })).toBe(273);
+  });
+});

@@ -12,6 +12,7 @@ export interface AgentModelCatalogV1 {
   engineCapabilities?: {
     gatewayTools: boolean;
     compaction: boolean;
+    compactionRecovery?: boolean;
     resume: boolean;
     exactAbort: boolean;
     nativeMcp: boolean;

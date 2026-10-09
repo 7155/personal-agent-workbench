@@ -48,6 +48,32 @@ describe('SmoothDisclosureReveal', () => {
     });
   });
 
+  it('finishes an opening before a descendant action receives native focus', () => {
+    const content = <button type="button">Copy original evidence</button>;
+    const view = render(<SmoothDisclosureReveal id="focus-opening" open={false}>{content}</SmoothDisclosureReveal>);
+    view.rerender(<SmoothDisclosureReveal id="focus-opening" open>{content}</SmoothDisclosureReveal>);
+    const region = document.getElementById('focus-opening')!;
+    expect(region).toHaveAttribute('data-state', 'opening');
+    act(() => screen.getByRole('button', { name: 'Copy original evidence' }).focus());
+    expect(region).toHaveAttribute('data-state', 'open');
+    expect(region).toHaveStyle({ height: 'auto' });
+    expect(screen.getByRole('button', { name: 'Copy original evidence' })).toHaveFocus();
+    act(() => vi.advanceTimersByTime(DISCLOSURE_MOTION.durationMs + 100));
+    expect(region).toHaveStyle({ height: 'auto' });
+  });
+
+  it('does not reopen closing evidence when a synthetic focus event reaches it', () => {
+    const content = <button type="button">Closing evidence</button>;
+    const view = render(<SmoothDisclosureReveal id="focus-closing" open>{content}</SmoothDisclosureReveal>);
+    view.rerender(<SmoothDisclosureReveal id="focus-closing" open={false}>{content}</SmoothDisclosureReveal>);
+    const region = document.getElementById('focus-closing')!;
+    fireEvent.focusIn(screen.getByText('Closing evidence'));
+    expect(region).toHaveAttribute('data-state', 'closing');
+    expect(region).toHaveAttribute('inert');
+    act(() => vi.advanceTimersByTime(DISCLOSURE_MOTION.durationMs + 100));
+    expect(region).toHaveAttribute('data-state', 'closed');
+  });
+
   it('keeps closing content mounted, supports reversal, and removes it only after exit', async () => {
     const view = render(
       <SmoothDisclosureReveal id="evidence" open={false}>

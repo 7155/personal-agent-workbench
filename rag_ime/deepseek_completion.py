@@ -1050,9 +1050,6 @@ def _candidates_from_text(
         )
 
 
-def _parse_candidate_line(line: str) -> str:
-    candidates = _parse_candidate_texts(line)
-    return candidates[0] if candidates else ""
 
 
 def _parse_candidate_texts(text: str) -> list[str]:

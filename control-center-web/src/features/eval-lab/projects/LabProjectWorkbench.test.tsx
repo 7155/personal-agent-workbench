@@ -56,6 +56,38 @@ function isLabReadOnlyRequest(pathId: string): boolean {
 }
 
 describe('Agent-led Lab project container', () => {
+  it('recovers a failed catalog read without claiming this is the first project or sending a command', async () => {
+    let unavailable = true;
+    const transport = new MockControlTransport({ routes: {
+      'agent.eval-lab.projects.get': () => { if (unavailable) throw new Error('Failed to fetch'); return read(null, []); },
+    } });
+    mount(transport);
+    expect(await screen.findByRole('heading', { name: '暂时无法读取项目列表' })).toBeVisible();
+    expect(screen.queryByRole('heading', { name: '让第一个项目开始工作' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '新建项目' })).not.toBeInTheDocument();
+    unavailable = false;
+    fireEvent.click(screen.getByRole('button', { name: '重新读取' }));
+    expect(await screen.findByRole('button', { name: '新建项目' })).toBeVisible();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(transport.requests.every(({ request }) => request.pathId === 'agent.eval-lab.projects.get')).toBe(true);
+  });
+
+  it('offers a direct read recovery when the selected project cannot be restored', async () => {
+    const current = project(); let unavailable = true;
+    const transport = new MockControlTransport({ routes: {
+      'agent.eval-lab.projects.get': ({ query }: ControlRequest) => {
+        if (query?.projectId && unavailable) throw new Error('Failed to fetch');
+        return read(query?.projectId ? current : null, [current]);
+      },
+    } });
+    mount(transport, { initialProjectId: current.projectId });
+    expect(await screen.findByRole('heading', { name: '暂时无法读取这个项目' })).toBeVisible();
+    unavailable = false;
+    fireEvent.click(screen.getByRole('button', { name: '重新读取' }));
+    expect(await screen.findByRole('button', { name: '继续下一步' })).toBeVisible();
+    expect(transport.requests.every(({ request }) => request.pathId === 'agent.eval-lab.projects.get')).toBe(true);
+  });
+
   it('opens a parallel test in its own suite when an older suite is bound first', async () => {
     const bindings = ['old-suite', 'new-suite'].map((id) => ({ bindingId: id, adapterId: 'golden', materialSetId: '', briefVersion: 1, artifactId: '', artifactRevision: 1, ownerRef: { kind: 'golden_suite', id }, summary: '', createdAtMs: 1, input: {} }));
     const current = project({ bindings, workflow: { schemaVersion: 'paw.lab-project-workflow.v1', observedAtMs: 1,
@@ -338,6 +370,32 @@ describe('Agent-led Lab project container', () => {
     fireEvent.click(await screen.findByRole('button', { name: '新建项目' }));
     expect(await screen.findByRole('textbox', { name: '描述你的项目' })).toHaveValue('还在整理的故障排查项目');
     expect(screen.getByRole('textbox', { name: '连接执行器上的材料路径' })).toHaveValue('/workspace/incident');
+    expect(transport.requests.every(({ request }) => request.pathId === 'agent.eval-lab.projects.get')).toBe(true);
+  });
+
+  it('returns keyboard focus to the project menu after cancelling history import without writes', async () => {
+    const transport = new MockControlTransport({ routes: { 'agent.eval-lab.projects.get': read(null, []) } });
+    mount(transport); const user = userEvent.setup();
+    const launcher = await screen.findByRole('button', { name: '项目更多操作' });
+    await user.click(launcher);
+    await user.click(await screen.findByRole('menuitem', { name: '导入已有实验' }));
+    expect(await screen.findByRole('dialog')).toBeVisible();
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(launcher).toHaveFocus());
+    expect(transport.requests.every(({ request }) => request.pathId === 'agent.eval-lab.projects.get')).toBe(true);
+  });
+
+  it('returns keyboard focus to new project after closing an unsent draft', async () => {
+    const transport = new MockControlTransport({ routes: { 'agent.eval-lab.projects.get': read(null, []) } });
+    mount(transport); const user = userEvent.setup();
+    const launcher = await screen.findByRole('button', { name: '新建项目' });
+    await user.click(launcher);
+    await user.click(screen.getByRole('textbox', { name: '描述你的项目' }));
+    await user.type(screen.getByRole('textbox', { name: '描述你的项目' }), '保留草稿');
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(launcher).toHaveFocus());
+    await user.click(launcher);
+    expect(screen.getByRole('textbox', { name: '描述你的项目' })).toHaveValue('保留草稿');
     expect(transport.requests.every(({ request }) => request.pathId === 'agent.eval-lab.projects.get')).toBe(true);
   });
 

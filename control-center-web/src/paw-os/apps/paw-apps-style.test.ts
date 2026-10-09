@@ -157,7 +157,10 @@ describe('PAWOS semantic type roles', () => {
     // still refuses to collapse into a sliver.
     expect(appCss).toMatch(/\.paw-nav-buttons, \.paw-toolbar-actions\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*center;/s);
     expect(appCss).toMatch(/\.paw-omnibox-form\s*\{[^}]*min-width:\s*0;[^}]*flex:\s*1;/s);
-    expect(toolsMigratedCss).toMatch(/\.paw-desktop-root \.paw-nav-buttons button,\s*\.paw-desktop-root \.paw-toolbar-actions > button\s*\{[^}]*width:\s*29px;[^}]*height:\s*29px;/s);
+    // Dense desktop controls retain the 32px floor; narrow targets reach
+    // 44px without removing navigation or enlarging the glyphs.
+    expect(toolsMigratedCss).toMatch(/\.paw-desktop-root \.paw-nav-buttons button,\s*\.paw-desktop-root \.paw-toolbar-actions > button\s*\{[^}]*width:\s*32px;[^}]*height:\s*32px;/s);
+    expect(toolsMigratedCss).toMatch(/@container paw-browser \(max-width: 620px\)\s*\{[^}]*\.paw-desktop-root :is\(\.paw-nav-buttons button, \.paw-toolbar-actions > button\)\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px;/s);
 
     // Below the 620px menu fold the remaining controls tighten once more.
     expect(toolsMigratedCss).toMatch(/@container paw-browser \(max-width:\s*620px\)[\s\S]*?\.paw-desktop-root \.paw-browser-toolbar\s*\{[^}]*gap:\s*4px;[^}]*padding-inline:\s*6px;/s);
@@ -245,7 +248,7 @@ describe('PAWOS semantic type roles', () => {
     expect(primitiveCss).toMatch(/\.ui-toast__viewport\s*\{[^}]*z-index:\s*1120;/s);
   });
 
-  it('stacks Project planning controls and preserves action labels at narrow widths', () => {
+  it('keeps Project planning controls on one row and preserves action labels at narrow widths', () => {
     const compactDetailCss = workbenchMigratedCss.slice(
       workbenchMigratedCss.indexOf('@container paw-native-stage (max-width: 1050px)'),
       workbenchMigratedCss.indexOf('@container paw-native-stage (max-width: 760px)'),
@@ -259,15 +262,16 @@ describe('PAWOS semantic type roles', () => {
       workbenchMigratedCss.indexOf('@container paw-native-stage (max-width: 760px)'),
       workbenchMigratedCss.indexOf('@container paw-native-stage (max-width: 520px)'),
     );
-    expect(mediumProjectCss).toMatch(/\.paw-wb-planning-tools\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/s);
+    expect(mediumProjectCss).toMatch(/\.paw-wb-planning-tools\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto;/s);
     expect(mediumProjectCss).toMatch(/\.paw-wb-planning-tools__actions\s*\{[^}]*overflow-x:\s*auto;/s);
     expect(mediumProjectCss).toMatch(/\.paw-wb-documents\[data-reader-open='true'\] \.paw-wb-document-index\s*\{\s*display:\s*none;/s);
     expect(appCss).toMatch(/\.paw-native-stage\s*\{[^}]*container-name:\s*paw-native-stage;[^}]*container-type:\s*inline-size;/s);
     const narrowProjectCss = workbenchMigratedCss.slice(workbenchMigratedCss.indexOf('@container paw-native-stage (max-width: 520px)'));
     expect(narrowProjectCss).not.toMatch(/\.paw-wb-primary > span\s*\{\s*display:\s*none;/s);
     expect(narrowProjectCss).not.toContain('.paw-wb-primary { font-size: 0; }');
-    expect(narrowProjectCss).toMatch(/\.paw-wb-planning-tools\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/s);
-    expect(narrowProjectCss).toMatch(/\.paw-wb-planning-tools__date,[\s\S]*?\.paw-wb-planning-tools__actions\s*\{[^}]*overflow-x:\s*auto;/s);
+    // 520px inherits the date + nearby Popover trigger grid from 760px.
+    expect(narrowProjectCss).not.toMatch(/\.paw-wb-planning-tools\s*\{[^}]*grid-template-columns:/s);
+    expect(mediumProjectCss).toMatch(/\.paw-wb-planning-tools__date,[\s\S]*?\.paw-wb-planning-tools__actions\s*\{[^}]*overflow-x:\s*auto;/s);
     expect(narrowProjectCss).toMatch(/\.paw-wb-documents\[data-reader-open='true'\] \.paw-wb-document-index\s*\{\s*display:\s*none;/s);
     expect(narrowProjectCss).not.toContain('paw-wb-schedules-dialog');
   });
@@ -451,7 +455,9 @@ describe('PAWOS semantic type roles', () => {
     expect(filesCss).toMatch(/\.paw-files-preview__body\s*\{[^}]*background:\s*var\(--color-paper\);[^}]*color:\s*var\(--color-text\);/s);
     expect(toolsMigratedCss).not.toContain('.paw-desktop-root .paw-files-app');
     expect(terminalCss).toMatch(/\.paw-terminal-console\s*\{[\s\S]*?grid-template-rows:\s*minmax\(0, 1fr\);/s);
-    expect(terminalCss).toMatch(/\.paw-terminal-console\[data-session\]\s*\{[\s\S]*?grid-template-rows:\s*minmax\(0, 1fr\) 30px;/s);
+    expect(terminalCss).toMatch(/\.paw-terminal-console\[data-session\]\s*\{[\s\S]*?grid-template-rows:\s*minmax\(0, 1fr\) var\(--paw-terminal-status-height\);/s);
+    expect(terminalCss).toContain('--paw-terminal-status-height: 34px;');
+    expect(terminalCss).toMatch(/@container paw-terminal \(max-width:\s*560px\)[\s\S]*?--paw-terminal-status-height:\s*46px;/s);
     expect(terminalCss).toContain('--paw-terminal-bg: #101216');
     expect(terminalCss).toMatch(/\.paw-terminal-statusbar\s*\{[^}]*display:\s*flex;[^}]*overflow:\s*hidden;/s);
     expect(terminalCss).toMatch(/@container paw-terminal \(max-width:\s*560px\)/);

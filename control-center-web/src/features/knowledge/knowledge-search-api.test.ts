@@ -34,3 +34,15 @@ it('preserves typed source blocks and normalised geometry from the search citati
   const result = await searchKnowledgeBase(transport, 'kb', 'energy', config);
   expect(result.hits[0]).toMatchObject({ page: 5, provenance: { kind: 'formula', headingPath: ['Results'], sourceBlocks: [{ page: 5, bbox: [10, 20, 80, 40], coordinateSystem: 'normalized-1000' }] } });
 });
+
+it('carries media offsets in search citations without inventing scores or source pages', async () => {
+  const transport = new MockControlTransport({ routes: { 'knowledgeBases.search': { hits: [{ chunkId: 'audio-0', documentId: 'clip', content: '[audio-segment: 0–2s; no transcription]', citation: {
+    kind: 'audio', modality: 'audio', startSeconds: 0, endSeconds: 2,
+    sourceBlocks: [{ order: 0, kind: 'audio', metadata: { startSeconds: 0, endSeconds: 2, timestampKind: 'segment-offset', sourcePart: 'audio-segment' } }],
+  } }] } } });
+  const result = await searchKnowledgeBase(transport, 'kb', 'tone', config);
+  expect(result.hits[0]).toMatchObject({ id: 'audio-0', documentId: 'clip', page: null, score: null, provenance: {
+    modality: 'audio', startSeconds: 0, endSeconds: 2, sourceBlocks: [{ timestampKind: 'segment-offset', startSeconds: 0, endSeconds: 2 }],
+  } });
+  expect(transport.requests[0].request.body).toMatchObject({ query: 'tone', mode: 'hybrid' });
+});

@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { GlobalFeedbackProvider, publishGlobalNotice } from '@/components/feedback';
+import { MotionActivityBoundary } from '@/design/motion';
 import { PawNotificationCenter } from './PawNotificationCenter';
 
 afterEach(() => cleanup());
@@ -63,4 +64,41 @@ describe('PawNotificationCenter', () => {
     fireEvent.click(within(panel).getByRole('button', { name: '清除通知：第一条' }));
     await waitFor(() => expect(within(panel).getByRole('button', { name: '关闭通知中心' })).toHaveFocus());
   });
+});
+
+it('keeps the portalled original notice and close focus when its motion boundary becomes quiet', () => {
+  const wrap = (active: boolean) => <GlobalFeedbackProvider><MotionActivityBoundary active={active}><PawNotificationCenter /></MotionActivityBoundary></GlobalFeedbackProvider>;
+  const view = render(wrap(true));
+  act(() => publishGlobalNotice({ id: 'original-quiet', title: '原结果通知', message: '等待用户查看原结果', tone: 'warning' }));
+  const trigger = screen.getByRole('button', { name: '通知中心，1 条通知' });
+  fireEvent.click(trigger);
+  const close = screen.getByRole('button', { name: '关闭通知中心' });
+  expect(close).toHaveFocus();
+  view.rerender(wrap(false));
+  const panel = screen.getByRole('region', { name: '通知中心' });
+  expect(panel).toHaveAttribute('data-motion-active', 'false');
+  expect(panel.parentElement).toBe(document.body);
+  expect(panel).toHaveTextContent('等待用户查看原结果');
+  expect(close).toHaveFocus();
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(trigger).toHaveFocus();
+  expect(panel).toHaveAttribute('inert');
+});
+
+it('stills the open original notice when the document becomes hidden without clearing it', () => {
+  let visibility: DocumentVisibilityState = 'visible';
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility });
+  try {
+    render(<GlobalFeedbackProvider><PawNotificationCenter /></GlobalFeedbackProvider>);
+    act(() => publishGlobalNotice({ id: 'original-hidden', title: '原通知', tone: 'info' }));
+    fireEvent.click(screen.getByRole('button', { name: '通知中心，1 条通知' }));
+    const panel = screen.getByRole('region', { name: '通知中心' });
+    expect(panel).toHaveAttribute('data-motion-active', 'true');
+    visibility = 'hidden'; fireEvent(document, new Event('visibilitychange'));
+    expect(panel).toHaveAttribute('data-motion-active', 'false');
+    expect(panel).toHaveAttribute('data-open');
+    expect(panel).toHaveTextContent('原通知');
+    visibility = 'visible'; fireEvent(document, new Event('visibilitychange'));
+    expect(panel).toHaveAttribute('data-motion-active', 'true');
+  } finally { Reflect.deleteProperty(document, 'visibilityState'); }
 });

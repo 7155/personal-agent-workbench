@@ -1,3 +1,4 @@
+import { ChatPresentationProvider, useChatPresentation } from '@/features/conversation-ui/reading/chat-presentation';
 import './paw-chat-priority.css';
 import {
   Archive,
@@ -51,7 +52,7 @@ import { AgentModeSwitch, useAgentInterfaceMode } from '@/features/semantic-work
 import { useRoomEntryMode } from '@/features/semantic-workspace/room-entry-mode';
 import { OrganizationWorkspace } from '@/features/semantic-workspace/OrganizationWorkspace';
 import '@/features/semantic-workspace/semantic-workspace.css';
-import { readSessionCatalog } from './session-catalog';
+import { readSelectedSession, readSessionCatalog } from './session-catalog';
 import { PawWindowLeadingPortal, usePawWindowLeadingChromeTarget } from '../shell/PawWindowChrome';
 import { TraceAgentHandoffButton, type TraceAgentHandoffInput } from '@/features/trace-agent/handoff';
 import { initialAgentSelection, loadRoomWorkspace, loadSessionWorkspace, warmAgentWorkspace, type AgentSelection as Selection, type AgentWorkspaceKind } from './agent-workspace-loader';
@@ -59,7 +60,12 @@ import { initialAgentSelection, loadRoomWorkspace, loadSessionWorkspace, warmAge
 const PawSessionWorkspace = lazy(loadSessionWorkspace);
 const PawRoomWorkspace = lazy(loadRoomWorkspace);
 
-export function PawAgentApp({
+export function PawAgentApp(props: Parameters<typeof PawAgentAppBody>[0]) {
+  const presentation = useChatPresentation();
+  return presentation ? <PawAgentAppBody {...props} /> : <ChatPresentationProvider ownerKey="builtin:agent" defaultVersion="v2"><PawAgentAppBody {...props} /></ChatPresentationProvider>;
+}
+
+function PawAgentAppBody({
   initialRoute = '',
   target,
 }: {
@@ -103,6 +109,8 @@ export function PawAgentApp({
   const [deleteTarget, setDeleteTarget] = useState<SessionSummary>();
   const [deleting, setDeleting] = useState(false);
   const [catalogRevision, setCatalogRevision] = useState(0);
+  const [selectedSessionFailure, setSelectedSessionFailure] = useState<{ id: string; text: string }>();
+  const [selectedSessionLoading, setSelectedSessionLoading] = useState(false);
   const railToggleRef = useRef<HTMLButtonElement>(null);
   const railSearchRef = useRef<HTMLInputElement>(null);
   const closeRail = useCallback(() => {
@@ -182,9 +190,12 @@ export function PawAgentApp({
         for (const id of Object.keys(optimisticSessionsRef.current)) {
           if (listedIds.has(id)) delete optimisticSessionsRef.current[id];
         }
-        setSessions([
+        setSessions((current) => [
           ...Object.values(optimisticSessionsRef.current),
           ...listed.filter((item) => !optimisticSessionsRef.current[item.id]),
+          // Paging/filtering the optional rail must not discard the already
+          // known original Session or remount its workspace/draft.
+          ...current.filter((item) => item.id === selectedSessionId && !listedIds.has(item.id) && !optimisticSessionsRef.current[item.id]),
         ]);
       });
     };
@@ -286,16 +297,19 @@ export function PawAgentApp({
       return;
     }
     let cancelled = false;
+    const controller = new AbortController();
+    const requestId = ++selectedSessionRequestRef.current;
+    const isCurrent = () => !cancelled && !controller.signal.aborted && requestId === selectedSessionRequestRef.current;
+    setSelectedSessionLoading(true);
     const frame = window.requestAnimationFrame(() => {
-      const requestId = ++selectedSessionRequestRef.current;
-      void transport.request({
-        pathId: 'agent.sessions.list',
-        query: { limit: 100, includeArchived: true },
-      }).then((response) => {
-        if (cancelled || requestId !== selectedSessionRequestRef.current) return;
-        const canonical = sessionItems(response, { includeAppOwned: true })
-          .find((item) => item.id === selectedSessionId);
-        if (!canonical) return;
+      void readSelectedSession(transport, selectedSessionId, isCurrent, controller.signal).then((canonical) => {
+        if (!isCurrent()) return;
+        setSelectedSessionLoading(false);
+        if (!canonical) {
+          setSelectedSessionFailure({ id: selectedSessionId, text: '没有找到这条 Session 工作记录。可重新读取，或从工作记录选择其他对话。' });
+          return;
+        }
+        setSelectedSessionFailure(undefined);
         setSessions((current) => {
           const existing = current.some((item) => item.id === canonical.id);
           return existing
@@ -303,16 +317,18 @@ export function PawAgentApp({
             : [canonical, ...current];
         });
       }).catch(() => {
-        // A direct Session can still render from its route identity. The
-        // directory refresh remains the recovery path when the rail opens.
+        if (!isCurrent()) return;
+        setSelectedSessionLoading(false);
+        setSelectedSessionFailure({ id: selectedSessionId, text: 'Session 工作记录暂时无法读取。原目标已保留，请重新读取。' });
       });
     });
     return () => {
       cancelled = true;
       window.cancelAnimationFrame(frame);
       selectedSessionRequestRef.current += 1;
+      controller.abort();
     };
-  }, [directoryNeeded, selectedSessionId, selection.kind, surfaceActive, transport]);
+  }, [catalogRevision, directoryNeeded, selectedSessionId, selection.kind, surfaceActive, transport]);
 
   useEffect(() => {
     if (!railOpen) return;
@@ -549,6 +565,15 @@ export function PawAgentApp({
               setCatalogRevision((value) => value + 1);
             }}
           />
+        ) : selection.kind === 'session' && !selectedSession ? (
+          <div aria-label="Session 工作记录状态" className="paw-agent-session-status" role={selectedSessionFailure?.id === selectedSessionId ? 'alert' : 'status'}>
+            <span>{selectedSessionFailure?.id === selectedSessionId ? selectedSessionFailure.text : '正在读取 Session 工作记录…'}</span>
+            <code>{selectedSessionId}</code>
+            {selectedSessionFailure?.id === selectedSessionId ? <Button loading={selectedSessionLoading} preserveFocusWhileLoading onClick={() => {
+              setSelectedSessionLoading(true);
+              setCatalogRevision((value) => value + 1);
+            }}>重新读取 Session</Button> : null}
+          </div>
         ) : selection.kind === 'session' ? (
           <Suspense fallback={<WorkspaceLoading text="正在打开 Session 工作区…" />}>
             <PawSessionWorkspace

@@ -385,3 +385,7 @@
   :is(main, section)[data-route-id='approvals'][data-paw-os-app] .approvals-preview > summary { align-items: flex-start; flex-direction: column; gap: 2px; padding-block: 7px; }
   :is(main, section)[data-route-id='approvals'][data-paw-os-app] .approvals-preview__binding { grid-template-columns: minmax(0, 1fr); gap: 2px; }
 }
+
+@container paw-window (max-width: 620px) {
+  :is(main, section)[data-route-id='approvals'] [role='radio'] { min-height: 44px; }
+}

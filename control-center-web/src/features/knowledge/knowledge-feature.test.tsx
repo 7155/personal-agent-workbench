@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -12,8 +12,8 @@ import { MockControlTransport } from '@/test/mock-transport';
 import { KnowledgeFeature } from './index';
 
 vi.mock('react-virtuoso', () => ({
-  Virtuoso: ({ data, itemContent }: { data: unknown[]; itemContent: (index: number, item: unknown) => ReactNode }) => (
-    <div data-testid="virtuoso-list">{data.map((item, index) => <div key={index}>{itemContent(index, item)}</div>)}</div>
+  Virtuoso: ({ data, itemContent, computeItemKey }: { data: unknown[]; itemContent: (index: number, item: unknown) => ReactNode; computeItemKey?: (index: number, item: unknown) => string }) => (
+    <div data-testid="virtuoso-list">{data.map((item, index) => <div key={computeItemKey?.(index, item) ?? index} data-fixture-document-id={(item as { id: string }).id}>{itemContent(index, item)}</div>)}</div>
   ),
 }));
 
@@ -30,6 +30,46 @@ afterEach(() => {
 });
 
 describe('document knowledge library', () => {
+  it('shows native media time and truthful sampling copy while opening the original hit identity', async () => {
+    const user = userEvent.setup(); const transport = createTransport();
+    const original = transport.request.bind(transport);
+    vi.spyOn(transport, 'request').mockImplementation(async (input) => input.pathId === 'knowledgeBases.search' ? { hits: [{
+      chunkId: 'audio-zero', documentId: 'file-runtime', documentName: 'public-tone.wav', title: '公开音频片段',
+      content: '[audio-segment: 0–2s; no transcription]', citation: { kind: 'audio', modality: 'audio', startSeconds: 0, endSeconds: 2,
+        sourceBlocks: [{ order: 0, metadata: { sourcePart: 'audio-segment', startSeconds: 0, endSeconds: 2, timestampKind: 'segment-offset', transcriptionApplied: false } }],
+      },
+    }] } as never : original(input));
+    renderKnowledge(transport, '/knowledge?tab=search', true);
+    await user.type(await screen.findByRole('textbox', { name: '搜索知识库' }), 'tone');
+    await user.click(screen.getByRole('button', { name: '搜索' }));
+    expect(await screen.findByText('音频片段 · 00:00–00:02', { selector: 'dd' })).toBeVisible();
+    expect(screen.getByText('音频片段；未生成转写文本。', { selector: 'p' })).toBeVisible();
+    expect(screen.getByRole('option')).toHaveTextContent('音频片段 · 00:00–00:02');
+    await user.click(screen.getByRole('button', { name: '打开来源' }));
+    await waitFor(() => expect(request(transport, 'knowledgeBases.open')).toMatchObject({ params: { kbId: 'kb-runtime', fileId: 'file-runtime' }, query: { chunkId: 'audio-zero', lines: 80 } }));
+    expect(request(transport, 'knowledgeBases.open')?.query).not.toHaveProperty('startSeconds');
+  });
+  it('keeps an empty PAWOS library actionable without an empty selector or duplicate create buttons', async () => {
+    const user = userEvent.setup();
+    const transport = new MockControlTransport({ routes: {
+      'knowledgeBases.list': { items: [] },
+      'knowledgeWorker.health': { ok: true, status: 'ready' },
+    } });
+    renderKnowledge(transport, '/knowledge', true);
+    await screen.findByText('还没有文档知识库');
+    expect(screen.queryByRole('combobox', { name: '当前知识库', hidden: true })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: '新建知识库', hidden: true })).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: '收起知识库目录', hidden: true })).not.toBeInTheDocument();
+    const refreshes = transport.requests.filter(call => call.request.pathId === 'knowledgeBases.list').length;
+    await user.click(screen.getByRole('button', { name: '刷新知识库' }));
+    await waitFor(() => expect(transport.requests.filter(call => call.request.pathId === 'knowledgeBases.list').length).toBeGreaterThan(refreshes));
+    const trigger = screen.getByRole('button', { name: '新建知识库' });
+    await user.click(trigger);
+    expect(await screen.findByRole('dialog')).toBeVisible();
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(transport.requests.some(call => call.request.pathId === 'knowledgeBases.create')).toBe(false);
+  });
   it('retains unsaved library settings and the note connection draft across existing views', async () => {
     const user = userEvent.setup();
     renderKnowledge(createTransport(), '/knowledge?tab=settings');
@@ -48,6 +88,18 @@ describe('document knowledge library', () => {
     await user.click(screen.getByRole('button', { name: '本地笔记' }));
     expect(screen.getByRole('textbox', { name: '本地文件夹路径' })).toBe(root);
     expect(root).toHaveValue('/work/public-notes');
+  });
+
+  it('keeps retained document feedback inactive while browsing the note source', async () => {
+    const user = userEvent.setup();renderKnowledge(createTransport());
+    await screen.findByLabelText('runtime.pdf 处理与详情');
+    const pipeline = document.querySelector('.knowledge-pipeline')!;
+    expect(pipeline).toHaveAttribute('data-motion-active', 'true');
+    await user.click(screen.getByRole('button', { name: '本地笔记' }));
+    expect(pipeline).toHaveAttribute('data-motion-active', 'false');
+    await user.click(screen.getByRole('button', { name: '资料知识库' }));
+    expect(document.querySelector('.knowledge-pipeline')).toBe(pipeline);
+    expect(pipeline).toHaveAttribute('data-status', 'failed');
   });
 
   it('offers the paper profile and shows source geometry reported by the parser', async () => {
@@ -474,6 +526,119 @@ describe('document knowledge library', () => {
     await waitFor(() => expect(deleteDocumentTrigger).toHaveFocus());
   });
 
+  it.each(['disabled', 'aria-disabled', 'focus-unavailable'] as const)('returns to a safe control when the original reparse action becomes %s', async (reason) => {
+    const user = userEvent.setup();
+    let documents = [knowledgeDocument(), { ...knowledgeDocument(), id: 'file-control', name: 'control.pdf' }];
+    const transport = createTransport({ documents: () => documents });
+    const client = renderKnowledge(transport);
+    const original = await screen.findByRole('button', { name: '重新解析 runtime.pdf' });
+    const fallback = screen.getByRole('button', { name: '更多知识库工具' });
+    const fallbackFocus = vi.spyOn(fallback, 'focus');
+    await user.type(screen.getByRole('textbox', { name: '筛选文件' }), '.pdf');
+    await user.click(original);
+    await screen.findByRole('dialog', { name: '重新解析文档' });
+    if (reason === 'disabled') {
+      await act(async () => {
+        documents = documents.map(item => item.id === 'file-runtime' ? { ...item, status: 'queued' } : item);
+        await client.invalidateQueries();
+      });
+      await waitFor(() => expect(original).toBeDisabled());
+    } else if (reason === 'aria-disabled') {
+      original.setAttribute('aria-disabled', 'true');
+    } else {
+      // Model a connected control whose native focus attempt cannot succeed.
+      vi.spyOn(original, 'focus').mockImplementation(() => undefined);
+    }
+    expect(original).toBeInTheDocument();
+    expect(original.closest('[data-knowledge-document-id]')).toHaveAttribute('data-knowledge-document-id', 'file-runtime');
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await waitFor(() => expect(fallback).toHaveFocus());
+    expect(fallbackFocus).toHaveBeenCalledWith({ preventScroll: true });
+    expect(original).not.toHaveFocus();
+    expect(screen.getByRole('button', { name: '删除 control.pdf' })).not.toHaveFocus();
+    expect(screen.getByRole('textbox', { name: '筛选文件' })).toHaveValue('.pdf');
+    expect(transport.requests.filter(call => ['knowledgeBases.document.retry', 'knowledgeBases.document.delete'].includes(call.request.pathId))).toHaveLength(0);
+    fallbackFocus.mockRestore();
+  });
+
+  it('returns successful deletion to a stable non-destructive control instead of the next row delete', async () => {
+    const user = userEvent.setup();
+    let documents = [knowledgeDocument(), { ...knowledgeDocument(), id: 'file-control', name: 'control.pdf' }];
+    const transport = createTransport({ documents: () => documents, deleteDocument: (request) => {
+      documents = documents.filter(item => item.id !== request.params?.fileId);
+      return { ok: true };
+    } });
+    renderKnowledge(transport);
+    await user.click(await screen.findByRole('button', { name: /^control\.pdf/ }));
+    await user.type(screen.getByRole('textbox', { name: '筛选文件' }), '.pdf');
+    await user.click(screen.getByRole('button', { name: '删除 runtime.pdf' }));
+    await user.click(within(screen.getByRole('dialog', { name: '删除文档' })).getByRole('button', { name: '确认删除' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: '删除 runtime.pdf' })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: '更多知识库工具' })).toHaveFocus());
+    expect(screen.getByRole('button', { name: '删除 control.pdf' })).not.toHaveFocus();
+    expect(screen.getByRole('textbox', { name: '筛选文件' })).toHaveValue('.pdf');
+    expect(screen.getByRole('button', { name: /^control\.pdf/ })).toHaveAttribute('aria-current', 'true');
+    expect(transport.requests.filter(call => call.request.pathId === 'knowledgeBases.document.delete')).toHaveLength(1);
+    expect(request(transport, 'knowledgeBases.document.delete')?.params?.fileId).toBe('file-runtime');
+  });
+
+  it('preserves the exact original trigger across same-name document reorder on cancel and failure', async () => {
+    const user = userEvent.setup();
+    let documents = [knowledgeDocument(), { ...knowledgeDocument(), id: 'file-control' }];
+    const transport = createTransport({ documents: () => documents, deleteDocument: () => { throw new Error('owned deletion failed'); } });
+    const client = renderKnowledge(transport);
+    const original = (await screen.findAllByRole('button', { name: '删除 runtime.pdf' }))[0];
+    await user.type(screen.getByRole('textbox', { name: '筛选文件' }), 'runtime');
+    await user.click(original);
+    await act(async () => { documents = [...documents].reverse(); await client.invalidateQueries(); });
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(original).toHaveFocus());
+    expect(original.closest('[data-fixture-document-id]')).toHaveAttribute('data-fixture-document-id', 'file-runtime');
+    expect(transport.requests.some(call => call.request.pathId === 'knowledgeBases.document.delete')).toBe(false);
+    await user.click(original);
+    await user.click(within(screen.getByRole('dialog', { name: '删除文档' })).getByRole('button', { name: '确认删除' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('删除失败，原内容仍然保留');
+    await act(async () => { documents = [...documents].reverse(); await client.invalidateQueries(); });
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(original).toHaveFocus());
+    expect(original.closest('[data-fixture-document-id]')).toHaveAttribute('data-fixture-document-id', 'file-runtime');
+    expect(screen.getByRole('textbox', { name: '筛选文件' })).toHaveValue('runtime');
+    expect(transport.requests.filter(call => call.request.pathId === 'knowledgeBases.document.delete')).toHaveLength(1);
+  });
+
+  it('retires the accepted delete trigger before a stale catalog refetch removes its row', async () => {
+    const user = userEvent.setup();
+    const transport = createTransport({ deleteDocument: () => ({ ok: true }) });
+    renderKnowledge(transport);
+    const original = await screen.findByRole('button', { name: '删除 runtime.pdf' });
+    await user.click(original);
+    await user.click(within(screen.getByRole('dialog', { name: '删除文档' })).getByRole('button', { name: '确认删除' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(original).toBeInTheDocument();
+    expect(original).not.toHaveFocus();
+    expect(screen.getByRole('button', { name: '更多知识库工具' })).toHaveFocus();
+    expect(transport.requests.filter(call => call.request.pathId === 'knowledgeBases.document.delete')).toHaveLength(1);
+  });
+
+  it.each(['removed', 'renamed'] as const)('uses the stable fallback when the original trigger identity is %s during a dialog', async (change) => {
+    const user = userEvent.setup();
+    let documents = [knowledgeDocument(), { ...knowledgeDocument(), id: 'file-control', name: 'control.pdf' }];
+    const transport = createTransport({ documents: () => documents });
+    const client = renderKnowledge(transport);
+    const original = await screen.findByRole('button', { name: '删除 runtime.pdf' });
+    await user.click(original);
+    await act(async () => {
+      documents = change === 'removed' ? documents.slice(1) : documents.map(item => item.id === 'file-runtime' ? { ...item, name: 'renamed.pdf' } : item);
+      await client.invalidateQueries();
+    });
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.getByRole('button', { name: '更多知识库工具' })).toHaveFocus());
+    expect(original).not.toHaveFocus();
+    expect(screen.getByRole('button', { name: '删除 control.pdf' })).not.toHaveFocus();
+    expect(transport.requests.some(call => call.request.pathId === 'knowledgeBases.document.delete')).toBe(false);
+  });
+
   it('keeps assembly history collapsed while reading and loads it only when expanded', async () => {
     const transport = createTransport();
     const user = userEvent.setup();
@@ -865,7 +1030,8 @@ describe('document knowledge library', () => {
     expect(screen.getByRole('heading', { name: '已就绪' })).toBeInTheDocument();
   });
   it('keeps the Settings workspace and unsaved drafts through an authoritative refresh', async () => {
-    const transport = createTransport();
+    let vectorCount = 0;
+    const transport = createTransport({ embeddingVectorCount: () => vectorCount });
     const user = userEvent.setup();
     renderKnowledge(transport, '/knowledge?tab=settings');
 
@@ -873,10 +1039,27 @@ describe('document knowledge library', () => {
     const name = screen.getByRole('textbox', { name: '名称' });
     await user.clear(name);
     await user.type(name, '尚未保存的知识库名称');
+    await user.click(screen.getByText('高级：连接与索引设置'));
+    expect(screen.getByLabelText('当前向量数量')).toHaveValue('0');
+    vectorCount = 10;
     await user.click(screen.getByRole('button', { name: '刷新知识库' }));
 
     await waitFor(() => expect(screen.getByRole('button', { name: '更多知识库工具' })).toHaveAttribute('data-current-tool', 'settings'));
     expect(screen.getByRole('textbox', { name: '名称' })).toHaveValue('尚未保存的知识库名称');
+    await waitFor(() => expect(screen.getByLabelText('当前向量数量')).toHaveValue('10'));
+  });
+
+  it('refreshes library and embedding projections when a polled indexing job completes', async () => {
+    const options = { activeJob: true, embeddingVectorCount: () => options.activeJob ? 0 : 10 };
+    const transport = createTransport(options);
+    renderKnowledge(transport, '/knowledge?tab=settings');
+    const user = userEvent.setup();
+    await user.click(await screen.findByText('高级：连接与索引设置'));
+    expect(await screen.findByLabelText('当前向量数量')).toHaveValue('0');
+    const baseReads = transport.requests.filter(({ request }) => request.pathId === 'knowledgeBases.get').length;
+    options.activeJob = false;
+    await waitFor(() => expect(screen.getByLabelText('当前向量数量')).toHaveValue('10'), { timeout: 3_000 });
+    expect(transport.requests.filter(({ request }) => request.pathId === 'knowledgeBases.get').length).toBeGreaterThan(baseReads);
   });
 
   it('keeps create and basic-info drafts visible when the backend does not confirm them', async () => {
@@ -980,6 +1163,7 @@ function renderKnowledge(transport: MockControlTransport, initialEntry = '/knowl
       </TooltipProvider>
     </MemoryRouter>,
   );
+  return client;
 }
 
 async function openKnowledgeTool(user: ReturnType<typeof userEvent.setup>, name: string) {
@@ -992,7 +1176,7 @@ function RouteRemountedKnowledge() {
   return <KnowledgeFeature key={location.search} />;
 }
 
-function createTransport(options: { structuredSource?: boolean; activeJob?: boolean; emptyGraph?: boolean; manyRelations?: boolean; pagedDetail?: boolean; pollingGraph?: boolean; multipleSearchHits?: boolean; unlistedSearchSource?: boolean } = {}): MockControlTransport {
+function createTransport(options: { documents?: () => ReturnType<typeof knowledgeDocument>[]; deleteDocument?: (request: ControlRequest) => unknown; structuredSource?: boolean; activeJob?: boolean; embeddingVectorCount?: () => number; emptyGraph?: boolean; manyRelations?: boolean; pagedDetail?: boolean; pollingGraph?: boolean; multipleSearchHits?: boolean; unlistedSearchSource?: boolean } = {}): MockControlTransport {
   let graphRequestCount = 0;
   const extraGraphNodes = options.manyRelations
     ? Array.from({ length: 9 }, (_, index) => ({
@@ -1023,17 +1207,17 @@ function createTransport(options: { structuredSource?: boolean; activeJob?: bool
     routes: {
       'knowledgeBases.list': { items: [knowledgeBase()] },
       'knowledgeBases.get': { base: knowledgeBase() },
-      'knowledgeBases.documents.list': { items: [options.unlistedSearchSource ? { ...knowledgeDocument(), id: 'file-unrelated', name: 'unrelated.pdf' } : knowledgeDocument()] },
-      'knowledgeBases.jobs.list': { items: [{ id: 'job-1', fileId: 'file-runtime', fileName: 'runtime.pdf', kind: 'reindex', parserMode: 'builtin', status: options.activeJob ? 'running' : 'succeeded', stage: options.activeJob ? 'indexing' : 'ready', progress: options.activeJob ? .8 : 1, cancellable: options.activeJob, revision: 3, createdAtMs: Date.now() - 2_000, startedAtMs: Date.now() - 1_500, finishedAtMs: options.activeJob ? 0 : Date.now() - 500, updatedAtMs: Date.now() - 500 }] },
+      'knowledgeBases.documents.list': () => ({ items: options.documents?.() ?? [options.unlistedSearchSource ? { ...knowledgeDocument(), id: 'file-unrelated', name: 'unrelated.pdf' } : knowledgeDocument()] }),
+      'knowledgeBases.jobs.list': () => ({ items: [{ id: 'job-1', fileId: 'file-runtime', fileName: 'runtime.pdf', kind: 'reindex', parserMode: 'builtin', status: options.activeJob ? 'running' : 'succeeded', stage: options.activeJob ? 'indexing' : 'ready', progress: options.activeJob ? .8 : 1, cancellable: options.activeJob, revision: 3, createdAtMs: Date.now() - 2_000, startedAtMs: Date.now() - 1_500, finishedAtMs: options.activeJob ? 0 : Date.now() - 500, updatedAtMs: Date.now() - 500 }] }),
       'knowledgeWorker.health': { ok: true, status: 'ready', dense: { available: true, degraded: false, kind: 'sqlite-vector-projection', fingerprint: 'local-hash:96:v1', vectorCount: 42 } },
       'knowledgeParsers.list': { items: [{ id: 'mineru_local_http', enabled: true, ready: true, status: 'ready' }] },
-      'knowledgeEmbedding.profile': {
+      'knowledgeEmbedding.profile': () => ({
         ok: true,
         profile: { source: 'settings', provider: 'local-hash', model: 'deterministic-term-vector-v1', baseUrl: '', dimensions: 96, secretReference: '', queryPrefix: '', documentPrefix: '', denseBackend: 'sqlite-exact', secretAvailable: false, profileSha256: 'profile-current', secretsVisible: false },
         phase: 'active',
-        runtime: { provider: { provider: 'local-hash', model: 'deterministic-term-vector-v1' }, fingerprint: 'local-hash:96:v1', dimensions: 96, vectorCount: 42, chunkCount: 42, coverage: 1, available: true, degraded: true, reason: 'local baseline' },
+        runtime: { provider: { provider: 'local-hash', model: 'deterministic-term-vector-v1' }, fingerprint: 'local-hash:96:v1', dimensions: 96, vectorCount: options.embeddingVectorCount?.() ?? 42, chunkCount: 42, coverage: 1, available: true, degraded: true, reason: 'local baseline' },
         secretsVisible: false,
-      },
+      }),
       'knowledgeEmbedding.probe': (request: ControlRequest) => {
         const profile = (request.body as unknown as { profile: Record<string, unknown> }).profile;
         return { ok: true, ready: true, profileSha256: 'profile-candidate', provider: profile.provider, model: profile.model, fingerprint: 'openai-compatible:bge-m3:test', dimensions: profile.dimensions, semantic: true, latencyMs: 12.5, secretsVisible: false };
@@ -1092,13 +1276,14 @@ function createTransport(options: { structuredSource?: boolean; activeJob?: bool
       },
       'knowledgeBases.document.get': options.pagedDetail ? pagedKnowledgeDetail : (request: ControlRequest) => ({
         ...knowledgeDetail(),
+        ...(options.documents ? { document: options.documents().find(item => item.id === request.params?.fileId) ?? knowledgeDocument() } : {}),
         ...(request.params?.fileId === 'file-unrelated' ? { document: { ...knowledgeDocument(), id: 'file-unrelated', name: 'unrelated.pdf' } } : {}),
       }),
       'knowledgeBases.open': { ok: true, content: '工具原文' },
       'knowledgeBases.update': { base: knowledgeBase() },
       'knowledgeBases.create': { base: knowledgeBase() },
       'knowledgeBases.document.retry': { ok: true },
-      'knowledgeBases.document.delete': { ok: true },
+      'knowledgeBases.document.delete': options.deleteDocument ?? { ok: true },
       'knowledgeBases.reindexPreview': { previewToken: 'preview-reindex', payloadSha256: 'sha256:reindex', expectedRevision: 8, summary: { documentCount: 1, staleDocumentCount: 1, estimatedChunkCount: 48 } },
       'knowledgeBases.rebuild': { ok: true },
       'knowledgeBases.job.cancel': { ok: true, job: { id: 'job-1', status: 'cancelled' } },

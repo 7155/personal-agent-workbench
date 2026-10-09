@@ -34,6 +34,7 @@
       "properties": {
         "gatewayTools": {"type": "boolean"},
         "compaction": {"type": "boolean"},
+        "compactionRecovery": {"type": "boolean"},
         "resume": {"type": "boolean"},
         "exactAbort": {"type": "boolean"},
         "nativeMcp": {"type": "boolean"},

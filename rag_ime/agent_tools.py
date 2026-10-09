@@ -336,7 +336,7 @@ _TOOL_SPECS: tuple[dict[str, object], ...] = (
         "id": "agents",
         "domain": "agents",
         "displayName": "多 Agent 协作",
-        "description": "管理有界子 Agent 委派及 Todo 关联",
+        "description": "管理有界子 Agent 委派及 Todo 关联；持久 Agent 可用 coordinator 操作创建并控制其明确拥有的普通 Session 和 Room。",
         "when": ("任务需要并行研究、实现或复核",),
         "notFor": ("单 Agent 可直接完成的任务",),
         "input": "Agent、任务、当前 Todo 任务、上下文或运行 ID",
@@ -349,6 +349,7 @@ _TOOL_SPECS: tuple[dict[str, object], ...] = (
             "call",
             "artifact",
             "abort",
+            "coordinator",
         ),
         # Session subagents are a core harness primitive, not an optional
         # product capability. Their schema must be present on a fresh Session
@@ -1980,6 +1981,8 @@ _DELEGATION_BUDGET_SCHEMA: dict[str, object] = {
 
 
 _RUNTIME_TOOL_ARGUMENT_SCHEMAS: dict[str, dict[str, object]] = {
+    "input": {"type": "object"},
+    "clientRequestId": {"type": "string", "minLength": 1, "maxLength": 240},
     "query": {"type": "string", "maxLength": 500},
     "suiteId": {"type": "string", "minLength": 1, "maxLength": 120},
     "suiteRevision": {"type": "string", "minLength": 1, "maxLength": 120},
@@ -2436,6 +2439,9 @@ _RUNTIME_TOOL_ARGUMENT_SCHEMAS: dict[str, dict[str, object]] = {
 }
 
 _RUNTIME_TOOL_ARGUMENT_SCHEMA_OVERRIDES: dict[tuple[str, str], dict[str, object]] = {
+    ("agents", "input"): {"type": "object", "description": "coordinator: read; read_result exact owned Session(turnId,clientMessageId) or Room(roomTurnId), bounded evidenceOnly original receipts/messages; create_session(task,title optional,purpose optional screen_capture creates a Classic image conversation with per-action permissions and no Goal); create_room(task,2-8 configured participants,routingPolicy optional); prompt(message,clientMessageId); stop exact Session turnId+clientMessageId or Room roomTurnId+clientRequestId; resume original Durable identity. Creation never dispatches. Only exact owned targets."},
+    ("agents", "clientRequestId"): {"type": "string", "minLength": 1, "maxLength": 240},
+    ("agents", "action"): {"type": "string", "enum": ["read", "read_result", "create_session", "create_room", "prompt", "stop", "resume"]},
     ("plugins", "sourcePath"): {
         "type": "string",
         "minLength": 1,
@@ -2546,6 +2552,7 @@ _RUNTIME_TOOL_ARGUMENTS: dict[str, tuple[str, ...]] = {
         "budget", "access", "allowedTools", "piSkillsEnabled", "codexSkillsEnabled",
         "workspaceRoots", "todoTask", "contextMode", "forkEntryId", "wait",
         "runId", "batchId", "targetRunId", "message", "artifactId", "limit",
+        "action", "targetId", "clientRequestId", "input",
     ),
     "session_search": ("query", "limit", "includeArchived"),
     "trace_diagnostics": ("targets", "reportId", "query", "patternId", "revision", "offset", "command", "clientRequestId", "input", "candidateId"),
@@ -2614,7 +2621,7 @@ _RUNTIME_TOOL_REQUIRED_ARGUMENTS: dict[tuple[str, str], tuple[str, ...]] = {
     ("memory", "maintenance_apply"): ("runId",),
     ("memory", "maintenance_rollback"): ("runId",),
     ("memory", "remember_preview"): ("text",),
-    ("memory", "correct_preview"): ("targetId", "text"),
+    ("memory", "correct_preview"): ("targetId", "text", "reason"),
     ("memory", "forget_preview"): ("targetId", "reason"),
     ("memory", "remember_apply"): ("proposalId",),
     ("memory", "correct_apply"): ("proposalId",),
@@ -2631,6 +2638,7 @@ _RUNTIME_TOOL_REQUIRED_ARGUMENTS: dict[tuple[str, str], tuple[str, ...]] = {
     ("models", "profile_rollback"): ("sourceApprovalId",),
     ("configuration", "restore_preview"): ("sourceApprovalId",),
     ("configuration", "restore_apply"): ("sourceApprovalId",),
+    ("agents", "coordinator"): ("action",),
     ("agents", "artifact"): ("artifactId",),
     ("agents", "call"): ("targetRunId", "message"),
     ("plugins", "create_package"): ("draftId", "packageJson", "files"),
@@ -3628,6 +3636,12 @@ class ControlToolGateway:
                         room_participant=room_participant,
                         configured_policy=configured_policy,
                     )
+                if str(spec["id"]) == "agents" and "coordinator" in effective_operations:
+                    from .agent_coordinator import coordinator_identity
+                    try:
+                        coordinator_identity(self.sessions, str(session.get("id") or ""))
+                    except (ValueError, AttributeError):
+                        effective_operations.remove("coordinator")
                 if str(spec["id"]) == "memory" and not self._memory_enabled(session):
                     # Keep the public capability card available so the UI can
                     # explain that Memory is off, but expose no executable
@@ -3981,6 +3995,8 @@ class ControlToolGateway:
                 runtime_context = request.get("runtimeContext")
                 if tool in {"agents", "lab_research"}:
                     handler_args["_toolCallId"] = str(request["toolCallId"])
+                if tool == "agents" and isinstance(request.get("executionBinding"), Mapping):
+                    handler_args["_executionBinding"] = dict(request["executionBinding"])
                 if tool == "agents":
                     handler_args["_loadReceiptId"] = str(request.get("loadReceiptId") or "")
                 if tool == "agents" and operation == "delegate":
@@ -4467,6 +4483,13 @@ class ControlToolGateway:
         return dict(result) if isinstance(result, Mapping) else {}
 
     def _agents(self, operation: str, args: Mapping[str, object]) -> dict[str, object]:
+        if operation == "coordinator":
+            if self.collaboration is None:
+                raise ValueError("persistent Agent control is unavailable")
+            return dict(self.collaboration.coordinator_command({
+                "sourceSessionId": args.get("_sessionId"), "action": args.get("action"),
+                **{key: args[key] for key in ("targetId", "clientRequestId", "input") if key in args},
+            }, **({"execution_binding": args["_executionBinding"]} if isinstance(args.get("_executionBinding"), Mapping) else {})))
         if self.delegation is None:
             raise ValueError("managed delegation is unavailable")
         session_id = _bounded_text(args.get("_sessionId"), maximum=240)
@@ -11300,6 +11323,11 @@ def _runtime_memory_tool_parameter_schema(
                     ],
                 },
             }
+        elif operation == "correct_preview":
+            branch["properties"] = {
+                "op": {"const": operation},
+                "reason": {"type": "string", "minLength": 1, "maxLength": 400},
+            }
         elif operation == "maintenance_status":
             branch["properties"] = {
                 "op": {"const": operation},
@@ -11380,6 +11408,14 @@ def _runtime_tool_parameter_schema(
             return {**configured, "oneOf": filtered}
         return dict(configured)
     argument_names = _RUNTIME_TOOL_ARGUMENTS.get(tool_id, ())
+    if tool_id == "agents" and "coordinator" not in normalized_operations:
+        # Ordinary Sessions do not disclose persistent coordinator authority.
+        # Keep its arguments with that operation, rather than inflating every
+        # delegated-Agent schema with unavailable control inputs.
+        argument_names = tuple(
+            name for name in argument_names
+            if name not in {"action", "targetId", "clientRequestId", "input"}
+        )
     properties = {
         "op": {"type": "string", "enum": normalized_operations},
         **{

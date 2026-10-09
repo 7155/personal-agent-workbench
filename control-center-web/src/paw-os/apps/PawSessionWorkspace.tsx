@@ -1,3 +1,5 @@
+import { ChatPresentationSettings } from '@/features/conversation-ui/reading/ChatPresentationSettings';
+import { ChatPresentationProvider, useChatPresentation } from '@/features/conversation-ui/reading/chat-presentation';
 import { FocusScope, Popover, PopoverContent, PopoverTrigger } from '@/components/primitives';
 import type { InitialSessionSubmission } from './agent-workspace-loader';
 import { PAW_EXTENSION_INSTALLATION_CHANGED_EVENT, installationChangeMatchesTransport } from '@/paw-os/extensions/installation';
@@ -164,7 +166,13 @@ export type WorkspaceComposerHeaderView = {
   session: SessionSummary; draft: string; disabled: boolean; sourceMessageId(): string | undefined;
 };
 
-export function PawSessionWorkspace({
+export function PawSessionWorkspace(props: Parameters<typeof PawSessionWorkspaceBody>[0]) {
+  const presentation = useChatPresentation();
+  const ownerKey = props.record?.ownerAppId || 'builtin:agent';
+  return presentation ? <PawSessionWorkspaceBody {...props} /> : <ChatPresentationProvider ownerKey={ownerKey} defaultVersion={ownerKey.startsWith('extension:') ? 'v1' : 'v2'}><PawSessionWorkspaceBody {...props} /></ChatPresentationProvider>;
+}
+
+function PawSessionWorkspaceBody({
   active = true,
   persona,
   record,
@@ -217,6 +225,7 @@ export function PawSessionWorkspace({
   fullHistoryOnOpen?: boolean;
 }) {
   const transport = useControlTransport();
+  const presentation = useChatPresentation();
   const catalogQueryClient = useCatalogQueryClient();
   const address = agentSessionAddress(transport, recordId);
   const workspaceScopeRef = useRef({ recordId, transport });
@@ -753,6 +762,7 @@ export function PawSessionWorkspace({
   }
 
   async function resumeCurrentTask(): Promise<void> {
+    if (evaluationSnapshot) return;
     const projection = agentProjection(address);
     const recovery = projection.durableRecovery;
     if (resumeRequestRef.current?.recordId === recordId && resumeRequestRef.current.transport === transport
@@ -830,7 +840,7 @@ export function PawSessionWorkspace({
   function acceptsComposerInput(): boolean {
     // This guard is synchronous too: a file import may have started before
     // React commits the disabled button, and false keeps Composer's draft.
-    return workspaceScopeRef.current === workspaceScope && !sending && !modelChanging
+    return !evaluationSnapshot && workspaceScopeRef.current === workspaceScope && !sending && !modelChanging
       && !sessionActionLockRef.current && !attachmentImports.pending.size
       && !recovery.checking && !recovery.issues.length
       && !(editState && (editState.resolving || !editState.entryId));
@@ -853,12 +863,13 @@ export function PawSessionWorkspace({
   }
 
   useEffect(() => {
-    if (!initialSubmission || initialSubmissionRef.current === initialSubmission.clientMessageId
+    if (evaluationSnapshot || !initialSubmission || initialSubmissionRef.current === initialSubmission.clientMessageId
       || !hasSnapshot || attachmentImportPending || recovery.checking || recovery.issues.length || !record || sending || modelChanging) return;
     void send('prompt', initialSubmission.message, initialSubmission.message, initialSubmission.clientMessageId);
-  }, [initialSubmission, hasSnapshot, attachmentImportPending, recovery.checking, recovery.issues.length, record, sending, modelChanging]);
+  }, [evaluationSnapshot, initialSubmission, hasSnapshot, attachmentImportPending, recovery.checking, recovery.issues.length, record, sending, modelChanging]);
 
   async function send(delivery: AgentMessageDelivery, rawDraft: string, displayDraft = rawDraft, initialClientMessageId?: string): Promise<void> {
+    if (evaluationSnapshot) return;
     if (attachmentImports.pending.size) return;
     if (recovery.checking || recovery.issues.length) { setError('请先核实或移除恢复失败的附件。'); return; }
     if (!workspaceRecord || sending || modelChanging) return;
@@ -1122,6 +1133,7 @@ export function PawSessionWorkspace({
   }
 
   async function stop(): Promise<void> {
+    if (evaluationSnapshot) return;
     const projection = agentProjection(address);
     const target = projection.durableRecovery?.compactionTarget;
     if (target) { await stopCompaction(target); return; }
@@ -1169,7 +1181,7 @@ export function PawSessionWorkspace({
   }
 
   function retryTurn(turnId: string, onAdmissionRolledBack?: () => void): boolean {
-    if (!workspaceRecord || sending || busy || sessionActionLockRef.current) return false;
+    if (evaluationSnapshot || !workspaceRecord || sending || busy || sessionActionLockRef.current) return false;
     sessionActionLockRef.current = true;
     void (async () => {
       try {
@@ -1325,6 +1337,7 @@ export function PawSessionWorkspace({
   }
 
   function continueTurn(turnId: string): boolean {
+    if (evaluationSnapshot) return false;
     const current = agentProjection(address);
     if (current.turnOrder.at(-1) !== turnId || current.turnsById[turnId]?.status !== 'failed') return false;
     void send('prompt', '继续。请基于当前 Session 已保留的工具结果和文件生成最终回复，不要重试或重复已经完成的操作；如果仍缺少信息，明确说明下一步。');
@@ -1332,6 +1345,7 @@ export function PawSessionWorkspace({
   }
 
   function openForkDialog(initialEntryId = ''): void {
+    if (evaluationSnapshot) return;
     if (durableSession) { setError('Pi Durable 暂不支持历史分支。'); return; }
     setForkDialogNodes(conversationNodes(agentProjection(address)));
     setForkDialogInitialEntryId(initialEntryId);
@@ -1339,6 +1353,7 @@ export function PawSessionWorkspace({
   }
 
   async function beginEditMessage(messageId = ''): Promise<void> {
+    if (evaluationSnapshot) return;
     if (!record || busy || sending || !classicHistoryAvailable || !conversationRewriteAvailable || record.roomParticipant) {
       setError(durableSession ? 'Pi Durable 暂不支持历史改写。' : record?.roomParticipant
         ? '这段对话属于 Room 伙伴，历史修改由 Room 管理。'
@@ -1404,6 +1419,7 @@ export function PawSessionWorkspace({
   }
 
   async function decideApproval(approvalId: string, decision: 'approved' | 'rejected', payloadSha256: string): Promise<void> {
+    if (evaluationSnapshot) return;
     try {
       await transport.request({
         pathId: 'agent.approval.decide',
@@ -1483,6 +1499,7 @@ export function PawSessionWorkspace({
   }
 
   async function changePermission(selection: AgentPermissionSelection): Promise<void> {
+    if (evaluationSnapshot) return;
     if (!record || busy) { setError('请先停止当前回合，再调整运行权限。'); return; }
     const scope = workspaceScope;
     const isCurrent = () => workspaceScopeRef.current === scope;
@@ -1573,6 +1590,7 @@ export function PawSessionWorkspace({
   }
 
   async function changeModel(provider: string, modelId: string, level: ThinkingLevel): Promise<void> {
+    if (evaluationSnapshot) return;
     const request = { scope: workspaceScope };
     const isCurrent = () => workspaceScopeRef.current === request.scope;
     setModelChangeRequest(request);
@@ -1768,6 +1786,7 @@ export function PawSessionWorkspace({
               <button aria-label="Agent 轨迹" aria-pressed={workspaceView === 'trace'} onClick={() => { setWorkspaceView('trace'); setPanel('none'); setControlsExpanded(false); }} type="button"><GitBranch size={15} /><span>Agent 轨迹</span></button>
               <button aria-label="星空" aria-pressed={workspaceView === 'starfield'} onClick={() => { setWorkspaceView('starfield'); setPanel('none'); setControlsExpanded(false); }} type="button"><Orbit size={15} /><span>星空</span></button>
             </nav>
+            <ChatPresentationSettings />
           </PopoverContent>
         </Popover> : <span className="paw-session-workspace__snapshot-label"><ShieldCheck size={14} />评测快照</span>}
         <div className="paw-session-workspace__runtime">
@@ -1840,6 +1859,7 @@ export function PawSessionWorkspace({
       <section
         className="paw-session-workspace paw-chatfx"
         data-design={!embedded && !evaluationSnapshot ? 'workbench' : undefined}
+        data-chat-presentation-version={presentation?.version}
         data-chrome-in-window={windowChromeTarget ? true : undefined}
         data-appearance={appearance}
         data-panel={panel}
@@ -1888,14 +1908,14 @@ export function PawSessionWorkspace({
                 jumpRequest={jumpRequest}
                 scrollToLatestRequest={scrollToLatestRequest}
                 onFollowStateChange={setTimelineFollow}
-                onForkFromMessage={openForkDialog}
-                onEditMessage={(messageId) => void beginEditMessage(messageId)}
-                onRetryTurn={retryTurn}
-                onContinueTurn={continueTurn}
-                onSwitchModel={() => setModelPickerRequest((value) => value + 1)}
-                onApprovalDecision={(id, decision, hash) => void decideApproval(id, decision, hash)}
-                onOpenApproval={setRequestedApproval}
-                onRequestPermission={() => setPermissionPickerRequest((value) => value + 1)}
+                onForkFromMessage={evaluationSnapshot ? undefined : openForkDialog}
+                onEditMessage={evaluationSnapshot ? undefined : (messageId) => void beginEditMessage(messageId)}
+                onRetryTurn={evaluationSnapshot ? undefined : retryTurn}
+                onContinueTurn={evaluationSnapshot ? undefined : continueTurn}
+                onSwitchModel={evaluationSnapshot ? undefined : () => setModelPickerRequest((value) => value + 1)}
+                onApprovalDecision={evaluationSnapshot ? undefined : (id, decision, hash) => void decideApproval(id, decision, hash)}
+                onOpenApproval={evaluationSnapshot ? undefined : setRequestedApproval}
+                onRequestPermission={evaluationSnapshot ? undefined : () => setPermissionPickerRequest((value) => value + 1)}
               />
             </section>
 
@@ -1995,7 +2015,7 @@ export function PawSessionWorkspace({
             {workspaceRecord && evaluationSnapshot ? (
               <div className="paw-session-workspace__snapshot-notice">
                 <ShieldCheck size={16} />
-                <span><strong>真实评测记录，只读</strong><small>对话、Tool 回执与结果来自冻结 JSONL；不能继续提问、改写、分支或删除。</small></span>
+                <span><strong>评测记录，只读</strong><small>仅展示已保存的对话、Tool 回执与结果；此处不会继续执行。</small></span>
               </div>
             ) : null}
             {workspaceRecord && !evaluationSnapshot ? (

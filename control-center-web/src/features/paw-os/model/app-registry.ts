@@ -4,6 +4,7 @@ export type PawOsAppId =
   | 'project-workbench'
   | 'schedules'
   | 'agent'
+  | 'agent-controller'
   | 'agent-capsule'
   | 'memory'
   | 'knowledge'
@@ -60,24 +61,20 @@ export const pawOsAppRegistry: readonly PawOsAppDefinition[] = [
     tagline: '概览、任务与工作文档',
   },
   {
+    id: 'agent-controller', label: '星伴', shortLabel: '星伴',
+    routeIds: ['agent-controller', 'agent-capsule'], defaultRouteId: 'agent-controller',
+    presentation: 'conversation', accent: 'slate',
+    tagline: '持续对话、记忆与 Session / Room 协作',
+  },
+  {
     id: 'agent',
-    label: 'Agent',
-    shortLabel: 'Agent',
+    label: 'Session 与 Room',
+    shortLabel: 'Session',
     routeIds: ['agent', 'rooms'],
     defaultRouteId: 'agent',
     presentation: 'conversation',
     accent: 'violet',
     tagline: '对话、上下文与多 Agent 协作',
-  },
-  {
-    id: 'agent-capsule',
-    label: 'Agent Capsule',
-    shortLabel: '胶囊',
-    routeIds: ['agent-capsule'],
-    defaultRouteId: 'agent-capsule',
-    presentation: 'conversation',
-    accent: 'violet',
-    tagline: '任何界面框选、识别与对话',
   },
   {
     id: 'memory',
@@ -193,6 +190,7 @@ export const pawOsAppRegistry: readonly PawOsAppDefinition[] = [
 ] as const;
 
 export const primaryDockAppIds: readonly PawOsAppId[] = [
+  'agent-controller',
   'agent',
   'eval-lab',
   'project-workbench',
@@ -225,7 +223,8 @@ for (const app of pawOsAppRegistry) {
 }
 
 export function pawOsApp(appId: PawOsAppId): PawOsAppDefinition {
-  const app = appById.get(appId);
+  // Persisted Capsule windows retain their identity but open the same assistant.
+  const app = appById.get(appId === 'agent-capsule' ? 'agent-controller' : appId);
   if (!app) throw new Error(`Unknown PAWOS App: ${appId}`);
   return app;
 }

@@ -10,6 +10,7 @@ import type {
 } from './generated/agent-workflow-state.v1';
 import { parseAgentEvent, tryParseAgentMessage, validateContract } from './validators';
 import { approvalDecisionView, approvalNeedsHumanDecision } from './approval-decision';
+import { hasAbortedDurableToolOutcome } from './durable-tool-outcome';
 
 export type AgentTurnStatus =
   | 'queued'
@@ -33,7 +34,7 @@ export interface AgentActivityProjection {
   id: string;
   turnId: string;
   kind: string;
-  status: 'running' | 'waiting' | 'completed' | 'failed';
+  status: 'running' | 'waiting' | 'completed' | 'failed' | 'aborted';
   summary: string;
   payload: Record<string, unknown>;
   createdAtMs: number;
@@ -265,6 +266,17 @@ export function reduceAgentEvent(
   const telemetry = parseTelemetry(payload.telemetry);
   if (telemetry) next.telemetry = telemetry;
 
+  // A native terminal outcome belongs to this exact call and turn. Advance
+  // the stream cursor, but never replay a late progress/terminal frame as new
+  // work. A successor turn using a different binding remains admissible.
+  if (isToolActivityEvent(event.eventType)) {
+    const previous = state.activitiesById[text(payload.toolCallId)];
+    if (previous?.status === 'aborted' && previous.turnId === event.turnId
+      && hasAbortedDurableToolOutcome(previous.payload, { sessionId: event.sessionId, turnId: event.turnId })) {
+      return { state: next, disposition: 'applied' };
+    }
+  }
+
   switch (event.eventType) {
     case 'text_delta':
       applyTextDelta(next, event, payload);
@@ -384,7 +396,9 @@ export function reduceAgentEvent(
         next,
         event,
         projectedPayload,
-        expectedNoop || (correlatedPayload.isError !== true && !approvalDenied) ? 'completed' : 'failed',
+        hasAbortedDurableToolOutcome(correlatedPayload, { sessionId: event.sessionId, turnId: event.turnId })
+          ? 'aborted'
+          : expectedNoop || (correlatedPayload.isError !== true && !approvalDenied) ? 'completed' : 'failed',
       );
       break;
     }
@@ -1648,6 +1662,11 @@ function applyTextDelta(
   const delta = text(payload.delta);
   if (!delta) return;
   const baseMessageId = text(payload.messageId) || `${event.turnId}:assistant`;
+  // The exact immutable native completion owns this content. A historical
+  // snapshot may precede an older SSE delta; do not append that tail again.
+  if (isDurableAssistantIdentity(baseMessageId)
+    && text(payload.sourceLoopId) === baseMessageId
+    && state.messagesById[baseMessageId]?.status === 'completed') return;
   const replaceContent = payload.replaceContent === true;
   const messageId = streamingAssistantSegmentId(
     state,
@@ -1992,7 +2011,10 @@ function completedAssistantSegment(
 ): AgentMessageProjection {
   const segments = assistantSegmentsForBase(state, message.turnId, message.id);
   const latest = segments[segments.length - 1];
-  const targetId = latest?.status === 'streaming'
+  const nativeIdentity = isDurableAssistantIdentity(message.id)
+    && text(record(event.payload).sourceLoopId) === message.id;
+  const continuing = latest && (nativeIdentity || latest.status === 'streaming');
+  const targetId = nativeIdentity ? message.id : latest?.status === 'streaming'
     ? latest.id
     : latest
       ? `${message.id}:segment:${event.sequence}`
@@ -2000,11 +2022,15 @@ function completedAssistantSegment(
   return {
     ...message,
     id: targetId,
-    createdAtMs: latest?.status === 'streaming' ? latest.createdAtMs : message.createdAtMs,
-    timelineSequence: latest?.status === 'streaming'
+    createdAtMs: continuing ? latest.createdAtMs : message.createdAtMs,
+    timelineSequence: continuing
       ? latest.timelineSequence ?? message.timelineSequence ?? sourceTimelineSequence(event)
       : message.timelineSequence ?? sourceTimelineSequence(event),
   };
+}
+
+function isDurableAssistantIdentity(value: string): boolean {
+  return /^durable:task:[1-9][0-9]*:assistant$/u.test(value);
 }
 
 function assistantSegmentsForBase(
@@ -2588,7 +2614,7 @@ export function agentToolProgressHistory(value: unknown): AgentToolProgressEntry
     const status = text(entry.status);
     if (
       !['tool_started', 'tool_progress', 'tool_finished'].includes(kind)
-      || !['running', 'waiting', 'completed', 'failed'].includes(status)
+      || !['running', 'waiting', 'completed', 'failed', 'aborted'].includes(status)
     ) return [];
     return [{
       eventId: text(entry.eventId),
@@ -2606,6 +2632,7 @@ function toolProgressSummary(
   eventType: AgentToolProgressEntry['kind'],
   status: AgentActivityProjection['status'],
 ): string {
+  if (status === 'aborted') return '工具已停止';
   const carrier = record(payload.result ?? payload.partialResult);
   const details = record(carrier.details);
   const domain = record(details.result ?? carrier.result);

@@ -1,4 +1,5 @@
 import type { ControlTransport } from '@/platform/transport';
+import { sessionItems } from '@/features/agent/types';
 
 type SessionCatalogPage = Record<string, unknown> & { items: unknown[] };
 
@@ -9,6 +10,7 @@ export async function readSessionCatalog(
   isCurrent = () => true,
   signal?: AbortSignal,
   onPage?: (page: SessionCatalogPage) => void,
+  stopWhen?: (page: SessionCatalogPage) => boolean,
 ) {
   const items: unknown[] = [];
   const seen = new Set<string>();
@@ -20,7 +22,7 @@ export async function readSessionCatalog(
     if (!isCurrent()) break;
     if (!Array.isArray(page.items)) throw new Error('工作记录格式异常，请重试。');
     items.push(...page.items);
-    if (page.hasMore !== true) {
+    if (page.hasMore !== true || stopWhen?.({ ...page, items })) {
       onPage?.({ ...page, items: [...items] });
       return { ...page, items };
     }
@@ -37,4 +39,21 @@ export async function readSessionCatalog(
     onPage?.({ ...page, items: [...items] });
   }
   return { items };
+}
+
+/** Read canonical metadata for one original identity, including older/archived rows. */
+export async function readSelectedSession(
+  transport: ControlTransport,
+  sessionId: string,
+  isCurrent = () => true,
+  signal?: AbortSignal,
+) {
+  const findSelected = (page: unknown) => sessionItems(page, { includeAppOwned: true }).find((item) => item.id === sessionId);
+  const page = await readSessionCatalog(transport, true, isCurrent, signal, undefined, (value) => Boolean(findSelected(value)));
+  if (!isCurrent()) return;
+  const selected = findSelected(page);
+  if (selected?.evaluationSnapshot !== undefined && typeof selected.evaluationSnapshot !== 'boolean') {
+    throw new Error('Session 工作记录格式异常，请重新读取。');
+  }
+  return selected;
 }

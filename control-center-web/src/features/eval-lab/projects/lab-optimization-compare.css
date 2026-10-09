@@ -1,4 +1,5 @@
 .lab-compare { padding: 24px 28px 32px; min-width: 0; color: var(--lab-ink); font-family: var(--font-sans); font-size: 14px; line-height: 1.6; }
+.lab-compare :is(button, summary) { min-height: 32px; }
 .lab-compare-heading, .lab-compare-detail > header, .lab-compare-detail-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .lab-compare h2 { margin: 0; font-size: 24px; font-weight: 650; letter-spacing: -.02em; }
 .lab-compare-heading p, .lab-parameters > header p { margin: 8px 0 0; color: var(--lab-muted); font-size: 13px; line-height: 1.7; }
@@ -233,3 +234,7 @@
 .lab-test-phases progress::-moz-progress-bar { background: var(--lab-accent); }
 .lab-test-lane__resources, .lab-test-lane__effects { display: flex; flex-wrap: wrap; gap: 12px 28px; margin-top: 10px; font-size: 13px; font-variant-numeric: tabular-nums; }
 .lab-test-lane__resources > span, .lab-test-lane__effects > div { display: grid; gap: 3px; }
+.lab-compare-preference { border-bottom: 1px solid var(--lab-line); }
+.lab-compare-preference > summary { padding: 10px 0; min-height: 40px; cursor: pointer; font-size: 13px; color: var(--lab-muted); }
+.lab-compare-preference[open] > summary { color: var(--lab-ink); }
+.lab-compare-preference > .lab-objectives { margin: 0; border-bottom: 0; }

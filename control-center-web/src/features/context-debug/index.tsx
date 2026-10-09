@@ -586,9 +586,10 @@ function ContextAssemblyOverview({
     { added: 0, removed: 0 },
   );
   const providerMessages = latestCall ? callProviderMessages(latestCall) : [];
+  const messagesOmitted = latestCall ? callMessagesOmitted(latestCall) : false;
   const telemetryContext = record(telemetry.context);
   const tokenCount = projectedNumber(telemetryContext, ['tokens']);
-  const layers = contextAssemblyLayers(context, providerMessages, description.phase);
+  const layers = contextAssemblyLayers(context, providerMessages, description.phase, messagesOmitted);
   return (
     <header className="context-debug-assembly" data-phase={description.phase}>
       <div className="context-debug-assembly__title">
@@ -602,7 +603,7 @@ function ContextAssemblyOverview({
       </div>
       <dl className="context-debug-assembly__metrics">
         <div><dt>模型</dt><dd>{modelLabel(context.model)}</dd></div>
-        <div><dt>最终消息</dt><dd>{providerMessages.length} 条</dd></div>
+        <div><dt>最终消息</dt><dd>{messagesOmitted ? '正文已省略' : `${providerMessages.length} 条`}</dd></div>
         <div><dt>本轮调用</dt><dd>{context.modelCalls.length} 次</dd></div>
         <div><dt>上下文用量</dt><dd>{tokenCount === undefined ? '未报告' : `${tokenCount.toLocaleString('zh-CN')} 词元`}</dd></div>
         <div><dt>累计变化</dt><dd>+{messageChanges.added} / -{messageChanges.removed}</dd></div>
@@ -624,6 +625,7 @@ function contextAssemblyLayers(
   context: DebugContextRecord,
   providerMessages: unknown[],
   phase: ReturnType<typeof describeDebugTurn>['phase'],
+  messagesOmitted = false,
 ): Array<{ label: string; detail: string; meta: string; channel: string }> {
   const options = record(context.systemPromptOptions);
   const skills = Array.isArray(options.skills) ? options.skills : [];
@@ -654,14 +656,14 @@ function contextAssemblyLayers(
     {
       channel: 'runtime',
       label: phase === 'compaction_recovery' ? '压缩恢复与运行时' : '项目与运行时上下文',
-      detail: prioritizedInjectedLabels.slice(0, 3).join(' · ') || '本轮没有额外补充',
-      meta: `${injectedMessages.length} 条补充内容`,
+      detail: messagesOmitted ? '消息正文已省略，无法核对补充内容' : prioritizedInjectedLabels.slice(0, 3).join(' · ') || '本轮没有额外补充',
+      meta: messagesOmitted ? '已省略' : `${injectedMessages.length} 条补充内容`,
     },
     {
       channel: 'history',
       label: '模型服务消息',
-      detail: dialogueMessages.length ? '历史与本轮消息按最终发送顺序保留' : '本轮没有对话消息',
-      meta: `${dialogueMessages.length} 条消息`,
+      detail: messagesOmitted ? '消息正文已省略，不能据此认定没有对话消息' : dialogueMessages.length ? '历史与本轮消息按最终发送顺序保留' : '本轮没有对话消息',
+      meta: messagesOmitted ? '已省略' : `${dialogueMessages.length} 条消息`,
     },
     {
       channel: 'input',
@@ -683,6 +685,7 @@ function ContextCallDocument({ call, context }: { call: DebugModelCall; context:
   const tools = context.toolExecutions.filter((tool) => tool.modelCallIndex === call.index);
   const batches = context.toolBatches.filter((batch) => batch.modelCallIndex === call.index);
   const providerMessages = callProviderMessages(call);
+  const messagesOmitted = callMessagesOmitted(call);
   const titleId = `context-debug-call-${call.index}-title`;
   return (
     <section
@@ -706,14 +709,18 @@ function ContextCallDocument({ call, context }: { call: DebugModelCall; context:
         </p>
       ) : null}
 
-      <ReadableMessageList
+      {call.contextDelta.omitted ? (
+        <p className="context-debug-session-call__warning">新增消息正文已省略；记录新增 {call.contextDelta.addedMessageCount} 条。</p>
+      ) : <ReadableMessageList
         callIndex={call.index}
         emptyLabel="本次调用没有新增消息"
         messages={call.contextDelta.addedMessages}
         sessionId={context.sessionId}
-      />
+      />}
 
-      {call.assistantMessage !== undefined ? (
+      {bodyOmitted(call.assistantMessage) ? (
+        <p className="context-debug-session-call__warning" id={assistantEntryId(call.index, 0)} tabIndex={-1}>模型回复正文已省略。</p>
+      ) : call.assistantMessage !== undefined ? (
         <ReadableMessageList
           callIndex={call.index}
           emptyLabel="没有捕获模型回复"
@@ -728,7 +735,7 @@ function ContextCallDocument({ call, context }: { call: DebugModelCall; context:
       <div className="context-debug-session-call__request">
         <ContextDisclosure
           label="请求详情"
-          meta={`${providerMessages.length} 条消息 · ${callProviderTools(call, context).length} 个工具 · ${call.providerExchanges.length} 次模型服务尝试`}
+          meta={`${messagesOmitted ? '消息正文已省略' : `${providerMessages.length} 条消息`} · ${callProviderTools(call, context).length} 个工具 · ${call.providerExchanges.length} 次模型服务尝试`}
           tone="provider"
         >
           <dl className="context-debug-session-delta" aria-label={`模型调用 ${call.index} 上下文变化`}>
@@ -740,13 +747,15 @@ function ContextCallDocument({ call, context }: { call: DebugModelCall; context:
           <ContextDisclosure label="系统指令" meta={`${callProviderSystemPrompt(call, context).length} 字符`} tone="system">
             <pre className="context-debug-reader__code context-debug-reader__code--text">{callProviderSystemPrompt(call, context) || '没有捕获系统指令'}</pre>
           </ContextDisclosure>
-          <ContextDisclosure label="完整消息" meta={`${providerMessages.length} 条`} tone="messages">
-            <ReadableMessageList callIndex={call.index} emptyLabel="当前调用上下文为空" messages={providerMessages} nested sessionId={context.sessionId} />
+          <ContextDisclosure label={messagesOmitted ? '消息正文（已省略）' : '完整消息'} meta={messagesOmitted ? '正文不可用' : `${providerMessages.length} 条`} tone="messages">
+            {messagesOmitted ? <p className="context-debug-session-call__warning">本次调用的上下文正文已省略，不能据此认定为空。</p>
+              : <ReadableMessageList callIndex={call.index} emptyLabel="当前调用上下文为空" messages={providerMessages} nested sessionId={context.sessionId} />}
           </ContextDisclosure>
           <ContextDisclosure label="工具定义" meta={`${callProviderTools(call, context).length} 个`} tone="tools">
             <pre className="context-debug-reader__code">{formatJson(callProviderTools(call, context))}</pre>
           </ContextDisclosure>
           <ContextDisclosure label="模型服务交互" meta={`${call.providerExchanges.length} 次`} tone="provider">
+            {call.providerExchanges.some((exchange) => bodyOmitted(exchange.payload)) ? <p>模型服务请求正文已省略；尝试状态与回执仍保留。</p> : null}
             <pre className="context-debug-reader__code">{formatJson(call.providerExchanges)}</pre>
           </ContextDisclosure>
           <ContextDisclosure label="原始调用记录" meta="逐字段核对" tone="raw">
@@ -868,7 +877,7 @@ function buildContextTree(context: DebugContextRecord): ContextTreeEntry[] {
         id: assistantEntryId(call.index, 0),
         kind: 'assistant',
         label: '助手',
-        preview: compactTreePreview(readableMessageContent(call.assistantMessage)),
+        preview: bodyOmitted(call.assistantMessage) ? '模型回复正文已省略' : compactTreePreview(readableMessageContent(call.assistantMessage)),
       });
     }
     context.toolExecutions
@@ -1122,9 +1131,9 @@ function ToolExecutionDetails({ entryId, tool }: { entryId?: string; tool: Debug
       </>}
       tabIndex={entryId ? -1 : undefined}
     >
-      <section><h4>参数</h4><pre>{formatJson(tool.args)}</pre></section>
-      <section><h4>结果</h4><pre>{formatJson(tool.result ?? null)}</pre></section>
-      {tool.updates.length ? <section><h4>过程更新</h4><pre>{formatJson(tool.updates)}</pre></section> : null}
+      <section><h4>参数</h4>{bodyOmitted(tool.args) ? <p>工具参数正文已省略。</p> : null}<pre>{formatJson(tool.args)}</pre></section>
+      <section><h4>结果</h4>{bodyOmitted(tool.result) ? <p>工具结果正文已省略。</p> : null}<pre>{formatJson(tool.result ?? null)}</pre></section>
+      {tool.updates.length ? <section><h4>过程更新</h4>{tool.updates.some((update) => bodyOmitted(update.partialResult)) ? <p>工具过程正文已省略；更新记录仍保留。</p> : null}<pre>{formatJson(tool.updates)}</pre></section> : null}
     </Disclosure>
   );
 }
@@ -1169,6 +1178,17 @@ function callProviderMessages(call: DebugModelCall): unknown[] {
   return Array.isArray(call.providerContext.messages) ? call.providerContext.messages : [];
 }
 
+function bodyOmitted(value: unknown): boolean {
+  return record(value).omitted === true;
+}
+
+function callMessagesOmitted(call: DebugModelCall): boolean {
+  if (bodyOmitted(call.providerContext)) return true;
+  return Object.hasOwn(call.providerContext, 'messages')
+    ? bodyOmitted(call.providerContext.messages)
+    : Boolean(call.contextMessagesOmission);
+}
+
 function callProviderSystemPrompt(call: DebugModelCall, context: DebugContextRecord): string {
   return typeof call.providerContext.systemPrompt === 'string'
     ? call.providerContext.systemPrompt
@@ -1181,7 +1201,7 @@ function callProviderTools(call: DebugModelCall, context: DebugContextRecord): u
 }
 
 function hasExactProviderContext(call: DebugModelCall): boolean {
-  return Object.keys(call.providerContext).length > 0;
+  return !bodyOmitted(call.providerContext) && Object.keys(call.providerContext).length > 0;
 }
 
 function durationLabel(startedAtMs: number, endedAtMs?: number): string {

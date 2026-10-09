@@ -356,6 +356,45 @@ class ManagedPiRuntimeV2BuildTests(unittest.TestCase):
                     pi_root=pi_root,
                 )
 
+    def test_image_overlay_preserves_both_memory_review_guard_versions(self) -> None:
+        from scripts.build_managed_pi_runtime_v2 import _RUNTIME_HOST_SOURCE_OVERLAYS
+
+        original = '\tif (result.reviewRequired === true) {'
+        typed = ('\tif (result.reviewRequired === true && '
+                 '!isGovernedMemoryPreview(tool.name, prepared.arguments, options.sessionId, result)) {')
+        for guard in (original, typed):
+            with self.subTest(guard=guard), tempfile.TemporaryDirectory() as temporary:
+                pi_root = Path(temporary) / "pi"
+                package_root = pi_root / "integrations/rag-ime-runtime-host"
+                (pi_root / "node_modules").mkdir(parents=True)
+                for relative, replacements in _RUNTIME_HOST_SOURCE_OVERLAYS.items():
+                    path = package_root / relative
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    # Only this captured guard differs across the two reviewed
+                    # Pi sources. Other product overlays retain their anchors.
+                    inputs = [before for before, _ in replacements]
+                    if relative == "src/tool-bridge.ts":
+                        inputs = [guard if "result.reviewRequired === true" in value else value
+                                  for value in inputs]
+                    path.write_text("\n\n".join(inputs))
+                overlay = _prepare_runtime_host_overlay(
+                    package_root, Path(temporary) / "overlay", pi_root=pi_root,
+                )
+                output = (overlay / "src/tool-bridge.ts").read_text()
+                self.assertEqual(output.count(guard), 1)
+                self.assertEqual(output.count("const modelImages = takeModelImages(result, tool.name);"), 1)
+                self.assertIn("...modelImages,", output)
+
+                # Missing or ambiguous review seams still fail closed instead
+                # of generating a payload with a guessed execution guard.
+                source = package_root / "src/tool-bridge.ts"
+                for replacement, name in (("", "missing"), (guard + "\n" + guard, "duplicate")):
+                    source.write_text("\n\n".join(inputs).replace(guard, replacement))
+                    with self.assertRaisesRegex(ManagedPiRuntimeError, "overlay anchor mismatch"):
+                        _prepare_runtime_host_overlay(
+                            package_root, Path(temporary) / name, pi_root=pi_root,
+                        )
+
     def test_session_capability_overlay_queries_live_owners_with_exclusions(self) -> None:
         from scripts.build_managed_pi_runtime_v2 import _RUNTIME_HOST_SOURCE_OVERLAYS
 

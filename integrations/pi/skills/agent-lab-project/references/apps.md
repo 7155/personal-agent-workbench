@@ -23,6 +23,17 @@ Do not ask users to inspect JSON
 unless structured data is the result they need. Handle Markdown or structured
 answers without inserting untrusted model output as executable HTML.
 
+The shared `pawAgentUI` retains its model/recovery controls and can optionally
+mount call details from actual bridge progress/result fields. Opt in to reading
+v2 with the host's readonly `pawApp.identity.appId`, or declare a stable
+`data-presentation-owner` for a standalone source; never infer an owner from its
+title or a temporary preview URL. The existing setting switches v1/v2 and restores
+the prior display without changing drafts, model or execution. Legacy frozen HTML
+stays classic. Source characters, Token usage, actual Tool parameters/results and
+final call state keep their distinct meanings; absent usage is shown as unrecorded.
+Reconcile an unconfirmed submission with its original request. Explicit new input
+is a new intent, even when its text matches, and must not reuse that original call.
+
 The starter also renders optional `paw.app-result.v1` JSON answers as readable
 results: `summary`, `steps` (`title`, `detail`, optional `status`), and `metrics`
 (`label`, numeric or null `before`/`after`, optional `unit` and `source`). Adapt

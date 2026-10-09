@@ -529,8 +529,20 @@ html[data-paw-native-host='macos'] .paw-menu-bar > .paw-menu-status { grid-colum
    the menu flipped open upward at the bottom edge) — the reference OS's
    120ms context-menu beat, kept on transform + opacity only. */
 .paw-context-menu {
-  position: fixed; z-index: 220; width: 220px;
+  position: fixed; z-index: 220;
+  width: min(220px, calc(100vw - 16px));
+  max-height: max(0px, calc(100dvh - 56px));
+  overflow: auto;
+  overscroll-behavior: contain;
   transform-origin: var(--paw-menu-origin, 0 0);
+}
+
+.paw-context-menu strong { min-width: 0; overflow-wrap: anywhere; }
+.paw-context-menu[data-motion-active='false'] {
+  opacity: 1;
+  transform: none;
+  transition-property: none;
+  animation: none;
 }
 
 /* The layer fills the menu-below desktop plane so maximized and collaboration
@@ -773,6 +785,15 @@ html[data-paw-native-host='macos'] .paw-menu-bar > .paw-menu-status { grid-colum
      still promotes the whole shell via its scoped will-change. */
   contain: layout paint;
 }
+/* Desktop edges reach 12px inside the shell; corners reach 14px. Keep App
+   content inside both pointer planes; scroll-padding cannot inset a scrollport.
+   Focus, planet, overview and maximized geometry belong to their own modes. */
+@media (min-width: 821px) {
+  .paw-window-shell[data-frame-mode='window']:not([data-overview]):not([data-focus-layout]):not([data-focus-locked]):not([data-placement='maximized']):has(> .paw-window-resize) > .paw-window > .paw-window-body {
+    padding-inline: 14px;
+    padding-bottom: 14px;
+  }
+}
 .paw-window-body > *, .paw-window-route-surface, .paw-window-route-surface > * { min-width: 0; min-height: 0; }
 .paw-window-route-surface {
   width: 100%; height: 100%; overflow: hidden;
@@ -851,7 +872,7 @@ html[data-paw-native-host='macos'] .paw-menu-bar > .paw-menu-status { grid-colum
    box. */
 .paw-dock button {
   position: relative; width: 44px; height: 44px; display: grid; place-items: center;
-  border-radius: 12px; color: var(--paw-ink); cursor: pointer;
+  border-radius: 7px; color: var(--paw-ink); cursor: pointer;
   transform: translate3d(calc(var(--paw-dock-shift, 0) * 1px), calc(var(--paw-dock-mag, 0) * -12px), 0)
     scale(calc((1 + var(--paw-dock-mag, 0) * .32) * var(--paw-dock-press, 1)));
   transform-origin: 50% 92%;

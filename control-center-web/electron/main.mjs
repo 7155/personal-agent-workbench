@@ -465,6 +465,7 @@ async function startPrimaryInstance() {
     app, BrowserWindow, ipcMain, screen, origin: hostServer.origin,
     preload: path.join(path.dirname(paths.preloadEntry), 'desktop-pet-preload.cjs'),
     openAssistant: (sessionId = '') => openAssistantSession(sessionId),
+    openVoiceSettings: () => openWorkbenchRoute('/voice'),
     getSource: () => mainWindow?.webContents ?? null,
     onVisibilityChanged: (visible) => { petMenuItem.checked = visible; },
   });
@@ -483,7 +484,10 @@ async function startPrimaryInstance() {
 }
 
 function openAssistantSession(sessionId) {
-  const route = assistantSessionRoute(sessionId);
+  openWorkbenchRoute(assistantSessionRoute(sessionId));
+}
+
+function openWorkbenchRoute(route) {
   if (!mainWindow || mainWindow.isDestroyed()) mainWindow = createWindow(route);
   else {
     const contents = mainWindow.webContents;

@@ -38,11 +38,13 @@ test('popup owns its capture, opens the exact Session, and drops pixels on close
   assert.equal(await h.manager.startCapture('com.example.Editor'), true);
   const window = h.created[0]; const event = { sender: window.webContents };
   assert.equal(window.url, 'http://127.0.0.1:7777/agent-capsule?frontend=paw-os&pawHost=electron&surface=capture');
-  assert.equal(window.options.title, 'Agent Capsule · 选区对话');
+  assert.equal(window.options.title, '星伴 · 屏幕对话');
   assert.equal(window.options.alwaysOnTop, true);
   assert.equal(window.options.visibleOnAllWorkspaces, true);
   assert.equal(window.options.skipTaskbar, true);
-  assert.equal(h.handlers.get('paw-screen:context')(event), h.capture);
+  const context = h.handlers.get('paw-screen:context')(event);
+  assert.deepEqual({ ...context, creationRequestId: undefined }, { ...h.capture, creationRequestId: undefined });
+  assert.match(context.creationRequestId, /^screen-capture:[a-f0-9-]+$/);
   assert.throws(() => h.handlers.get('paw-screen:context')({ sender: { id: 999 } }), /rejected/);
   h.handlers.get('paw-screen:open-session')(event, 'session-screen');
   assert.deepEqual(h.opened, ['session-screen']);
@@ -95,4 +97,22 @@ test('concurrent capture clicks share one picker and application quit cancels it
   release(h.capture);
   assert.equal(await first, false);
   assert.equal(h.created.length, 0);
+});
+
+test('workbench capture binds a stable source and rejects other frames before invoking the picker', async () => {
+  const mainFrame = {};
+  const main = { isDestroyed: () => false, isVisible: () => false, webContents: { mainFrame, getURL: () => 'http://127.0.0.1:7777/agent-controller' } };
+  const h = harness({ getMainWindow: () => main });
+  const invoke = h.handlers.get('paw-screen:capture');
+  assert.throws(() => invoke({ sender: main.webContents, senderFrame: {} }, { sourceSessionId: 'agent:source' }), /frame/);
+  assert.throws(() => invoke({ sender: main.webContents, senderFrame: mainFrame }, { sourceSessionId: 'bad\nsource' }), /identity/);
+  assert.throws(() => invoke({ sender: main.webContents, senderFrame: mainFrame }, { sourceSessionId: 'agent:source', permissions: 'full_trust' }), /options/);
+  assert.equal(h.created.length, 0);
+  assert.equal(await invoke({ sender: main.webContents, senderFrame: mainFrame }, { sourceSessionId: 'agent:source' }), true);
+  const popup = { sender: h.created[0].webContents };
+  const first = h.handlers.get('paw-screen:context')(popup);
+  const second = h.handlers.get('paw-screen:context')(popup);
+  assert.equal(first.sourceSessionId, 'agent:source');
+  assert.equal(first.creationRequestId, second.creationRequestId);
+  assert.equal(first.dataUrl, h.capture.dataUrl);
 });

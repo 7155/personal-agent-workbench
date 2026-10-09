@@ -245,7 +245,7 @@ class AgentWakeScheduleStoreTests(unittest.TestCase):
             2,
         )
 
-    def test_expired_accepted_run_fails_closed_after_gateway_restart(self) -> None:
+    def test_expired_accepted_run_keeps_original_turn_until_terminal_evidence(self) -> None:
         schedule = self._create()
         claim = self.store.claim_due(
             now_ms=self.now + 1_000,
@@ -262,9 +262,22 @@ class AgentWakeScheduleStoreTests(unittest.TestCase):
 
         self.assertEqual(claims, [])
         recovered = self.store.get(str(schedule["id"]))
-        self.assertEqual(recovered["status"], "failed")
-        self.assertEqual(recovered["latestRun"]["state"], "failed")
-        self.assertIn("restarted", recovered["lastError"])
+        self.assertEqual(recovered["status"], "running")
+        self.assertEqual(recovered["latestRun"]["state"], "accepted")
+        self.assertNotIn("restarted", recovered["lastError"])
+        self.assertTrue(self.store.finish_event(self._event("turn_completed", created_at_ms=self.now + 62_000)))
+        self.assertEqual(self.store.get(str(schedule["id"]))["status"], "completed")
+
+    def test_accept_is_idempotent_and_cannot_rebind_an_original_turn(self) -> None:
+        schedule = self._create()
+        claim = self.store.claim_due(now_ms=self.now + 1_000)[0]
+        run = str(claim["runId"])
+        self.store.accept(run, session_id="session:target", turn_id="turn:scheduled", now_ms=self.now + 1_100)
+        self.store.accept(run, session_id="session:target", turn_id="turn:scheduled", now_ms=self.now + 1_200)
+        with self.assertRaises(ValueError):
+            self.store.accept(run, session_id="session:other", turn_id="turn:other")
+        original = self.store.get(str(schedule["id"]))["latestRun"]
+        self.assertEqual(original["turnId"], "turn:scheduled")
 
     def test_root_cancel_fences_a_running_wake_and_ignores_late_terminal_event(self) -> None:
         schedule = self._create(recurrence_kind="daily", max_runs=3)

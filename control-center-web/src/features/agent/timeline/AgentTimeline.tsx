@@ -520,13 +520,13 @@ export function AgentTimeline({
   loading?: boolean;
   modelSelectionAvailable: boolean;
   turnRecoveryDisabled?: boolean;
-  onRetryTurn: (
+  onRetryTurn?: (
     turnId: string,
     onAdmissionRolledBack?: () => void,
   ) => boolean;
   onContinueTurn?: (turnId: string) => boolean;
-  onSwitchModel: () => void;
-  onApprovalDecision: (approvalId: string, decision: 'approved' | 'rejected', hash: string) => void;
+  onSwitchModel?: () => void;
+  onApprovalDecision?: (approvalId: string, decision: 'approved' | 'rejected', hash: string) => void;
   onOpenApproval?: (activity: AgentActivityProjection) => void;
   onRequestPermission?: () => void;
   forkAvailable?: boolean;
@@ -744,11 +744,11 @@ export function AgentTimeline({
       if (++attempts < 12) frame = window.requestAnimationFrame(restore);
       else restoredGeometryRef.current = anchorKey;
     };
-    for (const event of ['wheel', 'pointerdown', 'touchmove', 'keydown']) timelineScroller.addEventListener(event, stop, { passive: true });
+    for (const event of ['wheel', 'pointerdown', 'touchmove', 'keydown', 'focusin']) timelineScroller.addEventListener(event, stop, { passive: true });
     frame = window.requestAnimationFrame(restore);
     return () => {
       window.cancelAnimationFrame(frame);
-      for (const event of ['wheel', 'pointerdown', 'touchmove', 'keydown']) timelineScroller.removeEventListener(event, stop);
+      for (const event of ['wheel', 'pointerdown', 'touchmove', 'keydown', 'focusin']) timelineScroller.removeEventListener(event, stop);
     };
   }, [anchorKey, anchorRecoveryKey, dispatchFollow, timelineScroller, turnOrder]);
   const handleScrollerRef = useCallback((scroller: HTMLElement | Window | null) => {
@@ -791,6 +791,11 @@ export function AgentTimeline({
       keepUserScrollActive();
       leaveLiveFollow();
     };
+    const handleFocusIn = (event: FocusEvent) => {
+      // Reading a Tool/message control owns the viewport just like selection
+      // or PageUp. A later history hydration must not hide its native focus.
+      if (event.target instanceof HTMLElement && event.target !== timelineScroller) leaveLiveFollow();
+    };
     const handleScroll = () => {
       if (!userScrollActive) return;
       if (scrollerIsAtBottom(timelineScroller)) dispatchFollow({ type: 'reached-end' });
@@ -824,6 +829,7 @@ export function AgentTimeline({
     timelineScroller.addEventListener('wheel', handleWheel, { passive: true });
     timelineScroller.addEventListener('pointerdown', handlePointerDown);
     timelineScroller.addEventListener('touchmove', handleTouchMove, { passive: true });
+    timelineScroller.addEventListener('focusin', handleFocusIn);
     timelineScroller.addEventListener('scroll', handleScroll, { passive: true });
     timelineScroller.addEventListener('keydown', handleKeyDown);
     window.addEventListener('pointerup', handlePointerEnd);
@@ -832,6 +838,7 @@ export function AgentTimeline({
       timelineScroller.removeEventListener('wheel', handleWheel);
       timelineScroller.removeEventListener('pointerdown', handlePointerDown);
       timelineScroller.removeEventListener('touchmove', handleTouchMove);
+      timelineScroller.removeEventListener('focusin', handleFocusIn);
       timelineScroller.removeEventListener('scroll', handleScroll);
       timelineScroller.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('pointerup', handlePointerEnd);
@@ -1160,7 +1167,7 @@ export const AgentTurn = memo(function AgentTurn({
   ) => boolean;
   onContinueTurn?: (turnId: string) => boolean;
   onSwitchModel?: () => void;
-  onApprovalDecision: (approvalId: string, decision: 'approved' | 'rejected', hash: string) => void;
+  onApprovalDecision?: (approvalId: string, decision: 'approved' | 'rejected', hash: string) => void;
   onOpenApproval?: (activity: AgentActivityProjection) => void;
   onRequestPermission?: () => void;
   forkAvailable?: boolean;
@@ -1451,7 +1458,7 @@ export const AgentTurn = memo(function AgentTurn({
                     <AgentRecoveryActions
                       disabled={turnRecoveryDisabled} modelDisabled={!modelSelectionAvailable}
                       submitted={retryRequested} continueTurn={safeContinuation}
-                      label={safeContinuation && failurePresentation === 'compact' ? '继续问数' : undefined}
+                      label={safeContinuation && failurePresentation === 'compact' ? '继续对话' : undefined}
                       onSwitchModel={failurePresentation === 'default' ? onSwitchModel : undefined}
                       onRetry={safeContinuation ? onContinueTurn ? () => {
                         if (onContinueTurn(turnId)) setRetryRequestedFor(`${projectionKey}:${turnId}:${turn.status}`);
@@ -1876,7 +1883,7 @@ function ActivityGroupView({
 }: {
   sessionId: string;
   activities: AgentActivityProjection[];
-  onApprovalDecision: (approvalId: string, decision: 'approved' | 'rejected', hash: string) => void;
+  onApprovalDecision?: (approvalId: string, decision: 'approved' | 'rejected', hash: string) => void;
   onOpenApproval?: (activity: AgentActivityProjection) => void;
   onRequestPermission?: () => void;
 }) {

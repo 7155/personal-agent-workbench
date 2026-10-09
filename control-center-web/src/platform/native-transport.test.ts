@@ -866,6 +866,47 @@ describe('NativeControlTransport', () => {
     transport.dispose();
   });
 
+  it.each(['audio/wav', 'audio/x-wav', 'audio/mpeg', 'audio/flac', 'audio/x-flac', 'audio/ogg', 'audio/mp4', 'audio/mp4a-latm', 'video/mp4', 'video/quicktime', 'video/webm', 'video/x-matroska'])('accepts implemented media source %s through the original two-id bridge', async (mimeType) => {
+    const sent: NativeBridgeRequestEnvelope[] = [];
+    const blob = new Blob(['media'], { type: mimeType }); const hash = 'a'.repeat(64);
+    const bridgeWindow = fakeBridgeWindow((envelope) => {
+      sent.push(envelope);
+      queueMicrotask(() => bridgeWindow.__RAG_IME_NATIVE_BRIDGE__?.receive({ id: envelope.id, ok: true,
+        result: { kbId: 'base', fileId: 'media', mimeType, byteSize: blob.size, sha256: hash, blob } }));
+    });
+    const transport = new NativeControlTransport({ bridgeWindow, createId: () => 'media-source' });
+    try {
+      await expect(transport.readKnowledgeDocumentSource({ kbId: 'base', fileId: 'media' })).resolves.toMatchObject({ mimeType, sha256: hash });
+      expect(sent).toEqual([{ id: 'media-source', method: 'readKnowledgeDocumentSource', payload: { kbId: 'base', fileId: 'media' } }]);
+      await expect(transport.readKnowledgeDocumentSource({ kbId: 'base', fileId: 'media', path: '/private/source' } as never)).rejects.toThrow('unsupported field');
+      expect(sent).toHaveLength(1);
+    } finally { transport.dispose(); }
+  });
+
+  it('accepts the original WAV asset receipt and rejects mismatched identity, hash, MIME and size', async () => {
+    const hash = 'a'.repeat(64);
+    let reply = { kbId: 'base', fileId: 'media', assetId: hash, sha256: hash, mimeType: 'audio/wav', byteSize: 4, blob: new Blob(['wave'], { type: 'audio/wav' }) };
+    const bridgeWindow = fakeBridgeWindow((envelope) => queueMicrotask(() => bridgeWindow.__RAG_IME_NATIVE_BRIDGE__?.receive({ id: envelope.id, ok: true, result: reply })));
+    const transport = new NativeControlTransport({ bridgeWindow });
+    try {
+      await expect(transport.readKnowledgeAsset({ kbId: 'base', fileId: 'media', assetId: hash })).resolves.toMatchObject({ mimeType: 'audio/wav', sha256: hash });
+      const good = reply;
+      for (const patch of [{ kbId: 'other' }, { fileId: 'other' }, { assetId: 'b'.repeat(64) }, { sha256: 'b'.repeat(64) }, { byteSize: 5 }, { mimeType: 'audio/mpeg' }, { blob: new Blob(['wave'], { type: 'text/html' }) }]) {
+        reply = { ...good, ...patch };
+        await expect(transport.readKnowledgeAsset({ kbId: 'base', fileId: 'media', assetId: hash })).rejects.toThrow('invalid binary receipt');
+      }
+    } finally { transport.dispose(); }
+  });
+
+  it.each(['audio/unknown', 'video/unknown', 'image/svg+xml', 'text/html'])('rejects unsupported native source MIME %s', async (mimeType) => {
+    const blob = new Blob(['media'], { type: mimeType });
+    const bridgeWindow = fakeBridgeWindow((envelope) => queueMicrotask(() => bridgeWindow.__RAG_IME_NATIVE_BRIDGE__?.receive({ id: envelope.id, ok: true,
+      result: { kbId: 'base', fileId: 'media', mimeType, byteSize: blob.size, sha256: 'a'.repeat(64), blob } })));
+    const transport = new NativeControlTransport({ bridgeWindow });
+    try { await expect(transport.readKnowledgeDocumentSource({ kbId: 'base', fileId: 'media' })).rejects.toThrow('invalid binary receipt'); }
+    finally { transport.dispose(); }
+  });
+
   it('asks native pasteImages to inspect the pasteboard when WebKit exposes no File', async () => {
     const sent: NativeBridgeRequestEnvelope[] = [];
     const bridgeWindow = fakeBridgeWindow((envelope) => {

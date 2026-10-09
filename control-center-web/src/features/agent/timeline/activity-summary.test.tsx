@@ -251,6 +251,62 @@ describe('Agent tool activity details', () => {
     expect(receipt).not.toHaveTextContent('0 token');
   });
 
+  it.each(['inline', 'stack'] as const)('hides an unavailable cold Tool clock in the %s receipt while preserving its stopped state', (variant) => {
+    const activity = {
+      ...toolActivity('tool_finished', 'aborted', {
+        toolCallId: 'cold-clock-unavailable', toolName: 'workspace_shell',
+        toolTimingAvailable: false, toolTimingSource: 'unavailable',
+        args: { command: 'sleep 60' },
+      }),
+      createdAtMs: 1_000, updatedAtMs: 13_101,
+    };
+    const { container } = render(variant === 'stack'
+      ? <FxActivityStack activities={[activity]} />
+      : <ActivitySummary activities={[activity]} inline />);
+    if (variant === 'inline') openInlineActivity(container);
+    expect(container).toHaveTextContent('已停止');
+    expect(container).not.toHaveTextContent('12 秒');
+    expect(container).not.toHaveTextContent('12.1');
+    expect(container).toHaveTextContent('无独立统计');
+  });
+
+  it('uses an available exact cold Tool span without including Provider wait', () => {
+    const activity = {
+      ...toolActivity('tool_finished', 'aborted', {
+        toolCallId: 'cold-clock-observed', toolName: 'workspace_shell',
+        toolTimingAvailable: true, toolTimingSource: 'gateway_runtime_events',
+      }),
+      createdAtMs: 12_342, updatedAtMs: 13_113,
+    };
+    const { container } = render(<FxActivityStack activities={[activity]} />);
+    expect(container.querySelector('.fx-meta')).toHaveTextContent('771 ms');
+    expect(container).not.toHaveTextContent('12 秒');
+  });
+
+  it('retains an explicit Tool receipt duration when the Gateway pair is unavailable', () => {
+    const activity = {
+      ...toolActivity('tool_finished', 'completed', {
+        toolCallId: 'nested-clock-receipt', toolName: 'workspace_read',
+        toolTimingAvailable: false, toolTimingSource: 'unavailable', durationMs: 771,
+      }),
+      createdAtMs: 1_000, updatedAtMs: 13_101,
+    };
+    const { container } = render(<FxActivityStack activities={[activity]} />);
+    expect(container.querySelector('.fx-meta')).toHaveTextContent('0.8s');
+    expect(container).not.toHaveTextContent('12 秒');
+  });
+
+  it('retains the legacy Tool receipt clock when no availability marker exists', () => {
+    const activity = {
+      ...toolActivity('tool_finished', 'completed', {
+        toolCallId: 'legacy-clock', toolName: 'workspace_shell',
+      }),
+      createdAtMs: 1_000, updatedAtMs: 13_101,
+    };
+    const { container } = render(<FxActivityStack activities={[activity]} />);
+    expect(container.querySelector('.fx-meta')).toHaveTextContent('12 秒');
+  });
+
   it('keeps status before the non-shrinking receipt while the long hint owns flexible width', () => {
     const activity = toolActivity('tool_finished', 'completed', {
       toolCallId: 'call-receipt-layout',
@@ -1848,6 +1904,40 @@ describe('Agent tool activity details', () => {
     fireEvent.click(screen.getByRole('button', { name: '去审批' }));
     expect(onOpenApproval).toHaveBeenCalledOnce();
     expect(onOpenApproval).toHaveBeenCalledWith(activity);
+  });
+
+  it.each([
+    { inline: true, recovery: 'approval' }, { inline: false, recovery: 'approval' },
+    { inline: true, recovery: 'permission' }, { inline: false, recovery: 'permission' },
+  ] as const)('preserves absent $recovery capability through an expanded disclosure (inline: $inline)', ({ inline, recovery }) => {
+    const approval = recovery === 'approval';
+    const activity = toolActivity('tool_finished', 'failed', {
+      toolCallId: `absent-${recovery}-${inline}`, toolName: approval ? 'input' : 'workspace_shell',
+      ...(approval ? { approvalId: 'bound-original-approval', payloadSha256: 'a'.repeat(64) } : {}),
+      result: { details: { ok: false, operation: approval ? 'apply_settings' : 'run',
+        result: { error: approval ? '该操作需要本机审批后继续。' : '工作区不在授权目录内，当前权限不足。' } } },
+    });
+    const callback = vi.fn();
+    const view = render(<ActivitySummary activities={[activity]} inline={inline} />);
+    const expand = () => {
+      if (inline) {
+        const details = openInlineActivity(view.container);
+        for (const row of details.querySelectorAll('details.agent-activity-row:not([open])')) fireEvent.click(row.querySelector('summary')!);
+      } else openActivity(view.container);
+    };
+    expand();
+    const label = approval ? '去审批' : '请求权限';
+    expect(screen.getByLabelText('工具失败')).toHaveTextContent(approval ? '该操作需要本机审批后继续。' : '当前权限不足。');
+    expect(screen.queryByRole('button', { name: label })).toBeNull();
+    // Normal Sessions still receive the existing capability, close the
+    // disclosure, and invoke its original owner once.
+    view.rerender(<ActivitySummary activities={[activity]} inline={inline}
+      onOpenApproval={approval ? callback : undefined} onRequestPermission={approval ? undefined : callback} />);
+    fireEvent.click(screen.getByRole('button', { name: label }));
+    expect(callback).toHaveBeenCalledOnce();
+    if (approval) expect(callback).toHaveBeenCalledWith(activity);
+    if (inline) expect(view.container.querySelector('details.agent-activity--inline > summary')).toHaveAttribute('aria-expanded', 'false');
+    else expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('does not present an authorized Room execution bridge as an approval step', () => {

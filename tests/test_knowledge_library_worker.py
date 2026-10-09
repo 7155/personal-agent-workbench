@@ -288,6 +288,161 @@ class KnowledgeWorkerTests(unittest.TestCase):
         self.assertEqual(1, rebuilt["ready"])
 
 
+class KnowledgeWorkerCallRetryTests(unittest.TestCase):
+    """Real Supervisor + HTTP client with an in-process transport, no listener."""
+
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory(prefix="knowledge-call-retry-")
+        self.addCleanup(temporary.cleanup)
+        with mock.patch(
+            "rag_ime.knowledge_worker_supervisor._knowledge_python_runtime",
+            return_value=(sys.executable, "3.12.0"),
+        ):
+            self.supervisor = KnowledgeWorkerSupervisor(
+                settings_provider=_disabled_mineru_settings,
+                root_dir=Path(temporary.name) / "Knowledge",
+            )
+        self.addCleanup(self.supervisor.close)
+        ensure_patch = mock.patch.object(self.supervisor, "ensure_running")
+        self.ensure = ensure_patch.start()
+        self.addCleanup(ensure_patch.stop)
+        self.requests: list[urllib.request.Request] = []
+
+    class Response:
+        def __init__(self, body: bytes, headers: dict[str, str] | None = None):
+            self.body = body
+            self.headers = headers or {}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, _limit: int) -> bytes:
+            return self.body
+
+    def lost_then(self, body: bytes, headers: dict[str, str] | None = None):
+        def opener(request, **_kwargs):
+            self.requests.append(request)
+            if len(self.requests) == 1:
+                raise urllib.error.URLError("reply lost after native acceptance")
+            return self.Response(body, headers)
+        self.supervisor._client.urlopen = opener
+
+    def test_accepted_import_with_lost_reply_is_not_sent_again(self) -> None:
+        self.lost_then(b'{"documentId":"duplicate","ok":true}')
+        process = mock.Mock()
+        process.poll.return_value = None
+        self.supervisor._process = process
+        with self.assertRaises(KnowledgeLibraryError) as raised:
+            self.supervisor.management_call(
+                "management_import_document", "own-base", b"public source",
+                file_name="notes.md", intake_receipt_id="original-receipt",
+                intake_content_hash=hashlib.sha256(b"public source").hexdigest(),
+            )
+        self.assertEqual("worker_unavailable", raised.exception.code)
+        self.assertEqual(1, len(self.requests))
+        self.assertEqual("POST", self.requests[0].get_method())
+        self.assertEqual(b"public source", self.requests[0].data)
+        self.ensure.assert_called_once_with()
+        self.assertIs(process, self.supervisor._process)
+        process.poll.assert_not_called()
+        process.terminate.assert_not_called()
+
+    def test_known_reads_recover_once_through_original_client(self) -> None:
+        reads = [
+            ("list_bases", ({},), {}), ("status", ({},), {}),
+            ("management_list_bases", (), {}), ("management_get_base", ("own-base",), {}),
+            ("management_list_documents", ("own-base",), {}),
+            ("management_document_detail", ("own-base", "own-document"), {}),
+            ("management_knowledge_graph", ("own-base",), {}),
+            ("management_reindex_preview", ("own-base",), {}),
+            ("management_jobs", ("own-base",), {}),
+            ("management_status", (), {}), ("mineru_health", (), {}),
+        ]
+        for operation, args, kwargs in reads:
+            with self.subTest(operation=operation):
+                self.requests.clear(); self.ensure.reset_mock()
+                self.lost_then(b'{"ok":true}')
+                self.assertEqual({"ok": True}, self.supervisor._call(operation, *args, **kwargs))
+                self.assertEqual(2, len(self.requests))
+                self.assertTrue(all(r.get_method() == "GET" for r in self.requests))
+                self.assertEqual(self.requests[0].full_url, self.requests[1].full_url)
+                self.assertEqual(2, self.ensure.call_count)
+
+    def test_binary_reads_recover_once_and_keep_integrity_validation(self) -> None:
+        body = b"public binary source"; digest = hashlib.sha256(body).hexdigest()
+        for operation, args in [
+            ("management_read_source", ("own-base", "own-document")),
+            ("management_read_asset", ("own-base", "own-document", digest)),
+        ]:
+            with self.subTest(operation=operation):
+                self.requests.clear()
+                self.lost_then(body, {"Content-Type": "image/png", "ETag": digest})
+                result = self.supervisor._call(operation, *args)
+                self.assertEqual(body, result.data)
+                self.assertEqual(digest, result.asset_id)
+                self.assertEqual(2, len(self.requests))
+
+    def test_unknown_operations_and_post_readers_are_not_replayed(self) -> None:
+        for operation, args in [
+            ("management_create_base", ({"name": "owned"},)),
+            ("management_update_base", ("own-base", {})),
+            ("management_delete_base", ("own-base",)),
+            ("management_rebuild", ("own-base", {})),
+            ("management_cancel_job", ("own-job",)),
+            ("management_retry_document", ("own-document",)),
+            ("management_delete_document", ("own-document",)),
+            ("management_preview_chunking", ("own-base", "own-document", {})),
+            ("management_vault", ({"action": "connect"},)),
+            ("search", ({},)), ("open", ({},)), ("find", ({},)),
+            ("management_search", ({},)), ("management_open", ({},)),
+            ("management_find", ({},)),
+        ]:
+            with self.subTest(operation=operation):
+                self.requests.clear(); self.lost_then(b'{"ok":true}')
+                with self.assertRaises(KnowledgeLibraryError) as raised:
+                    self.supervisor._call(operation, *args)
+                self.assertEqual("worker_unavailable", raised.exception.code)
+                self.assertEqual(1, len(self.requests))
+        for operation in ("future_operation", "management_get_future_operation"):
+            with self.subTest(operation=operation):
+                error = KnowledgeLibraryError("unknown future write ACK", code="worker_unavailable")
+                handler = mock.Mock(side_effect=[error, {"ok": True}])
+                with mock.patch.object(self.supervisor._client, operation, handler, create=True):
+                    with self.assertRaises(KnowledgeLibraryError) as raised:
+                        self.supervisor.management_call(operation)
+                self.assertIs(error, raised.exception)
+                handler.assert_called_once_with()
+
+    def test_bad_response_other_errors_and_second_read_failure_are_not_retried(self) -> None:
+        for code in ("worker_bad_response", "not_found", "stale_revision", "worker_unavailable"):
+            with self.subTest(code=code):
+                error = KnowledgeLibraryError("original failure", code=code)
+                handler = mock.Mock(side_effect=error)
+                with mock.patch.object(self.supervisor._client, "management_list_bases", handler):
+                    with self.assertRaises(KnowledgeLibraryError) as raised:
+                        self.supervisor.management_call("management_list_bases")
+                self.assertIs(error, raised.exception)
+                self.assertEqual(2 if code == "worker_unavailable" else 1, handler.call_count)
+        with mock.patch.object(self.supervisor._client, "management_list_bases", return_value=[]):
+            with self.assertRaises(KnowledgeLibraryError) as raised:
+                self.supervisor.management_call("management_list_bases")
+            self.assertEqual("worker_bad_response", raised.exception.code)
+
+    def test_start_failure_before_send_does_not_dispatch_or_retry(self) -> None:
+        error = KnowledgeLibraryError("worker did not start", code="worker_unavailable")
+        self.ensure.side_effect = error
+        handler = mock.Mock()
+        with mock.patch.object(self.supervisor._client, "management_import_document", handler):
+            with self.assertRaises(KnowledgeLibraryError) as raised:
+                self.supervisor.management_call("management_import_document", "own-base", b"source")
+        self.assertIs(error, raised.exception)
+        handler.assert_not_called()
+        self.ensure.assert_called_once_with()
+
+
 class KnowledgeWorkerSupervisorTests(unittest.TestCase):
     def test_worker_environment_is_allowlisted_and_drops_sidecar_secrets(self) -> None:
         environment = _knowledge_worker_env(
@@ -463,6 +618,29 @@ class KnowledgeWorkerSupervisorTests(unittest.TestCase):
             "none",
             normalized_knowledge_embedding_provider("unregistered-provider"),
         )
+
+    def test_unconfigured_python_identity_survives_child_launcher_normalization(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="rag-ime-knowledge-python-identity-") as tmp:
+            root = Path(tmp) / "Knowledge"
+            settings = _disabled_mineru_settings()
+            with mock.patch.dict(os.environ, {}, clear=True):
+                supervisor = KnowledgeWorkerSupervisor(
+                    settings_provider=lambda: settings, root_dir=root,
+                    base_url=f"http://127.0.0.1:{_free_port()}",
+                )
+                self.addCleanup(supervisor.close)
+                expected = supervisor._worker_settings(settings)[0]
+                environment = supervisor._worker_environment(settings)
+                # A launcher can report the resolved base executable even
+                # though the supervisor invoked a different stable alias.
+                with mock.patch.dict(os.environ, environment, clear=True), \
+                     mock.patch("rag_ime.knowledge_library.worker.sys.executable", "/resolved/base/python"):
+                    service = KnowledgeLibraryService(KnowledgeLibraryConfig(root))
+                    self.addCleanup(service.close)
+                    server = KnowledgeWorkerServer(("127.0.0.1", 0), service, idle_seconds=900)
+                    self.addCleanup(server.server_close)
+                self.assertEqual(server.config_fingerprint, expected)
+                self.assertEqual(environment["RAG_IME_KNOWLEDGE_PYTHON"], supervisor.python_executable)
 
     def test_persisted_embedding_profile_controls_worker_identity_and_environment(self) -> None:
         settings = {

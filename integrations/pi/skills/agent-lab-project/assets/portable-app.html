@@ -29,19 +29,25 @@
 .result-metric-track{height:7px;background:var(--soft)}.result-metric-track span{display:block;height:100%;background:var(--muted)}.result-metric-row[data-series="after"] .result-metric-track span{background:var(--accent)}
 @media(max-width:760px){.icon-button,.composer .quiet,.source-chip,.send,.history-list>button,.code-toolbar button{min-height:44px}.send{min-width:44px}.composer textarea{font-size:16px}.footer-note{font-size:11px}.citation{min-width:28px;min-height:28px}.answer-note summary,.source summary{min-height:44px;padding:9px 0}}
 </style></head>
-<body data-knowledge="false" data-action="answer" data-context-key="" data-visible="true">
+<body data-chat-presentation="v1" data-presentation-owner="" data-knowledge="false" data-action="answer" data-context-key="" data-visible="true">
 <div class="app">
-<header class="topbar"><div class="identity"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 4v24M4 16h24M7.5 7.5l17 17m0-17-17 17"/><circle cx="16" cy="16" r="8"/></svg><div><h1>资料助手</h1><p>从问题出发，让每一步都有依据。</p></div></div><div class="toolbar"><button class="icon-button" id="new-chat" type="button" aria-label="开始新对话"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span class="button-label">新对话</span></button><button class="icon-button" id="history-toggle" type="button" aria-label="最近记录" aria-expanded="false" aria-controls="history-panel"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10a8 8 0 1 1 .7 7M4 4v6h6M12 8v5l3 2"/></svg><span class="button-label">最近记录</span><span class="sr-only">最近记录</span></button></div></header>
+<header class="topbar"><div class="identity"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 4v24M4 16h24M7.5 7.5l17 17m0-17-17 17"/><circle cx="16" cy="16" r="8"/></svg><div><h1>资料助手</h1><p>从问题出发，让每一步都有依据。</p></div></div><div class="toolbar"><details class="paw-portable-presentation-menu" id="display-settings" hidden><summary class="icon-button" aria-label="聊天显示设置">显示</summary><div id="agent-presentation"></div></details><button class="icon-button" id="new-chat" type="button" aria-label="开始新对话"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span class="button-label">新对话</span></button><button class="icon-button" id="history-toggle" type="button" aria-label="最近记录" aria-expanded="false" aria-controls="history-panel"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10a8 8 0 1 1 .7 7M4 4v6h6M12 8v5l3 2"/></svg><span class="button-label">最近记录</span><span class="sr-only">最近记录</span></button></div></header>
 <div class="workspace" id="workspace"><div class="scroll-area" id="scroll-area"><main class="conversation"><section class="welcome" id="welcome"><h2>你想了解什么？</h2><p>带着一个具体问题开始。我们会查找资料、解释步骤，并保留你可以核对的来源。</p><div class="suggestions"><button type="button" data-prompt="请根据已有资料，带我完成第一个入门任务。"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>带我完成第一个入门任务</button><button type="button" data-prompt="我遇到了一个问题，应该提供哪些信息才能继续排查？"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>帮我梳理问题和排查步骤</button></div></section><div id="thread" aria-label="对话记录"></div></main></div><aside class="evidence hidden" id="evidence" aria-label="参考资料"><div class="evidence-head"><h2>参考资料</h2><button class="icon-button" id="close-sources" aria-label="收起参考资料" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div><p id="source-detail" class="source-detail"></p><div id="sources"></div></aside></div>
-<footer class="composer-wrap"><div id="agent-recovery"></div><form class="composer" id="question-form"><label class="sr-only" for="question">你的问题</label><textarea id="question" rows="2" required maxlength="5000" placeholder="提出问题，或补充你刚才的情况…"></textarea><div class="composer-bottom"><div class="composer-meta"><div id="agent-controls"></div><span class="mode-label"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h6a3 3 0 0 1 3 3v12a4 4 0 0 0-4-3H4zM13 8a3 3 0 0 1 3-3h4v12h-3a4 4 0 0 0-4 3"/></svg><span id="mode-label">基于资料回答</span></span><button id="search-button" class="quiet" type="button" hidden>只检索资料</button></div><button id="answer-button" class="send" type="button" aria-label="发送问题"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg></button><button id="stop-button" class="send stop" type="button" aria-label="停止本次处理" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button></div></form><p class="footer-note" id="footer-note">回答基于已连接资料。关键结论请核对引用来源。</p></footer>
+<footer class="composer-wrap"><div id="agent-recovery"></div><form class="composer" id="question-form"><label class="sr-only" for="question">你的问题</label><textarea id="question" rows="2" required maxlength="5000" placeholder="提出问题，或补充你刚才的情况…"></textarea><div class="composer-bottom"><div class="composer-meta"><div id="agent-controls"></div><span class="mode-label"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h6a3 3 0 0 1 3 3v12a4 4 0 0 0-4-3H4zM13 8a3 3 0 0 1 3-3h4v12h-3a4 4 0 0 0-4 3"/></svg><span id="mode-label">基于资料回答</span></span><button id="context-button" class="quiet" type="button" disabled>上下文</button><button id="search-button" class="quiet" type="button" hidden>只检索资料</button></div><button id="answer-button" class="send" type="button" aria-label="发送问题"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg></button><button id="stop-button" class="send stop" type="button" aria-label="停止本次处理" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button></div></form><p class="footer-note" id="footer-note">回答基于已连接资料。关键结论请核对引用来源。</p></footer>
 </div><section id="history-panel" class="history-panel hidden" aria-label="最近调用"><div class="history-head"><h2>最近记录</h2><button class="icon-button" id="close-history" type="button" aria-label="关闭最近记录"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div><div id="history-list" class="history-list"></div></section>
 <script>
 (() => {
  'use strict';
  const $=id=>document.getElementById(id), question=$('question'), scroller=$('scroll-area');
  const knowledgeEnabled=document.body.dataset.knowledge==='true', actionId=document.body.dataset.action||'answer', contextKey=document.body.dataset.contextKey||'';
- let busy=false, active=null, controller=null, clock=null, conversation=[], turnNumber=0;
+ let busy=false, active=null, controller=null, clock=null, conversation=[], turnNumber=0, draftRevision=0;
+ const callDetailsHandles=new Set();
+ function clearCallDetails(){for(const handle of callDetailsHandles)handle.destroy();callDetailsHandles.clear()}
+ const presentationOwner=window.pawApp?.identity?.appId||document.body.dataset.presentationOwner;
+ $('display-settings').hidden=!presentationOwner||!window.pawAgentUI.presentationVersions;
+ $('context-button').hidden=!window.pawAgentUI.mountCallDetails;
  const agentUI=window.pawAgentUI.mount({controls:$('agent-controls'),recovery:$('agent-recovery'),
+   ...(presentationOwner?{presentation:{ownerKey:'portable:'+presentationOwner,root:document.body,settings:$('agent-presentation'),defaultVersion:'v2'}}:{}),
    onRetry:()=>{if(active&&!busy){question.value=active.question;run(active.action,active)}},
    onCheck:()=>checkOriginal()});
  const labels={queued:'已收到问题',context_ready:'已读取应用资料',retrieving:'正在检索相关资料',sources_ready:'已找到相关来源',model_starting:'正在准备回答',model_wait:'正在等待响应',thinking:'正在分析问题',answering:'正在整理回答',completed:'回答已完成',failed:'本次未完成',cancelled:'本次输出已停止',interrupted:'连接中断，原请求已保留',unconfirmed:'正在等待结果确认'};
@@ -54,10 +60,17 @@
  function safeURL(raw){try{const url=new URL(raw);return ['https:','http:'].includes(url.protocol)?url.href:null}catch{return null}}
  let sourceFocus=null;
  function openSources(turn,sourceId){
-   sourceFocus=document.activeElement;
-   $('workspace').classList.add('evidence-open');$('evidence').classList.remove('hidden');renderSourcePanel(turn);$('close-sources').focus();
+   sourceFocus=document.activeElement;$('display-settings').open=false;
+   $('workspace').classList.add('evidence-open');$('evidence').classList.remove('hidden');renderSourcePanel(turn);updateEvidenceDialog();$('close-sources').focus();
    if(sourceId){const detail=[...$('sources').querySelectorAll('details')].find(el=>el.dataset.sourceId===sourceId);if(detail){detail.open=true;detail.scrollIntoView?.({block:'nearest'})}}
  }
+ function updateEvidenceDialog(){
+   const modal=!$('evidence').classList.contains('hidden')&&document.body.dataset.chatPresentation==='v2'&&window.matchMedia?.('(max-width:960px)')?.matches;
+   if(modal){$('evidence').setAttribute('role','dialog');$('evidence').setAttribute('aria-modal','true')}
+   else{$('evidence').removeAttribute('role');$('evidence').removeAttribute('aria-modal')}
+ }
+ window.addEventListener('resize',updateEvidenceDialog);
+ new MutationObserver(updateEvidenceDialog).observe(document.body,{attributes:true,attributeFilter:['data-chat-presentation']});
  function inline(el,value,turn){
    const pattern=/(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\(https?:\/\/[^\s)]+\)|\[\d+\])/g;let start=0;
    for(const match of value.matchAll(pattern)){
@@ -165,10 +178,11 @@
    $('welcome').hidden=true;const root=element('article','turn'),user=element('div','user-message');user.append(element('p','',q));root.append(user);const assistant=element('section','assistant');assistant.setAttribute('aria-label','助手回答');
    const activity=element('details','activity');activity.id='process';activity.dataset.running='true';const summary=element('summary');summary.innerHTML=icon;const status=element('span');status.id='status';status.setAttribute('role','status');status.setAttribute('aria-live','polite');const elapsed=element('span','elapsed');elapsed.id='elapsed';elapsed.setAttribute('aria-hidden','true');summary.append(status,elapsed);const chevron=document.createElementNS('http://www.w3.org/2000/svg','svg');chevron.setAttribute('viewBox','0 0 24 24');chevron.setAttribute('class','chevron');chevron.innerHTML='<path d="m9 5 7 7-7 7"/>';summary.append(chevron);const timeline=element('ol','timeline');timeline.setAttribute('aria-label','实际处理过程');activity.append(summary,timeline);
    const chips=element('div','source-chips'),answer=element('div','answer'),answerTitle=element('span','sr-only',action==='sources'?'正在检索 · 尚未完成':'回答生成中 · 尚未完成');answerTitle.id='answer-title';answer.id='answer';const recovery=element('p','recovery hidden');recovery.id='recovery';const actions=element('div','answer-actions hidden');const copy=element('button','icon-button','复制'),follow=element('button','icon-button','继续追问'),receipt=element('span','receipt');copy.type=follow.type='button';copy.onclick=()=>copyText(turn.output,copy);follow.onclick=()=>question.focus();actions.append(copy,follow,receipt);const processMap=element('ol','process-map');processMap.setAttribute('aria-label','处理流程');assistant.append(activity,processMap,chips,answerTitle,answer,recovery,actions);root.append(assistant);$('thread').append(root);
-   const turn={id:++turnNumber,root,activity,status,elapsed,timeline,processMap,chips,answer,answerTitle,recovery,actions,receipt,sources:[],knowledge:{},sourcesKey:'',events:[],output:'',question:q,action,started:Date.now(),state:'running',lastProgress:{}};active=turn;return turn;
+   const records=element('div','portable-call-records');activity.append(records);const callDetails=window.pawAgentUI.mountCallDetails?.(records);if(callDetails)callDetailsHandles.add(callDetails);
+   const turn={callDetails,draftRevision,unconfirmed:false,id:++turnNumber,root,activity,status,elapsed,timeline,processMap,chips,answer,answerTitle,recovery,actions,receipt,sources:[],knowledge:{},sourcesKey:'',events:[],output:'',question:q,action,started:Date.now(),state:'running',lastProgress:{}};active=turn;return turn;
  }
  function stage(turn,progress){
-   const follow=atBottom();turn.lastProgress=progress||{};const current=progress.stage||'queued';turn.state=current;
+   const follow=atBottom();turn.lastProgress=progress||{};turn.callDetails?.update({progress:turn.lastProgress,result:turn.result});const current=progress.stage||'queued';turn.state=current;
    text(turn.status,current==='completed'&&turn.action==='sources'?'检索已完成':labels[current]||'正在处理');turn.status.classList.toggle('error',['failed','unconfirmed','interrupted'].includes(current));turn.activity.dataset.state=current;
    const sourceEvents=Array.isArray(progress.events)&&progress.events.length?progress.events:[{stage:current,atMs:Date.now()}];
    for(const event of sourceEvents){if(!labels[event.stage])continue;const key=`${event.stage}:${event.atMs}`;if(!turn.events.some(item=>item.key===key)&&(!turn.events.length||turn.events.at(-1).stage!==event.stage))turn.events.push({...event,key})}
@@ -184,6 +198,7 @@
  }
  function stopClock(){clearInterval(clock);clock=null}
  function finalResult(turn,result,action){
+   turn.unconfirmed=false;turn.result=result;turn.callDetails?.update({progress:turn.lastProgress,result});
    if(result.sources)renderSources(turn,result.sources,result.knowledge||{});
    text(turn.answerTitle,action==='sources'?'检索结果':'回答');
    renderAnswer(turn,action==='sources'?(result.sources?.length?'已找到相关资料。点击上方来源可以核对原文，或继续提问整理答案。':'没有找到匹配的资料。试试更具体的产品、功能或关键词。'):(result.text||'本次没有返回可用回答。'),true);
@@ -191,10 +206,16 @@
    if(action==='sources')text(turn.status,'检索已完成');
    text(turn.receipt,action==='sources'?'仅检索 · 未调用模型':`已完成 · ${Math.max(1,Math.round((Date.now()-turn.started)/1000))} 秒`);
  }
- function setBusy(value){busy=value;agentUI.setBusy(value);question.readOnly=value;$('new-chat').disabled=value;$('history-toggle').disabled=value;$('answer-button').disabled=value;$('search-button').disabled=value;const stoppable=value&&window.pawApp?.capabilities?.cancel;$('answer-button').hidden=stoppable;$('stop-button').hidden=!stoppable;$('stop-button').disabled=false}
+ function originalSubmissionUnconfirmed(){return Boolean(active?.unconfirmed&&active.draftRevision===draftRevision)}
+ function refreshSubmissionControls(){
+   const blocked=originalSubmissionUnconfirmed();$('answer-button').disabled=busy||blocked;$('search-button').disabled=busy||blocked;
+   $('answer-button').title=blocked?'原调用尚未确认，请先核对原调用，或编辑输入开始新任务':'';
+   $('context-button').disabled=!active;
+ }
+ function setBusy(value){busy=value;agentUI.setBusy(value);question.readOnly=value;$('new-chat').disabled=value;$('history-toggle').disabled=value;refreshSubmissionControls();const stoppable=value&&window.pawApp?.capabilities?.cancel;$('answer-button').hidden=stoppable;$('stop-button').hidden=!stoppable;$('stop-button').disabled=false}
  async function run(action=actionId,retryTurn=null){
-   if(busy||!question.reportValidity())return;const q=question.value.trim();if(!q)return;
-   const turn=retryTurn||createTurn(q,action);agentUI.failure();turn.answer.replaceChildren();turn.output='';turn.started=Date.now();turn.recovery.classList.add('hidden');controller=new AbortController();setBusy(true);$('history-panel').classList.add('hidden');$('history-toggle').setAttribute('aria-expanded','false');stage(turn,{stage:'queued'});turn.answer.append(element('p','empty',action==='sources'?'正在查找相关资料…':'正在准备资料与回答…'));turn.answer.setAttribute('aria-busy','true');
+   if(busy||originalSubmissionUnconfirmed()||!question.reportValidity())return;const q=question.value.trim();if(!q)return;
+   const turn=retryTurn||createTurn(q,action);turn.draftRevision=draftRevision;turn.unconfirmed=false;turn.result=undefined;agentUI.failure();turn.answer.replaceChildren();turn.output='';turn.started=Date.now();turn.recovery.classList.add('hidden');controller=new AbortController();setBusy(true);$('history-panel').classList.add('hidden');$('history-toggle').setAttribute('aria-expanded','false');stage(turn,{stage:'queued'});turn.answer.append(element('p','empty',action==='sources'?'正在查找相关资料…':'正在准备资料与回答…'));turn.answer.setAttribute('aria-busy','true');
    clock=setInterval(()=>{if(!['failed','cancelled','interrupted','unconfirmed','completed'].includes(turn.state))text(turn.elapsed,`${Math.max(0,Math.floor((Date.now()-turn.started)/1000))} 秒`)},1000);keepBottom(true);
    const values=retryTurn?.values||{question:q};if(!retryTurn&&contextKey&&conversation.length){const recent=conversation.slice(-4);while(recent.length&&JSON.stringify(recent).length>14000)recent.shift();if(recent.length)values[contextKey]=JSON.stringify(recent)}
    try{
@@ -202,7 +223,7 @@
      const result=await window.pawApp.invoke(action,values,{model:agentUI.selection(),signal:controller.signal,onProgress:progress=>{if(busy&&active===turn)stage(turn,progress)}});
      finalResult(turn,result,action);if(action!=='sources')conversation.push({question:q,answer:result.text||''});question.value='';question.style.height='';question.placeholder='继续追问，或补充新的信息…';keepBottom(atBottom());
    }catch(error){
-     turn.requestId=error.requestId;const state=error.state||'unconfirmed';stage(turn,{...turn.lastProgress,stage:state==='rejected'?'failed':state,text:undefined});text(turn.answerTitle,turn.output?'部分回答 · 尚未确认':'本次尚未完成');turn.activity.dataset.running='false';turn.answer.setAttribute('aria-busy','false');
+     turn.requestId=error.requestId;const state=error.state||'unconfirmed';turn.unconfirmed=['unconfirmed','interrupted','queued','running'].includes(state);stage(turn,{...turn.lastProgress,stage:state==='rejected'?'failed':state,text:undefined});text(turn.answerTitle,turn.output?'部分回答 · 尚未确认':'本次尚未完成');turn.activity.dataset.running='false';turn.answer.setAttribute('aria-busy','false');
      if(!turn.output)rich(turn.answer,state==='cancelled'?'本次输出已停止。你可以补充信息后再次提问。':'暂时没有完整回答，问题和已经找到的资料都已保留。',turn);
      agentUI.failure({state,message:error.message});turn.actions.classList.remove('hidden');text(turn.receipt,state==='cancelled'?'已停止':'未完成');question.value=q;
    }finally{stopClock();turn.elapsed.classList.add('hidden');setBusy(false);controller=null}
@@ -214,31 +235,39 @@
    if(busy||!active)return;
    if(!active.requestId){$('history-toggle').click();return}
    const turn=active;setBusy(true);
-   try{const record=await window.pawApp.reconcile(turn.requestId);stage(turn,record.progress||{stage:record.state});
+   try{const record=await window.pawApp.reconcile(turn.requestId);turn.unconfirmed=['unconfirmed','interrupted','queued','running'].includes(record.state);stage(turn,{...record.progress,stage:['failed','cancelled','interrupted','unconfirmed'].includes(record.state)?record.state:record.progress?.stage||record.state});
      if(record.state==='completed'){finalResult(turn,record.result||{},turn.action);agentUI.failure();if(turn.action!=='sources')conversation.push({question:turn.question,answer:record.result?.text||''});question.value=''}
      else agentUI.failure({state:record.state,message:record.message});
    }catch(error){agentUI.failure({state:'unconfirmed',message:error.message})}finally{setBusy(false)}
  }
  $('question-form').addEventListener('submit',e=>e.preventDefault());$('answer-button').addEventListener('click',()=>run());$('search-button').addEventListener('click',()=>run('sources'));
  question.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing&&event.keyCode!==229){event.preventDefault();if(!busy)run()}});
- question.addEventListener('input',()=>{question.style.height='auto';question.style.height=Math.min(question.scrollHeight,165)+'px'});
+ question.addEventListener('input',()=>{draftRevision++;refreshSubmissionControls();question.style.height='auto';question.style.height=Math.min(question.scrollHeight,165)+'px'});
  $('stop-button').onclick=()=>{if(controller){controller.abort();$('stop-button').disabled=true;if(active)text(active.status,active.action==='sources'?'正在停止本次检索…':'正在停止本次回答…')}};
- $('close-sources').onclick=()=>{const wasOpen=!$('evidence').classList.contains('hidden');$('workspace').classList.remove('evidence-open');$('evidence').classList.add('hidden');if(wasOpen&&sourceFocus?.isConnected)sourceFocus.focus()};
+ $('close-sources').onclick=()=>{const wasOpen=!$('evidence').classList.contains('hidden');$('workspace').classList.remove('evidence-open');$('evidence').classList.add('hidden');updateEvidenceDialog();if(wasOpen&&sourceFocus?.isConnected)sourceFocus.focus()};
  function hideHistory(){const wasOpen=!$('history-panel').classList.contains('hidden');$('history-panel').classList.add('hidden');$('history-toggle').setAttribute('aria-expanded','false');if(wasOpen)$('history-toggle').focus()}
  $('close-history').onclick=hideHistory;
- $('new-chat').onclick=()=>{if(busy)return;agentUI.failure();$('thread').replaceChildren();$('welcome').hidden=false;active=null;conversation=[];question.value='';$('close-sources').click();hideHistory();question.focus()};
- for(const button of document.querySelectorAll('[data-prompt]'))button.onclick=()=>{if(busy)return;question.value=button.dataset.prompt;question.focus()};
+ $('context-button').onclick=()=>{if(active){active.activity.open=true;const details=active.activity.querySelector('.paw-portable-call-details__context');if(details)details.open=true;active.activity.scrollIntoView?.({block:'nearest'})}};
+ $('new-chat').onclick=()=>{if(busy)return;agentUI.failure();clearCallDetails();$('thread').replaceChildren();$('welcome').hidden=false;active=null;conversation=[];refreshSubmissionControls();question.value='';$('close-sources').click();hideHistory();question.focus()};
+ for(const button of document.querySelectorAll('[data-prompt]'))button.onclick=()=>{if(busy)return;draftRevision++;question.value=button.dataset.prompt;refreshSubmissionControls();question.focus()};
  $('history-toggle').onclick=async()=>{
    if(busy)return;const opening=$('history-panel').classList.contains('hidden');hideHistory();if(!opening)return;$('history-panel').classList.remove('hidden');$('history-toggle').setAttribute('aria-expanded','true');text($('history-list'),'正在读取记录…');$('close-history').focus();
    try{const records=await window.pawApp.history();$('history-list').replaceChildren();if(!records?.length)$('history-list').append(element('p','empty','还没有调用记录。'));
      for(const row of (records||[]).slice(0,20)){const button=element('button','',row.input?.question||'应用调用');button.type='button';button.append(element('small','',`${row.state==='completed'&&row.actionId==='sources'?'检索已完成':labels[row.state]||'尚未完成'}${row.version?' · 应用 v'+row.version:''}`));button.onclick=()=>{
-       if(busy)return;$('thread').replaceChildren();conversation=restoredContext(row.input);const q=row.input?.question||'';const turn=createTurn(q,row.actionId);turn.started=row.createdAtMs||Date.now();stage(turn,row.progress||{stage:row.state});
+       if(busy)return;clearCallDetails();$('thread').replaceChildren();conversation=restoredContext(row.input);const q=row.input?.question||'';const turn=createTurn(q,row.actionId);turn.unconfirmed=['unconfirmed','interrupted','queued','running'].includes(row.state);turn.started=row.createdAtMs||Date.now();stage(turn,row.progress||{stage:row.state});
        agentUI.failure();if(row.state==='completed'){finalResult(turn,row.result||{},row.actionId);text(turn.status,'已恢复保存的结果，本次没有调用模型。');text(turn.receipt,'历史结果');if(row.actionId!=='sources')conversation.push({question:q,answer:row.result?.text||''})}
        else{renderAnswer(turn,row.progress?.text||'原调用尚未完成，请先核对记录。',true);stage(turn,{...row.progress,stage:row.state,text:undefined});turn.activity.dataset.running='false';turn.values=row.input;turn.requestId=row.requestId;agentUI.failure({state:row.state,message:row.message})}
-       question.value=q;turn.elapsed.classList.add('hidden');hideHistory();question.focus();keepBottom(true);
+       question.value=q;turn.elapsed.classList.add('hidden');refreshSubmissionControls();hideHistory();question.focus();keepBottom(true);
      };$('history-list').append(button)}
    }catch(error){text($('history-list'),error.message||'记录暂时不可读，请稍后重试。')}
  };
+ document.addEventListener('keydown',event=>{
+   if(event.key!=='Tab'||$('evidence').getAttribute('aria-modal')!=='true')return;
+   const items=[...$('evidence').querySelectorAll('button:not([disabled]),a[href],summary,[tabindex="0"]')].filter(item=>item.getClientRects().length);
+   const first=items[0]||$('close-sources'),last=items.at(-1)||first;
+   if(event.shiftKey&&(document.activeElement===first||!$('evidence').contains(document.activeElement))){event.preventDefault();last.focus()}
+   else if(!event.shiftKey&&(document.activeElement===last||!$('evidence').contains(document.activeElement))){event.preventDefault();first.focus()}
+ });
  document.addEventListener('keydown',event=>{if(event.key==='Escape'){if(!$('history-panel').classList.contains('hidden'))hideHistory();else if(!$('evidence').classList.contains('hidden'))$('close-sources').click()}});
  document.addEventListener('visibilitychange',()=>document.body.dataset.visible=String(!document.hidden));
  window.pawApp?.ready?.();

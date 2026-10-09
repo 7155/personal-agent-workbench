@@ -1920,49 +1920,6 @@ def _looks_like_deepseek_provider(predictor: PredictionProvider) -> bool:
     return "deepseek" in identity
 
 
-def _strong_t0_prediction(
-    suggestions: list[InputSuggestion],
-    *,
-    snapshot: RimeContextSnapshot,
-    current_input: str,
-) -> ModelPrediction | None:
-    threshold = _bounded_float_env("RAG_IME_T0_DIRECT_MEMORY_THRESHOLD", default=0.86)
-    context = compact_whitespace(snapshot.committed_context or current_input)
-    for suggestion in suggestions:
-        surface = compact_whitespace(suggestion.surface_text)
-        metadata = dict(suggestion.metadata)
-        diagnostics = dict(metadata.get("diagnostics") or {})
-        doc_type = compact_whitespace(str(diagnostics.get("docType") or metadata.get("memory_kind") or ""))
-        source_type = compact_whitespace(suggestion.suggestion_type)
-        if source_type not in {"phrase", "memory", "alias"} and doc_type != "phrase":
-            continue
-        if float(suggestion.confidence) < threshold or not 2 <= len(surface) <= 18:
-            continue
-        if context and surface in context[-160:]:
-            continue
-        source_ids = [suggestion.source_event_id] if suggestion.source_event_id > 0 else []
-        source_ids.extend(
-            int(value)
-            for value in metadata.get("evidence_event_ids", [])
-            if isinstance(value, int) and value > 0
-        )
-        if not source_ids:
-            continue
-        return ModelPrediction(
-            text=surface,
-            rank=1,
-            provider_name="memory-t0",
-            latency_ms=0,
-            confidence=float(suggestion.confidence),
-            metadata={
-                "sourceType": "phrase",
-                "sourceLane": "memory_t0",
-                "directMemoryHit": True,
-                "sourceEventIds": list(dict.fromkeys(source_ids)),
-                "memoryId": metadata.get("memory_id") or suggestion.suggestion_id,
-            },
-        )
-    return None
 
 
 def _post_commit_online_context_packet(

@@ -6,13 +6,15 @@ import { commandLabApp, externalWorkspaceUrl, pendingLabAppCommands, type LabApp
 import { object, type JsonValue } from './types';
 import { projectCommandRejected, projectError } from './api';
 
-const bridge = `<script>(()=>{
+export function labAppBridge(appId: string, version: number) {
+  const identity = JSON.stringify({ appId, version }).replace(/</gu, '\\u003c');
+  return `<script>(()=>{
   const pending=new Map();
   const request=(kind,fields={},onProgress)=>new Promise((resolve,reject)=>{
     const requestId=crypto.randomUUID();pending.set(requestId,{resolve,reject,onProgress});
     parent.postMessage({kind,requestId,...fields},'*');
   });
-  window.pawApp=Object.freeze({mode:'paw',capabilities:Object.freeze({progress:true,cancel:true}),
+  window.pawApp=Object.freeze({identity:Object.freeze(${identity}),mode:'paw',capabilities:Object.freeze({progress:true,cancel:true}),
     ready:()=>parent.postMessage({kind:'paw.lab-app.ready',requestId:crypto.randomUUID()},'*'),
     invoke:(actionId,input={},options={})=>{
       const requestId=crypto.randomUUID();
@@ -37,6 +39,7 @@ const bridge = `<script>(()=>{
     else p.reject(Object.assign(new Error(e.data.message||'应用调用未完成'),{state:e.data.state,requestId:e.data.requestId}));
   });
 })();</script>`;
+}
 const policy = `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">`;
 
 export function LabAppPreview({ app, version, calls, selectedCallId = '', onActivity }: { app: LabApp; version: LabAppVersion; calls: LabAppCall[]; selectedCallId?: string; onActivity: () => void }) {
@@ -74,7 +77,7 @@ export function LabAppPreview({ app, version, calls, selectedCallId = '', onActi
   const [error, setError] = useState('');
   const [pending, setPending] = useState<LabAppCommand[]>(() => pendingLabAppCommands(transport, app.appId)
     .filter((command) => command.action === 'invoke' ? command.input.version === version.version : ['cancel', 'resume'].includes(command.action)));
-  const html = useMemo(() => `<!doctype html>${policy}${bridge}${version.html}`, [version.html]);
+  const html = useMemo(() => `<!doctype html>${policy}${labAppBridge(app.appId, version.version)}${version.html}`, [app.appId, version.version, version.html]);
   const previewUrl = useRichHtmlUrl(html);
   useEffect(() => { setIntegratedProgress(false); }, [version.html]);
   const send = useCallback(async (command: LabAppCommand, requestId?: string) => {

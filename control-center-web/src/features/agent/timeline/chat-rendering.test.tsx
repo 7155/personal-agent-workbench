@@ -2060,7 +2060,7 @@ describe('Agent chat rendering', () => {
       </TooltipProvider>,
     );
 
-    expect(screen.getByRole('button', { name: '继续问数' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '继续对话' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '切换模型' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Trace Agent/ })).not.toBeInTheDocument();
   });

@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type WheelEvent } from 'react';
 import { useControlTransport } from '@/app/control-transport';
+import { useMotionActivity } from '@/design/motion';
 import { BrowserFindBar, type BrowserFindMatch } from '@/features/browser/BrowserFindBar';
 import { BrowserLibraryPanel, type BrowserLibraryView } from '@/features/browser/BrowserLibraryPanel';
 import { BrowserOmnibox } from '@/features/browser/BrowserOmnibox';
@@ -79,6 +80,7 @@ import { usePageVisibility } from '@/platform/use-page-visibility';
 
 export function PawBrowserApp({ target }: { target?: Extract<PawOsWindowTarget, { kind: 'browser-target' }> } = {}) {
   const transport = useControlTransport();
+  const motionActive = useMotionActivity();
   const electronHost = pawBrowserHost();
   const surfaceActive = usePawOsAppActive() ?? true;
   const pageVisible = usePageVisibility();
@@ -91,6 +93,8 @@ export function PawBrowserApp({ target }: { target?: Extract<PawOsWindowTarget, 
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [showTrace, setShowTrace] = useState(false);
+  const traceTrigger = useRef<HTMLButtonElement>(null);
+  const closeTrace = () => { setShowTrace(false); traceTrigger.current?.focus(); };
   const [editingElement, setEditingElement] = useState<BrowserElement | null>(null);
   const [elementDraft, setElementDraft] = useState('');
   const [hostTabs, setHostTabs] = useState<HostBrowserTab[]>([initialHostTab()]);
@@ -395,6 +399,24 @@ export function PawBrowserApp({ target }: { target?: Extract<PawOsWindowTarget, 
     setCdpUrl(url);
     if (selectedTabId && !busy) {
       void run('navigate', { url });
+    }
+  };
+
+  const retryBrowserSurface = async () => {
+    if (selectedTabId) {
+      await captureSnapshot(selectedTabId);
+      return;
+    }
+    setBusy('start');
+    setError('');
+    try {
+      const value = record(await transport.request({ pathId: 'browser.managed.start', body: {} }));
+      if (value.ok === false) throw new Error(text(value.summary) || text(value.error) || '浏览器没有启动');
+      await refreshShell();
+    } catch (requestError) {
+      setError(errorText(requestError));
+    } finally {
+      setBusy('');
     }
   };
 
@@ -865,7 +887,9 @@ export function PawBrowserApp({ target }: { target?: Extract<PawOsWindowTarget, 
       {windowChromeTarget ? <PawWindowChromePortal>{browserTabs}</PawWindowChromePortal> : null}
       <section
         aria-label="Browser"
+        onKeyDown={(event) => { if (event.key === 'Escape' && !event.defaultPrevented && showTrace) { event.preventDefault(); closeTrace(); } }}
         className="paw-direct-browser"
+        data-motion-active={motionActive}
         data-route-id="browser"
         data-tabs-in-window-chrome={windowChromeTarget ? true : undefined}
         role="region"
@@ -920,6 +944,7 @@ export function PawBrowserApp({ target }: { target?: Extract<PawOsWindowTarget, 
 
         <div className="paw-toolbar-actions">
           <button
+            ref={traceTrigger}
             aria-label={showTrace ? '隐藏 Agent 浏览器轨迹' : '显示 Agent 浏览器轨迹'}
             aria-pressed={showTrace}
             data-active={showTrace || undefined}
@@ -1222,18 +1247,18 @@ export function PawBrowserApp({ target }: { target?: Extract<PawOsWindowTarget, 
               onRetry={retryPage}
             />
           ) : null}
-          {!electronHost && error && !isStartPage ? (
+          {!electronHost && error ? (
             <div className="paw-browser-error" role="alert">
               <CircleAlert size={16} />
               <span>
-                <strong>页面没有打开</strong>
+                <strong>{selectedTabId ? '页面没有打开' : '浏览器没有启动'}</strong>
                 <small>{error}</small>
               </span>
-              <button disabled={!selectedTabId || Boolean(busy)} onClick={() => void captureSnapshot(selectedTabId)} type="button">重试</button>
+              <button disabled={Boolean(busy)} onClick={() => void retryBrowserSurface()} type="button">重试</button>
             </div>
           ) : null}
 
-          {!electronHost && isStartPage ? (
+          {!electronHost && isStartPage && !error ? (
             <div aria-label="空白页面" className="paw-browser-blank-page" data-live={activeAgentTrace ? true : undefined} />
           ) : !electronHost && snapshotImageUrl && viewportWidth && viewportHeight ? (
             <div className="paw-browser-live-view" onWheel={scrollPage}>
@@ -1323,7 +1348,7 @@ export function PawBrowserApp({ target }: { target?: Extract<PawOsWindowTarget, 
                     <Square size={11} /> 停止
                   </button>
                 ) : null}
-                <button aria-label="隐藏 Agent 浏览器轨迹" onClick={() => setShowTrace(false)} type="button"><X size={13} /></button>
+                <button aria-label="隐藏 Agent 浏览器轨迹" onClick={closeTrace} type="button"><X size={13} /></button>
               </div>
             </header>
             <div>

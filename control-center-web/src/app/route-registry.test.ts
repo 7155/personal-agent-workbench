@@ -3,9 +3,12 @@ import { routeRegistry } from '@/app/route-registry';
 
 describe('route registry', () => {
   it('contains every control-center route exactly once', () => {
-    expect(routeRegistry).toHaveLength(24);
-    expect(new Set(routeRegistry.map((route) => route.id)).size).toBe(24);
-    expect(new Set(routeRegistry.map((route) => route.path)).size).toBe(24);
+    expect(routeRegistry).toHaveLength(25);
+    expect(new Set(routeRegistry.map((route) => route.id)).size).toBe(25);
+    expect(new Set(routeRegistry.map((route) => route.path)).size).toBe(25);
+    expect(routeRegistry).toContainEqual(
+      expect.objectContaining({ id: 'agent-controller', path: '/agent-controller' }),
+    );
     expect(routeRegistry).toContainEqual(
       expect.objectContaining({ id: 'schedules', path: '/schedules' }),
     );

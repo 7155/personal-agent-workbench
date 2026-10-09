@@ -23,7 +23,11 @@ tui = [
   "textual>=0.50,<1",
 ]
 embedding-local = [
-  "sentence-transformers>=5.0,<6",
+  "sentence-transformers>=6.1,<7",
+  "transformers>=5.18,<6",
+  "torchvision>=0.29,<1",
+  "Pillow>=12.0,<13",
+  "PyMuPDF>=1.27,<2",
 ]
 embedding-mlx = [
   "mlx>=0.29,<1",

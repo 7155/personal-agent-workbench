@@ -97,8 +97,8 @@
 }
 
 .paw-desktop-root .paw-browser-new-tab {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   margin-bottom: 3px;
 }
 
@@ -117,8 +117,8 @@
 
 .paw-desktop-root .paw-nav-buttons button,
 .paw-desktop-root .paw-toolbar-actions > button {
-  width: 29px;
-  height: 29px;
+  width: 32px;
+  height: 32px;
   border-radius: 8px;
   color: #626c79;
 }
@@ -858,4 +858,14 @@
     transition: none;
   }
   .paw-desktop-root .paw-browser-agent-capsule { transform: translate3d(-50%, 0, 0); }
+}
+
+@container paw-browser (max-width: 620px) {
+  .paw-desktop-root :is(.paw-nav-buttons button, .paw-toolbar-actions > button) { width: 44px; height: 44px; flex: none; }
+  .paw-desktop-root .paw-omnibox-form { height: 44px; min-width: 0; }
+  .paw-desktop-root .paw-omnibox-form input { font-size: 16px; min-width: 0; }
+}
+
+@container paw-window (max-width: 620px) {
+  .paw-desktop-root .paw-window-titlebar[data-window-chrome='browser-tabs'] .paw-browser-new-tab { width: 44px; height: 44px; flex: none; }
 }

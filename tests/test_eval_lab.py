@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import sqlite3
+from contextlib import closing
+from unittest.mock import patch
 import tempfile
 import unittest
 from copy import deepcopy
@@ -71,6 +74,116 @@ class EvalLabProjectionTests(unittest.TestCase):
         )
         self.store.set_status(session_id, "idle", updated_at_ms=300 + index)
         return session_id
+
+    def _clone_sessions(self, original: str, count: int, *, evaluation: bool, distinct_runs: bool = False) -> list[str]:
+        """Bulk scratch fixtures keep the production reader and real schema."""
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
+            conn.row_factory = sqlite3.Row
+            session = dict(conn.execute("SELECT * FROM agent_sessions WHERE id=?", (original,)).fetchone())
+            binding = dict(conn.execute("SELECT * FROM agent_runtime_bindings WHERE session_id=?", (original,)).fetchone())
+            ids = []
+            for index in range(count):
+                identity = f"agent:{'evaluation' if evaluation else 'ordinary'}-{index:04d}"
+                row = {**session, "id": identity, "evaluation_snapshot": int(evaluation),
+                       "created_at_ms": 10_000, "updated_at_ms": 10_000}
+                columns = list(row)
+                conn.execute(f"INSERT INTO agent_sessions({','.join(columns)}) VALUES({','.join('?' for _ in columns)})", [row[key] for key in columns])
+                if evaluation:
+                    metadata = json.loads(binding["metadata_json"])
+                    metadata["evaluationSnapshot"]["taskIndex"] = index + 2
+                    if distinct_runs:
+                        metadata["evaluationSnapshot"]["runId"] = f"evaluation-run-{index:04d}"
+                    runtime = {**binding, "session_id": identity, "external_session_id": identity, "metadata_json": json.dumps(metadata)}
+                    columns = list(runtime)
+                    conn.execute(f"INSERT INTO agent_runtime_bindings({','.join(columns)}) VALUES({','.join('?' for _ in columns)})", [runtime[key] for key in columns])
+                ids.append(identity)
+            return ids
+
+    def test_ordinary_sessions_cannot_hide_an_older_evaluation(self) -> None:
+        for count in (500, 1000):
+            with self.subTest(ordinary_count=count):
+                original = self._snapshot(index=1, succeeded=True, passed=1, total=1)
+                ids = self._clone_sessions(original, count, evaluation=False)
+                try:
+                    projection = EvalLabProjection(self.db_path)
+                    with patch.object(projection.sessions, "runtime_binding", side_effect=AssertionError("evaluation must use joined binding")):
+                        result = projection.list_runs()
+                    self.assertEqual(result["total"], 1)
+                    self.assertEqual(result["items"][0]["tasks"][0]["sessionId"], original)
+                    self.assertNotIn("truncation", result)
+                finally:
+                    with closing(sqlite3.connect(self.db_path)) as conn, conn:
+                        conn.executemany("DELETE FROM agent_sessions WHERE id=?", [(identity,) for identity in ids])
+                        conn.execute("DELETE FROM agent_runtime_bindings WHERE session_id=?", (original,))
+                        conn.execute("DELETE FROM agent_sessions WHERE id=?", (original,))
+
+    def test_evaluation_keyset_pages_include_every_same_millisecond_identity_once(self) -> None:
+        original = self._snapshot(index=1, succeeded=True, passed=1, total=1)
+        ids = self._clone_sessions(original, 501, evaluation=True)
+        self._clone_sessions(original, 1000, evaluation=False)
+        cursor = {}
+        seen = []
+        pages = []
+        while True:
+            page = self.store.list_evaluation_page(limit=37, **cursor)
+            pages.append(page)
+            seen.extend(str(record["session"]["id"]) for record in page["items"])
+            for record in page["items"]:
+                self.assertEqual(record["snapshot"]["runId"], "enterpriseops-validation-v1")
+                self.assertNotIn("metadata", record["session"]["runtimeBinding"])
+            if not page["hasMore"]:
+                break
+            cursor = {"before_updated_at_ms": page["nextCursor"]["beforeUpdatedAtMs"],
+                      "before_id": page["nextCursor"]["beforeId"]}
+        self.assertEqual(seen, sorted(ids, reverse=True) + [original])
+        self.assertEqual(len(seen), len(set(seen)))
+        self.assertIsNone(pages[-1]["nextCursor"])
+        bounded = self.store.list_evaluation_page(limit=1000)
+        self.assertEqual(len(bounded["items"]), 500)
+        self.assertTrue(bounded["hasMore"])
+
+    def test_evaluation_pages_preserve_archive_internal_and_surface_filters(self) -> None:
+        original = self._snapshot(index=1, succeeded=True, passed=1, total=1)
+        ids = self._clone_sessions(original, 3, evaluation=True)
+        self.store.archive(ids[0], updated_at_ms=10_000)
+        with closing(sqlite3.connect(self.db_path)) as conn, conn:
+            conn.execute("UPDATE agent_sessions SET session_kind='subagent_runtime' WHERE id=?", (ids[1],))
+            conn.execute("UPDATE agent_sessions SET surface_kind='extension_app',owner_app_id='extension:eval-test',surface_key='original' WHERE id=?", (ids[2],))
+        visible = lambda **filters: {record["session"]["id"] for record in self.store.list_evaluation_page(**filters)["items"]}
+        self.assertEqual(visible(), {original, ids[2]})
+        self.assertEqual(visible(include_archived=True), {original, ids[0], ids[2]})
+        self.assertEqual(visible(include_internal=True), {original, ids[1], ids[2]})
+        self.assertEqual(visible(include_archived=True, include_internal=True), {original, *ids})
+        self.assertEqual(visible(surface_kind="extension_app", owner_app_id="extension:eval-test", surface_key="original"), {ids[2]})
+        with self.assertRaisesRegex(ValueError, "surface filters require"):
+            self.store.list_evaluation_page(owner_app_id="extension:eval-test")
+
+    def test_full_evaluation_scan_preserves_run_statistics_before_task_display_limit(self) -> None:
+        original = self._snapshot(index=1, succeeded=True, passed=1, total=1)
+        ids = self._clone_sessions(original, 501, evaluation=True)
+        payload = EvalLabProjection(self.db_path).list_runs()
+        validate_contract(payload, "eval-lab-run-list.v1.json")
+        self.assertEqual(payload["total"], 1)
+        self.assertEqual(payload["items"][0]["taskCount"], 502)
+        self.assertEqual(payload["items"][0]["taskSuccessCount"], 502)
+        self.assertEqual(len(payload["items"][0]["tasks"]), 500)
+        self.assertEqual(payload["truncation"], {"runLimit": 500, "taskLimit": 500, "omittedRunCount": 0, "omittedTaskCount": 2})
+        self.assertIn(original, {task["sessionId"] for task in payload["items"][0]["tasks"]})
+        self.assertEqual(len(ids), 501)
+
+    def test_run_display_limit_counts_runs_not_sessions_and_is_explicit(self) -> None:
+        original = self._snapshot(index=1, succeeded=True, passed=1, total=1)
+        self._clone_sessions(original, 501, evaluation=True, distinct_runs=True)
+        payload = EvalLabProjection(self.db_path).list_runs()
+        validate_contract(payload, "eval-lab-run-list.v1.json")
+        self.assertEqual(payload["total"], 502)
+        self.assertEqual(len(payload["items"]), 500)
+        self.assertEqual([run["runId"] for run in payload["items"]], [f"evaluation-run-{index:04d}" for index in range(500)])
+        self.assertEqual(payload["truncation"], {"runLimit": 500, "taskLimit": 500, "omittedRunCount": 2, "omittedTaskCount": 0})
+        invalid = deepcopy(payload)
+        invalid["truncation"]["omittedTaskCount"] = -1
+        with self.assertRaises(ContractValidationError):
+            validate_contract(invalid, "eval-lab-run-list.v1.json")
 
     def test_groups_snapshot_sessions_into_sanitized_runs(self) -> None:
         first = self._snapshot(index=1, succeeded=True, passed=11, total=11)

@@ -68,6 +68,72 @@ class HybridRagRetrieverTests(unittest.TestCase):
         self.assertAlmostEqual(vector[0], 0.9701425, places=6)
         self.assertAlmostEqual(vector[1], 0.2425356, places=6)
 
+    def test_fts_discovery_hydrates_related_primary_keys_before_ranking(self) -> None:
+        from rag_ime.hybrid_rag_retriever import _active_docs
+        from tests.test_memory_projection_consistency import MemoryProjectionConsistencyTests
+
+        with self.connect() as conn:
+            for index in range(100):
+                MemoryProjectionConsistencyTests._insert_atom(conn, f"budget:{index}",
+                    "LayerTwoGold exact fact" if index == 99 else f"unrelated public fact {index}", 10)
+            rebuild_retrieval_docs(conn, project="test")
+            hydrated: list[int] = []
+            def observed(*args, **kwargs):
+                docs = _active_docs(*args, **kwargs)
+                hydrated.append(len(docs))
+                return docs
+            with patch("rag_ime.hybrid_rag_retriever._active_docs", side_effect=observed):
+                payload = retrieve_hybrid_rag_candidates(conn, HybridRagQuery(query_text="LayerTwoGold", project="test"))
+            self.assertEqual(payload["memoryHits"][0]["source_id"], "budget:99")
+            self.assertEqual(hydrated, [1])
+
+    def test_unavailable_embedding_and_fts_retain_complete_substring_recall(self) -> None:
+        from tests.test_memory_projection_consistency import MemoryProjectionConsistencyTests
+        class Unavailable:
+            fingerprint = "none"
+            def embed(self, text):
+                raise AssertionError("Unavailable embedding must not execute")
+        with self.connect() as conn:
+            for index in range(100):
+                MemoryProjectionConsistencyTests._insert_atom(conn, f"fallback:{index}",
+                    "FallbackGold exact fact" if index == 99 else f"unrelated public fact {index}", 10)
+            rebuild_retrieval_docs(conn, project="test")
+            conn.execute("DROP TABLE memory_retrieval_docs_fts")
+            payload = retrieve_hybrid_rag_candidates(conn, HybridRagQuery(query_text="FallbackGold", project="test"), Unavailable())
+        self.assertEqual(payload["memoryHits"][0]["source_id"], "fallback:99")
+        self.assertFalse(payload["candidateDiscovery"]["candidateCountBounded"])
+        self.assertEqual(payload["lanes"]["bm25_raw"]["implementation"], "lexical_substring_fallback")
+
+    def test_governed_empty_fts_prefix_retains_tail_recall_after_canonical_forget(self) -> None:
+        from tests.test_memory_projection_consistency import MemoryProjectionConsistencyTests
+        with self.connect() as conn:
+            for index in range(600):
+                MemoryProjectionConsistencyTests._insert_atom(conn, f"forgotten:{index}", "GovernanceGold", 10)
+            MemoryProjectionConsistencyTests._insert_atom(conn, "valid:tail", "GovernanceGold and many unrelated filler words to lower lexical rank", 10)
+            rebuild_retrieval_docs(conn, project="test")
+            conn.execute("UPDATE memory_atoms SET status = 'forgotten' WHERE id LIKE 'forgotten:%'")
+            projection_body_reads: list[str] = []
+            def record_projection_row(cursor: sqlite3.Cursor, row: tuple[object, ...]) -> sqlite3.Row:
+                columns = [column[0] for column in cursor.description]
+                if {"doc_id", "doc_type", "source_id", "raw_text"}.issubset(columns):
+                    projection_body_reads.append(str(row[columns.index("doc_id")]))
+                return sqlite3.Row(cursor, row)
+            conn.row_factory = record_projection_row
+            try:
+                payload = retrieve_hybrid_rag_candidates(conn, HybridRagQuery(query_text="GovernanceGold", project="test"))
+            finally:
+                conn.row_factory = sqlite3.Row
+        self.assertTrue(payload["memoryHits"])
+        self.assertEqual({hit["source_id"] for hit in payload["memoryHits"]}, {"valid:tail"})
+        discovery = payload["candidateDiscovery"]
+        self.assertEqual(discovery["strategy"], "governed_fts_prefix_empty")
+        self.assertFalse(discovery["candidateCountBounded"])
+        self.assertFalse(discovery["scanBounded"])
+        self.assertEqual(discovery.get("admittedDocuments"), 1)
+        self.assertNotIn("hydratedDocuments", discovery)
+        self.assertGreater(len(projection_body_reads), discovery["admittedDocuments"])
+        self.assertIn("atom:forgotten:0", projection_body_reads)
+
     def test_bm25_raw_exact_keyword_hit(self) -> None:
         self._record_event("多路召回", recent_context="RAG 输入法", tags=("RAG", "检索"))
         with self.connect() as conn:

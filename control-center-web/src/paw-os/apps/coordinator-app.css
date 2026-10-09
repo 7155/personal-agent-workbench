@@ -1,0 +1,179 @@
+.paw-coordinator {
+  display: grid; grid-template-columns: minmax(0, 1fr) 300px; width: 100%; height: 100%; min-height: 0;
+  color: var(--color-workspace-ink); background: var(--color-workspace-surface); font-size: 14px; line-height: 1.5;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', sans-serif;
+  --coordinator-scrollbar-width: 0px;
+  --coordinator-reading-width: var(--workspace-measure, 960px);
+  --coordinator-gutter: clamp(12px, 2.5cqi, 30px);
+  container-type: inline-size; position: relative;
+}
+.paw-coordinator__conversation { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+.paw-coordinator__header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 22px 32px 16px; }
+.paw-coordinator__header h1 { display: flex; align-items: center; gap: 9px; margin: 0 0 2px; font-size: 22px; line-height: 1.25; font-weight: 600; letter-spacing: -.025em; }
+.paw-coordinator__header span { color: var(--color-workspace-secondary); font-size: 13px; }
+.paw-coordinator i { font-style: normal; padding: 0 3px; opacity: .5; }
+.paw-coordinator__conversation > .paw-session-workspace { flex: 1; min-height: 0; }
+.paw-coordinator .paw-session-workspace { border: 0; background: transparent; }
+.paw-coordinator .paw-session-workspace .paw-session-timeline { max-width: 960px; width: 100%; margin-inline: auto; }
+.paw-coordinator__rail { min-height: 0; overflow: auto; padding: 24px 20px; border-left: 1px solid color-mix(in srgb, var(--color-workspace-ink) 7%, transparent); background: var(--color-workspace-surface); }
+.paw-coordinator__identity { display: flex; align-items: center; gap: 11px; margin-bottom: 32px; }
+.paw-coordinator__identity strong { display: block; font-size: 17px; font-weight: 600; }
+.paw-coordinator__identity small { display: block; color: var(--color-workspace-secondary); font-size: 12px; margin-top: 2px; }
+.paw-coordinator__section-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.paw-coordinator h2 { font-size: 14px; line-height: 1.5; font-weight: 600; margin: 0; }
+.paw-coordinator h2 > span { margin-left: 5px; color: var(--color-workspace-secondary); font-weight: 400; }
+.paw-coordinator button { font: inherit; color: inherit; cursor: pointer; border: 0; background: transparent; min-height: 32px; border-radius: 7px; }
+.paw-coordinator button:hover { background: var(--color-surface-subtle); }
+.paw-coordinator button:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.paw-coordinator button:disabled { opacity: .5; cursor: default; }
+.paw-coordinator button.paw-coordinator__avatar { display: grid; place-items: center; width: 48px; height: 48px; min-height: 48px; padding: 0; flex: 0 0 auto; border: 1px solid var(--color-workspace-border-soft); border-radius: 50%; background: var(--color-surface-subtle); transition: background-color 180ms, border-color 180ms; }
+.paw-coordinator button.paw-coordinator__avatar:hover:not(:disabled) { border-color: var(--color-workspace-secondary); background: var(--color-workspace-surface); }
+.paw-coordinator__create { display: flex; gap: 6px; margin: 8px 0 10px; }
+.paw-coordinator__create button, .paw-coordinator__actions button, .paw-coordinator__more { display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; font-size: 13px; }
+.paw-coordinator__empty { color: var(--color-workspace-secondary); font-size: 13px; line-height: 1.65; margin: 8px 0 22px; }
+.paw-coordinator__object { position: relative; padding: 5px 0 7px 12px; }
+.paw-coordinator__connection { position: absolute; width: 1px; left: 0; top: 11px; bottom: 8px; background: color-mix(in srgb, var(--color-workspace-ink) 13%, transparent); overflow: hidden; }
+.paw-coordinator__connection i { position: absolute; top: -6px; width: 1px; height: 6px; background: var(--color-workspace-ink); padding: 0; opacity: 0; }
+.paw-coordinator__object[data-control-active='true'][data-motion='active'] .paw-coordinator__connection i { animation: paw-coordinator-control 1.2s linear infinite; }
+@keyframes paw-coordinator-control { 0% { transform: translateY(0); opacity: 0; } 20%, 75% { opacity: .7; } 100% { transform: translateY(64px); opacity: 0; } }
+.paw-coordinator__object-open { display: flex; width: 100%; align-items: flex-start; gap: 9px; text-align: left; padding: 7px 4px; }
+.paw-coordinator__object-open > svg:first-child { flex: 0 0 auto; margin-top: 3px; color: var(--color-workspace-secondary); }
+.paw-coordinator__object-open > svg:last-child { flex: 0 0 auto; margin-top: 4px; color: var(--color-workspace-secondary); }
+.paw-coordinator__object-open > span { min-width: 0; flex: 1; }
+.paw-coordinator__object-open strong { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 14px; line-height: 1.45; font-weight: 500; overflow-wrap: anywhere; }
+.paw-coordinator__object-open small { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--color-workspace-secondary); font-size: 12px; line-height: 1.6; margin-top: 3px; overflow-wrap: anywhere; }
+.paw-coordinator__object-open em { display: block; font-size: 12px; color: var(--color-workspace-secondary); margin-top: 6px; font-style: normal; }
+.paw-coordinator__actions { display: flex; gap: 6px; padding-left: 23px; }
+.paw-coordinator__object p[role='alert'] { font-size: 12px; margin: 3px 0; color: var(--color-danger); }
+.paw-coordinator__outputs-heading { margin-top: 28px !important; margin-bottom: 7px !important; }
+.paw-coordinator__output { display: flex; align-items: center; width: 100%; gap: 9px; padding: 7px 5px; text-align: left; }
+.paw-coordinator__output > span { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
+.paw-coordinator__output small { display: block; color: var(--color-workspace-secondary); font-size: 12px; }
+.paw-coordinator__error { display: flex; gap: 10px; align-items: center; padding: 8px 24px; font-size: 13px; color: var(--color-danger); }
+.paw-coordinator__loading { color: var(--color-workspace-secondary); padding: 24px 32px; }
+.paw-coordinator__rail-toggle, .paw-coordinator__rail-close { display: none; }
+.paw-coordinator__create-dialog { max-width: 480px; font-size: 14px; }
+.paw-coordinator__create-dialog label { display: flex; flex-direction: column; gap: 7px; font-weight: 500; }
+.paw-coordinator__create-dialog textarea, .paw-coordinator__create-dialog select { width: 100%; min-width: 0; border: 1px solid var(--color-workspace-border-soft); padding: 10px; border-radius: 9px; font: inherit; background: var(--color-workspace-surface); color: var(--color-workspace-ink); }
+.paw-coordinator__create-dialog p { color: var(--color-workspace-secondary); font-size: 13px; margin: 6px 0; }
+.paw-coordinator__partners { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.paw-coordinator__dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.paw-coordinator__dialog-actions button { font: inherit; border-radius: 8px; padding: 8px 14px; border: 0; background: var(--color-surface-subtle); }
+.paw-coordinator__dialog-actions button:last-child { background: var(--color-workspace-ink); color: var(--color-workspace-surface); }
+@container (max-width: 960px) {
+ .paw-coordinator__conversation { grid-column: 1 / -1; }
+ .paw-coordinator__rail-toggle { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; }
+ .paw-coordinator__rail-close { display: grid; place-items: center; margin-left: auto; }
+ .paw-coordinator__rail { position: absolute; right: 0; top: 0; bottom: 0; width: min(320px, 90%); z-index: 8; display: none; box-shadow: -10px 0 30px rgb(0 0 0 / .06); }
+ .paw-coordinator[data-rail-open='true'] .paw-coordinator__rail { display: block; }
+ .paw-coordinator__header { padding: 20px 20px 12px; }
+ .paw-coordinator button { min-height: 40px; }
+}
+/* The grid responds to the App window as well as the physical viewport. */
+@media (max-width: 960px) { .paw-coordinator { grid-template-columns: minmax(0, 1fr); } }
+@media (prefers-reduced-motion: reduce) { .paw-coordinator__connection i { animation: none !important; } .paw-coordinator button.paw-coordinator__avatar { transition: none; } }
+[data-reduce-motion='true'] .paw-coordinator__connection i { animation: none !important; }
+[data-reduce-motion='true'] .paw-coordinator button.paw-coordinator__avatar { transition: none; }
+/* Embedded coordinator has no Session chrome row. Give its actual workspace
+   body the remaining height instead of the standalone 44px header track. */
+.paw-desktop-root .paw-coordinator .paw-session-workspace { display: flex; flex-direction: column; flex: 1 1 auto; height: auto; min-height: 0; border: 0; background: transparent; }
+.paw-desktop-root .paw-coordinator .paw-session-workspace > .paw-session-workspace__body { flex: 1 1 auto; min-height: 0; }
+.paw-desktop-root .paw-coordinator[data-chat-presentation-version='v2'] .paw-session-workspace__conversation { --ccui-font-size: 16px; --ccui-line-height: 1.66; }
+.paw-desktop-root .paw-coordinator[data-chat-presentation-version='v2'] :is(.ccui-markdown, .ccui-user-text, .agent-markdown, .fx-prose) { font-size: 16px; line-height: 1.66; }
+.paw-desktop-root .paw-coordinator[data-chat-presentation-version='v2'] .ccui-user-bubble { background: var(--color-surface-subtle); border: 0; box-shadow: none; border-radius: 18px; }
+/* One adaptive column for messages, status and input inside this App. */
+.paw-desktop-root .paw-coordinator[data-chat-presentation-version='v2'] .paw-session-workspace__conversation { --ccui-reading-width: var(--coordinator-reading-width); }
+.paw-desktop-root .paw-coordinator[data-chat-presentation-version='v2'][data-rail-open] .paw-session-workspace .paw-session-workspace__conversation[data-message-flow] .agent-timeline { width: 100%; max-width: none; padding-inline: var(--coordinator-gutter); box-sizing: border-box; }
+.paw-desktop-root .paw-coordinator[data-chat-presentation-version='v2'][data-rail-open] .paw-session-workspace .paw-session-workspace__conversation :is(.ccui-turn, .agent-turn, .agent-first-response) { width: min(var(--coordinator-reading-width), 100%); max-width: var(--coordinator-reading-width); margin-inline: auto; padding-inline: 0; }
+.paw-desktop-root .paw-coordinator[data-chat-presentation-version='v2'] .paw-session-workspace__composer { padding-inline: var(--coordinator-gutter) calc(var(--coordinator-gutter) + var(--coordinator-scrollbar-width)); }
+.paw-desktop-root .paw-coordinator[data-chat-presentation-version='v2'] .paw-session-workspace__composer > .agent-composer-wrap { width: min(var(--coordinator-reading-width), 100%); margin-inline: auto; }
+.paw-desktop-root .paw-coordinator[data-chat-presentation-version='v2'] .paw-session-workspace__tail { width: min(var(--coordinator-reading-width), calc(100% - 2 * var(--coordinator-gutter))); margin-inline: auto; }
+.paw-coordinator__header > div { min-width: 0; }
+.paw-coordinator__header { flex-wrap: wrap; }
+.paw-desktop-root .paw-coordinator[data-chat-presentation-version='v2'] .agent-timeline-empty { width: min(480px, calc(100% - 40px)); height: auto; min-height: 0; margin: auto; padding: 28px 12px; border: 0; background: transparent; box-shadow: none; color: var(--color-workspace-secondary); }
+.paw-desktop-root .paw-coordinator[data-chat-presentation-version='v2'] .agent-timeline-empty > svg { color: var(--color-workspace-secondary); background: var(--color-surface-subtle); border: 0; }
+.paw-desktop-root .paw-coordinator[data-chat-presentation-version='v2'] .agent-timeline-empty strong { color: var(--color-workspace-ink); font-size: 16px; font-weight: 500; }
+.paw-desktop-root .paw-coordinator[data-chat-presentation-version='v2'] .agent-timeline-empty small { font-size: 14px; line-height: 1.65; }
+
+/* This controller expresses settled/waiting state without ambient movement. */
+.paw-coordinator .room-planet-avatar:not([data-activity='working']),
+.paw-coordinator .room-planet-avatar:not([data-activity='working']) :is(.room-planet-eye, .room-planet-gaze, .room-planet-mouth),
+[data-reduce-motion='true'] .paw-coordinator .room-planet-avatar,
+[data-reduce-motion='true'] .paw-coordinator .room-planet-avatar :is(.room-planet-eye, .room-planet-gaze, .room-planet-mouth) { animation: none; transform: none; }
+
+.paw-coordinator__settings-trigger { margin-left: auto; flex: 0 0 auto; }
+.paw-coordinator__settings { width: min(290px, calc(100vw - 24px)); font-size: 14px; }
+.paw-coordinator__settings fieldset { margin: 0; padding: 0; border: 0; }
+.paw-coordinator__settings legend { font-weight: 600; margin-bottom: 10px; }
+.paw-coordinator__settings fieldset > div { display: flex; gap: 6px; }
+.paw-coordinator__settings button { font: inherit; padding: 7px 9px; min-height: 36px; border: 0; border-radius: 7px; cursor: pointer; background: var(--color-surface-subtle); color: var(--color-workspace-ink); }
+.paw-coordinator__settings button[aria-pressed='true'] { background: var(--color-workspace-ink); color: var(--color-workspace-surface); }
+.paw-coordinator__settings fieldset > button { margin-top: 8px; }
+.paw-coordinator__companion-entry { margin-top: 16px; }
+.paw-coordinator__companion-entry > button { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }
+.paw-coordinator__settings p { color: var(--color-workspace-secondary); font-size: 12px; line-height: 1.6; margin-bottom: 0; }
+/* FX messages share the column but keep a lightly tinted user bubble. The
+   legacy left margin must not consume a narrow App's reading width. */
+.paw-desktop-root .paw-coordinator[data-chat-presentation-version='v2'] .paw-session-workspace .paw-user-message { max-width: min(92%, 720px); margin-left: 0; padding: 12px 16px; border: 0; border-radius: 18px; background: var(--color-surface-subtle); box-shadow: none; font-size: 16px; line-height: 1.66; }
+.paw-desktop-root .paw-coordinator[data-chat-presentation-version='v2'] .paw-session-workspace .paw-session-workspace__conversation[data-message-flow] .agent-user-message-shell { width: fit-content; max-width: min(92%, 720px); padding: 0; }
+.paw-desktop-root .paw-coordinator[data-chat-presentation-version='v2'] .paw-session-workspace .paw-session-workspace__conversation[data-message-flow] .agent-user-message { width: auto; max-width: 100%; padding: 0; border: 0; background: transparent; box-shadow: none; }
+.paw-desktop-root .paw-coordinator[data-chat-presentation-version='v2'] .paw-session-workspace .paw-session-workspace__conversation[data-message-flow] .agent-user-message .agent-markdown { padding: 12px 16px; border: 0; border-radius: 18px; background: var(--color-surface-subtle); box-shadow: none; font-size: 16px; line-height: 1.66; }
+/* StarMate entry: sustained reading, with low-frequency tools and accountable
+   records in a quiet rail. The shared chat owner retains composer/telemetry. */
+.paw-coordinator__toolbar { display:flex; align-items:center; gap:4px; flex:0 0 auto; }
+.paw-coordinator__toolbar > button:not(.paw-coordinator__rail-toggle), .paw-coordinator__toolbar > [data-state] { display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:6px 9px; }
+.paw-coordinator__screen-tools { width:min(290px,calc(100vw - 24px)); font-size:14px; line-height:1.6; }
+.paw-coordinator__screen-tools strong { font-size:14px; font-weight:600; }
+.paw-coordinator__screen-tools p { margin:7px 0 12px; color:var(--color-workspace-secondary); font-size:13px; }
+.paw-coordinator__screen-tools button { display:inline-flex; gap:7px; align-items:center; min-height:36px; border:1px solid var(--color-workspace-border-soft); border-radius:8px; background:var(--color-surface-subtle); color:var(--color-workspace-ink); padding:7px 12px; font:inherit; cursor:pointer; }
+.paw-coordinator__screen-tools button:focus-visible { outline:2px solid var(--color-focus); outline-offset:2px; }
+.paw-coordinator__screen-tools button:disabled { opacity:.55; cursor:default; }
+.paw-coordinator__rail-section { margin-top:22px; }
+.paw-coordinator__rail-section > summary { display:flex; align-items:center; gap:8px; min-height:32px; cursor:pointer; font-size:14px; list-style:none; }
+.paw-coordinator__rail-section > summary::-webkit-details-marker { display:none; }
+.paw-coordinator__rail-section > summary > svg:first-child { color:var(--color-workspace-secondary); }
+.paw-coordinator__rail-section > summary > strong { flex:1; font-weight:600; }
+.paw-coordinator__rail-section > summary > span { color:var(--color-workspace-secondary); font-size:12px; font-variant-numeric:tabular-nums; }
+.paw-coordinator__rail-section > summary > svg:last-child { color:var(--color-workspace-secondary); transform:rotate(-90deg); }
+.paw-coordinator__rail-section[open] > summary > svg:last-child { transform:none; }
+.paw-coordinator__rail-section > summary:focus-visible { outline:2px solid var(--color-focus); outline-offset:2px; border-radius:4px; }
+.paw-coordinator__progress ul { display:grid; gap:11px; padding:0; margin:12px 0 4px; list-style:none; }
+.paw-coordinator__progress li { display:flex; gap:8px; align-items:flex-start; font-size:13px; line-height:1.55; }
+.paw-coordinator__progress li > svg { flex:0 0 auto; margin-top:3px; color:var(--color-workspace-secondary); }
+.paw-coordinator__progress li[data-state='completed'] > svg { color:var(--color-success); }
+.paw-coordinator__progress li small { display:block; margin-top:2px; color:var(--color-workspace-secondary); font-size:12px; }
+.paw-coordinator__progress li div { min-width:0; overflow-wrap:anywhere; }
+.paw-coordinator__sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; }
+.paw-coordinator[data-chat-presentation-version='v2'] .paw-coordinator__header { padding-block:16px 14px; }
+.paw-coordinator[data-chat-presentation-version='v2'] .paw-coordinator__identity { margin-bottom:20px; }
+.paw-coordinator[data-chat-presentation-version='v2'] .paw-coordinator__section-heading { justify-content:flex-end; margin-top:2px; }
+@container (max-width:620px) {
+ .paw-coordinator__header { gap:8px; padding-inline:16px; }
+ .paw-coordinator__header h1 { font-size:20px; }
+ .paw-coordinator__header > div:first-child > span { font-size:12px; }
+ .paw-coordinator__toolbar > button, .paw-coordinator__toolbar > [data-state] { min-width:44px; min-height:44px; padding:9px; }
+ .paw-coordinator__toolbar > button:not(.paw-coordinator__rail-toggle) > span { display:none; }
+ .paw-coordinator__toolbar > .paw-coordinator__rail-toggle { gap:4px; padding-inline:8px; }
+ .paw-coordinator__rail-section > summary { min-height:44px; }
+}
+/* Reuse the Session owner's measured --workspace-composer-clearance footer.
+   Cap only the default editor; the explicit Expand control keeps its native
+   behavior and the same textarea/draft. Controls remain outside editor scroll. */
+.paw-desktop-root .paw-coordinator[data-chat-presentation-version='v2'] .agent-composer:not([data-expanded='true']) textarea {
+  max-height: clamp(52px, calc(30dvh - 140px), 100px);
+  overflow-y: auto;
+}
+@container (max-width:620px) {
+ .paw-coordinator[data-chat-presentation-version='v2'] .paw-coordinator__header { padding-block:8px; flex-wrap:nowrap; }
+}
+
+/* At browser zoom the short viewport needs room for the transcript's full
+   keyboard target and focus ring above the measured floating composer. Keep
+   the same type and controls; spend less of that height on header whitespace. */
+@media (max-height:560px) {
+ .paw-coordinator[data-chat-presentation-version='v2'] .paw-coordinator__header { padding-block:8px; }
+ .paw-desktop-root .paw-coordinator[data-chat-presentation-version='v2'] .agent-composer:not([data-expanded='true']) textarea {
+  min-height:52px;
+  padding-block:12px 8px;
+ }
+}

@@ -8,6 +8,7 @@ from contextlib import closing
 from pathlib import Path
 
 from rag_ime.agent_sessions import AgentSessionStore
+from rag_ime.agent_tool_ids import DANGEROUS_AUTO_APPROVE_TOOL_PROFILE
 from rag_ime.db import apply_database_migrations
 
 
@@ -47,6 +48,44 @@ class AgentSessionRuntimeEngineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "runtime engine"):
             self.store.create(title="错误配置", runtime_engine="auto")
         self.assertEqual(self.store.list(), [])
+
+    def test_full_trust_skill_flags_match_engine_at_creation_and_policy_updates(self) -> None:
+        for engine in ("classic", "durable"):
+            with self.subTest(engine=engine):
+                session = self.store.create(title=f"Full trust {engine}", mode="coordinator",
+                    runtime_engine=engine, tool_profile_version=DANGEROUS_AUTO_APPROVE_TOOL_PROFILE,
+                    execution_mode="full_trust", workspace_roots=[], pi_skills_enabled=False,
+                    codex_skills_enabled=False)
+                self.assertEqual(session["workspaceRoots"], ["/"])
+                self.assertEqual(session["executionMode"], "full_trust")
+                self.assertEqual(session["toolProfileVersion"], DANGEROUS_AUTO_APPROVE_TOOL_PROFILE)
+                self.assertEqual(session["piSkillsEnabled"], engine == "classic")
+                self.assertEqual(session["codexSkillsEnabled"], engine == "classic")
+                binding = self.store.runtime_binding(session["id"])
+                updated = self.store.set_runtime_policy(session["id"], mode="coordinator", allowed_tools=None,
+                    tool_profile_version=DANGEROUS_AUTO_APPROVE_TOOL_PROFILE, execution_mode="full_trust",
+                    workspace_roots=[], pi_skills_enabled=True, codex_skills_enabled=True)
+                self.assertEqual(updated["runtimeEngine"], engine)
+                self.assertEqual(updated["workspaceRoots"], ["/"])
+                self.assertEqual(updated["executionMode"], "full_trust")
+                self.assertEqual(updated["piSkillsEnabled"], engine == "classic")
+                self.assertEqual(updated["codexSkillsEnabled"], engine == "classic")
+                self.assertEqual(self.store.runtime_binding(session["id"]), binding)
+
+    def test_existing_durable_policy_update_cannot_enable_unsupported_skills(self) -> None:
+        for engine in ("classic", "durable"):
+            with self.subTest(engine=engine):
+                session = self.store.create(title=f"Existing {engine}", mode="coordinator", runtime_engine=engine)
+                self.assertFalse(session["piSkillsEnabled"])
+                self.assertFalse(session["codexSkillsEnabled"])
+                updated = self.store.set_runtime_policy(session["id"], mode="coordinator", allowed_tools=None,
+                    tool_profile_version=DANGEROUS_AUTO_APPROVE_TOOL_PROFILE, execution_mode="full_trust",
+                    workspace_roots=[], grant_workspace_scope=True, pi_skills_enabled=True, codex_skills_enabled=True)
+                self.assertEqual(updated["workspaceRoots"], ["/"])
+                self.assertEqual(updated["runtimeEngine"], engine)
+                self.assertEqual(updated["executionMode"], "full_trust")
+                self.assertEqual(updated["piSkillsEnabled"], engine == "classic")
+                self.assertEqual(updated["codexSkillsEnabled"], engine == "classic")
 
     def test_durable_is_not_implicitly_adopted_by_internal_or_app_owned_sessions(self) -> None:
         with self.assertRaisesRegex(ValueError, "standalone"):

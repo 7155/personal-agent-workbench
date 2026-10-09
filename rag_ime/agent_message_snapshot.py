@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from collections import deque
 from collections.abc import Callable, Mapping, Sequence
@@ -8,6 +9,7 @@ from typing import Any, TypeAlias
 from .agent_blocks import MAX_BLOCKS_PER_TURN, normalize_trusted_agent_blocks
 from .agent_protocol import AgentEventEnvelope
 from .agent_tool_artifacts import managed_file_block
+from .agent_runtime_driver import AgentRuntimeError
 from .contracts.json_schema import validate_contract
 from .contracts.compaction_target import validate_compaction_target
 
@@ -163,6 +165,117 @@ class AgentMessageSnapshotService:
 
         return self._runtime_provider()
 
+    def read_result(
+        self, session_id: str, turn_id: str, client_message_id: str,
+        *, acceptance: Mapping[str, object] | None, _allow_host_open: bool = True,
+    ) -> dict[str, object]:
+        """Project one accepted turn, without the UI's status/Goal reconciliation.
+
+        The coordinator checks causal ownership before entering this adapter.
+        Native history remains the message authority; text naming a file is
+        never an artifact receipt. Missing retained evidence stays explicit.
+        """
+        self.sessions.get(session_id)
+        result: dict[str, object] = {
+            "execution": {"sessionId": session_id, "turnId": turn_id, "clientMessageId": client_message_id},
+            "state": "unknown", "acceptanceRef": dict(acceptance) if acceptance else None,
+            "terminalRefs": [], "finalMessages": [], "toolRefs": [], "artifacts": [],
+            "messagesUnavailable": True,
+        }
+        if not acceptance:
+            return {**result, "reason": "original_acceptance_unavailable"}
+        if acceptance.get("turnId") != turn_id or acceptance.get("clientMessageId") != client_message_id:
+            raise ValueError("read_result original clientMessageId and turnId do not match")
+        terminal = self.sessions.runtime_turn_terminal_event(session_id, turn_id)
+        if terminal is None:
+            return {**result, "state": "pending", "reason": "original_terminal_unavailable"}
+        status = str(terminal.get("status") or "").lower()
+        # Some terminal records retain only the event type. Keep their
+        # disposition unknown instead of guessing successful completion.
+        # Cancellation owners explicitly publish status=aborted.
+        state = ("aborted" if status in {"aborted", "cancelled", "canceled"}
+                 else "failed" if terminal.get("eventType") == "turn_failed"
+                 else "completed" if status == "completed" else "unknown")
+        result.update(state=state, terminalRefs=[terminal])
+        if state == "unknown":
+            result["reason"] = "original_terminal_status_unrecognized" if status else "original_terminal_status_not_retained"
+        with self.sessions._read_connect() as conn:
+            rows = conn.execute("SELECT event_id, sequence, created_at_ms, metrics_json FROM agent_runtime_events "
+                                "WHERE session_id=? AND turn_id=? AND event_type='tool_finished' ORDER BY sequence LIMIT 17",
+                                (session_id, turn_id)).fetchall()
+        tool_refs = []
+        for row in rows[:16]:
+            metrics = json.loads(str(row["metrics_json"] or "{}"))
+            identity = metrics.get("toolIdentity") if isinstance(metrics, Mapping) else None
+            if isinstance(identity, Mapping) and identity.get("toolCallId"):
+                tool_refs.append({"eventId": str(row["event_id"]), "sequence": int(row["sequence"]),
+                                  "createdAtMs": int(row["created_at_ms"]),
+                                  "toolCallId": str(identity["toolCallId"])[:512],
+                                  "toolName": str(identity.get("toolName") or "")[:120]})
+        result["toolRefs"] = tool_refs
+        try:
+            # This is the existing passive Pi history read. No prompt, wait,
+            # resume, Goal check, or UI message-count reconciliation runs here.
+            raw = (self.runtime.messages(session_id) if _allow_host_open
+                   else self.runtime.messages(session_id, _allow_host_open=False))
+            matching = [message for message in raw if isinstance(message, Mapping)
+                        and message.get("turnId") == turn_id and message.get("role") == "assistant"]
+        except (AgentRuntimeError, OSError, KeyError):
+            result.setdefault("reason", "original_history_unavailable")
+            return result
+        matching = [message for message in matching if message.get("turnId") == turn_id
+                    and message.get("role") == "assistant"]
+        final_messages = []
+        artifacts = []
+        budget = 8000
+        for message in reversed(matching[-8:]):
+            message_id = str(message.get("id") or "")
+            if not message_id:
+                continue
+            raw_blocks = [block for block in message.get("blocks", []) if isinstance(block, Mapping)]
+            # Read only sidecars for this exact original message ID. Global
+            # history alias hydration can match identical text in another turn.
+            # Live typed blocks can already be present in canonical history.
+            # Keep their first exact ID once, never deduplicate by text/turn.
+            blocks = []
+            seen_block_ids: set[str] = set()
+            for block in [*raw_blocks, *self.agent_blocks.blocks_for_message(session_id, message_id)]:
+                block_id = block.get("id")
+                if isinstance(block_id, str) and block_id:
+                    if block_id in seen_block_ids:
+                        continue
+                    seen_block_ids.add(block_id)
+                blocks.append(block)
+            text = "\n".join(str(data.get("text") or data.get("markdown") or data.get("code") or "")
+                             for block in blocks if block.get("type") in {"text", "code"}
+                             for data in [block.get("data")] if isinstance(data, Mapping))
+            bounded = text[:budget]
+            budget -= len(bounded)
+            if text:
+                final_messages.append({"sessionId": session_id, "turnId": turn_id, "messageId": message_id,
+                                       "text": bounded, "truncated": len(bounded) < len(text)})
+            for block in blocks:
+                data = block.get("data")
+                if block.get("type") != "file" or not isinstance(data, Mapping) or not data.get("mediaId"):
+                    continue
+                try:
+                    receipt = self.media.receipt(str(data["mediaId"]), session_id=session_id)
+                except (ValueError, KeyError, OSError):
+                    continue
+                if receipt.get("origin") != "tool_result" or receipt.get("sha256") != data.get("sha256"):
+                    continue
+                if len(artifacts) < 8 and not any(item["mediaId"] == receipt["mediaId"] for item in artifacts):
+                    artifacts.append({"mediaId": receipt["mediaId"], "messageId": message_id, "turnId": turn_id,
+                                      "relation": "referenced_in_original_message",
+                                      "originReceiptId": receipt.get("originReceiptId"),
+                                      **{key: receipt.get(key) for key in ("fileName", "mimeType", "byteSize", "sha256")}})
+        final_messages.reverse()
+        result.update(finalMessages=final_messages, artifacts=artifacts,
+                      messagesUnavailable=not bool(final_messages), truncated=len(matching) > 8 or len(rows) > 16 or any(message["truncated"] for message in final_messages))
+        if not final_messages:
+            result.setdefault("reason", "original_final_message_unavailable")
+        return result
+
     def messages(
         self,
         session_id: str,
@@ -246,10 +359,11 @@ class AgentMessageSnapshotService:
             observed_tool_events = list(
                 observation_snapshot.get("items") or []
             )
-        tool_history_events = _apply_observed_times(
-            tool_history_events,
-            observed_tool_events,
-        )
+        if session.get("runtimeEngine") == "durable":
+            tool_history_events = self._durable_tool_times(
+                session_id, session, tool_history_events, observations=observed_tool_events)
+        else:
+            tool_history_events = _apply_observed_times(tool_history_events, observed_tool_events)
         replayed, _gap = self.events.replay(session_id)
         # Streaming deltas are deliberately not persisted one-by-one, but they
         # still own the live replay cursor while this process is running. Using
@@ -418,6 +532,54 @@ class AgentMessageSnapshotService:
             "recentFromSequence": recent_from_sequence,
         }
 
+    def _durable_tool_times(
+        self, session_id: str, session: Mapping[str, object], events: Sequence[object],
+        *, observations: Sequence[object] | None = None,
+    ) -> list[dict[str, object]]:
+        if session.get("runtimeEngine") != "durable":
+            return [dict(event) for event in events if isinstance(event, Mapping)]
+        copied = [dict(event) for event in events if isinstance(event, Mapping)]
+        identities = []
+        occurrences: dict[tuple[str, str, str], dict[str, int]] = {}
+        for event in copied:
+            phase = str(event.get("eventType") or "")
+            payload = event.get("payload")
+            if phase not in {"tool_started", "tool_finished"} or not isinstance(payload, Mapping):
+                continue
+            key = (str(event.get("turnId") or ""), str(payload.get("toolCallId") or ""),
+                   str(payload.get("toolName") or ""))
+            if event.get("sessionId") == session_id and all(key):
+                identities.append(key)
+                counts = occurrences.setdefault(key, {})
+                counts[phase] = counts.get(phase, 0) + 1
+        pairs = self.sessions.runtime_tool_timing_pairs(session_id, identities)
+        if observations is None and any(key not in pairs for key in identities):
+            try:
+                observations = self.observations.snapshot(
+                    {"sessionId": session_id, "category": "tool", "limit": 500}).get("items") or []
+            except Exception:
+                observations = []
+        observed_pairs = _bound_observation_tool_times(session_id, observations or [], set(identities))
+        for event in copied:
+            phase = str(event.get("eventType") or "")
+            payload = event.get("payload")
+            if phase not in {"tool_started", "tool_finished"} or not isinstance(payload, Mapping):
+                continue
+            key = (str(event.get("turnId") or ""), str(payload.get("toolCallId") or ""),
+                   str(payload.get("toolName") or ""))
+            pair = pairs.get(key) if event.get("sessionId") == session_id else None
+            source = "gateway_runtime_events"
+            if pair is None and event.get("sessionId") == session_id:
+                pair = observed_pairs.get(key)
+                source = "gateway_observations"
+            if any(count > 1 for count in occurrences.get(key, {}).values()):
+                pair = None
+            event["payload"] = {**payload, "toolTimingAvailable": pair is not None,
+                                "toolTimingSource": source if pair else "unavailable"}
+            if pair is not None:
+                event["createdAtMs"] = pair[0 if phase == "tool_started" else 1]
+        return copied
+
     def _recent_session_messages(self, session_id: str) -> dict[str, object]:
         """Return a bounded first paint without restoring the Pi transcript."""
 
@@ -474,6 +636,7 @@ class AgentMessageSnapshotService:
             if isinstance(runtime_snapshot, Mapping)
             else []
         )
+        tool_history_events = self._durable_tool_times(session_id, session, tool_history_events)
         live_events = (
             _snapshot_live_events(
                 tool_history_events,
@@ -1424,6 +1587,45 @@ def _compact_text_delta_events(
             "payload": merged_payload,
         }
     return compacted
+
+
+def _bound_observation_tool_times(
+    session_id: str, observations: Sequence[object], identities: set[tuple[str, str, str]],
+) -> dict[tuple[str, str, str], tuple[int, int]]:
+    """Use only exact original Gateway-event refs, never call-id-only matching."""
+    grouped: dict[tuple[str, str, str], list[tuple[str, int, int]]] = {}
+    for value in observations:
+        if not isinstance(value, Mapping) or value.get("sessionId") != session_id or value.get("category") != "tool":
+            continue
+        phase = value.get("phase")
+        attrs = value.get("attributes")
+        refs = value.get("refs")
+        if phase not in {"tool_started", "tool_finished"} or not isinstance(attrs, Mapping) or not isinstance(refs, list):
+            continue
+        tools = [ref for ref in refs if isinstance(ref, Mapping) and ref.get("kind") == "tool_call"]
+        sources = [ref for ref in refs if isinstance(ref, Mapping) and ref.get("kind") == "agent_event"]
+        if len(tools) != 1 or len(sources) != 1 or sources[0].get("label") != phase:
+            continue
+        name = str(attrs.get("toolName") or "")
+        key = (str(value.get("turnId") or ""), str(tools[0].get("id") or ""), name)
+        if key not in identities or tools[0].get("label") != name:
+            continue
+        source_id = str(sources[0].get("id") or "")
+        suffix = source_id.removeprefix(session_id + ":")
+        if not source_id.startswith(session_id + ":") or len(suffix) > 19 or not suffix.isascii() or not suffix.isdigit():
+            continue
+        sequence = int(suffix)
+        timestamp = value.get("createdAtMs")
+        if sequence <= 0 or str(sequence) != suffix or not isinstance(timestamp, int) or isinstance(timestamp, bool) or not 0 < timestamp <= 9_223_372_036_854_775_807:
+            continue
+        grouped.setdefault(key, []).append((str(phase), sequence, timestamp))
+    result = {}
+    for key, events in grouped.items():
+        pair = sorted(events, key=lambda event: event[1])
+        if (len(pair) == 2 and pair[0][0] == "tool_started" and pair[1][0] == "tool_finished"
+                and pair[0][1] < pair[1][1] and pair[0][2] <= pair[1][2]):
+            result[key] = (pair[0][2], pair[1][2])
+    return result
 
 
 def _apply_observed_times(

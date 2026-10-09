@@ -5,6 +5,27 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Restore the original Files Session and path when reopening the App. Keep
+  text drafts and disk reconciliation under the existing exact-file owner;
+  explicit navigation and current workspace permissions remain authoritative.
+  Describe subdirectories within the selected Session's workspace consistently
+  after cold reopening, without treating neighboring path prefixes as that workspace.
+- Add a separate persistent Agent App that controls the Sessions and Rooms it
+  creates through existing Pi and Room owners. Rename the original entry to
+  **Session 与 Room**. The new Agent uses the existing full-access permission
+  mechanism; the daily primary assistant remains read-only.
+- Add independent classic v1/new v2 chat presentation selection and rollback
+  for Apps using shared chat controls. Preserve the mounted Session, draft and
+  attachments when switching; unidentified surfaces retain per-Session settings.
+- Add optional local EmbeddingGemma2 (`google/embeddinggemma-2`) text, native
+  image and PDF-page retrieval with original-source/page references. Model
+  weights and `embedding-local` dependencies are separately provisioned;
+  audio/video intake remains unsupported and existing indexes require an
+  explicit profile change and rebuild.
+- Add an opt-in OpenAI Decisions adapter for bounded Jev Choices with
+  `gpt-6-luna` and an OpenAI Platform API key. Codex OAuth is not an API-key
+  substitute; Pi execution and Room lifecycle owners remain unchanged.
+
 - Add an opt-in Electron desktop companion using bundled PAW artwork and the
   existing assistant entry. Keep its preload narrow and sandboxed; bound drag
   IPC, cancel stale presentation after hide/quit, and clamp placement to the

@@ -908,6 +908,9 @@
   animation: knowledge-stage-pulse 1.7s var(--ease-standard) infinite;
 }
 
+/* Keep the actual stage visible while inactive/hidden; only decoration stops. */
+.knowledge-pipeline[data-motion-active='false'] .knowledge-pipeline__stages .knowledge-pipeline__dot { animation: none; }
+
 .knowledge-pipeline__stages li[data-state='failed'] .knowledge-pipeline__dot { border-color: var(--color-danger); background: var(--color-danger); }
 .knowledge-pipeline__stages li[data-state='failed'] .knowledge-pipeline__label { color: var(--color-danger); }
 .knowledge-pipeline__stages li[data-state='stale'] .knowledge-pipeline__dot { border-color: var(--color-warning); background: var(--color-warning); }
@@ -2578,6 +2581,16 @@
 .knowledge-inline-image > span { display: flex; flex-direction: column; gap: 8px; max-width: 100%; }
 .knowledge-inline-image img { display: block; max-width: 100%; max-height: 420px; object-fit: contain; }
 .knowledge-inline-image button { max-width: 100%; white-space: normal; text-align: start; overflow-wrap: anywhere; }
+.knowledge-media-summary { color: var(--color-text-secondary); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.knowledge-media-summary p { margin: 0 0 var(--space-1); }
+.knowledge-media-location { font-variant-numeric: tabular-nums; }
+.knowledge-inline-audio, .knowledge-audio-content, .knowledge-audio-list, .knowledge-audio-list > div { display: grid; min-width: 0; gap: var(--space-2); }
+.knowledge-audio-list { padding-top: var(--space-2); }
+.knowledge-inline-audio > button, .knowledge-audio-content > button { justify-self: start; max-width: 100%; white-space: normal; text-align: start; overflow-wrap: anywhere; }
+.knowledge-audio-content audio { display: block; width: 100%; max-width: 420px; min-width: 0; }
+.knowledge-audio-content p, .knowledge-source-fallback p { margin: 0; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.knowledge-audio-content a { color: var(--k-accent); }
+.knowledge-audio-list small { color: var(--color-text-secondary); overflow-wrap: anywhere; }
 .knowledge-pdf-source { display: grid; gap: 12px; min-width: 0; }
 .knowledge-pdf-controls, .knowledge-pdf-controls form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .knowledge-pdf-controls input { width: 6rem; }
@@ -2593,3 +2606,15 @@
   color: var(--color-text-secondary);
   font-size: 13px;
 }
+
+/* An empty App has no library to select. Keep refresh and service health in
+   the command band; the workspace owns the single first-library action. */
+:is(main, section).knowledge-feature[data-paw-os-app='knowledge'] .knowledge-library[data-native-layout='app'][data-empty='true'] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: 'band' 'workspace';
+}
+:is(main, section).knowledge-feature[data-paw-os-app='knowledge'] .knowledge-library[data-empty='true'] .knowledge-base-rail[data-variant='app'] { display: none; }
+:is(main, section).knowledge-feature[data-paw-os-app='knowledge'] .knowledge-base-switcher[data-empty='true'] .knowledge-base-switcher__current { display: block; }
+:is(main, section).knowledge-feature[data-paw-os-app='knowledge'] .knowledge-base-switcher[data-empty='true'] .knowledge-base-switcher__actions { margin-left: auto; }
+
+:is(main, section).knowledge-feature[data-paw-os-app='knowledge'] .knowledge-library[data-empty='true'] .ui-empty-state__action > .ui-button { min-height: 44px; }

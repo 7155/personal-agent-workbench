@@ -18,6 +18,7 @@ import {
   Radar,
   Search,
   Sparkles,
+  Square,
   SquareTerminal,
   TriangleAlert,
   Wrench,
@@ -694,6 +695,8 @@ function ToolStep({ activity }: { activity: AgentActivityProjection }) {
       ? <CircleDashed size={14} />
       : activity.status === 'failed'
         ? <TriangleAlert size={14} />
+        : activity.status === 'aborted'
+          ? <Square size={14} />
         : knowledge
           ? <Search size={14} />
           : <Wrench size={14} />;
@@ -876,6 +879,7 @@ function TurnStateIcon({ status }: { status: AgentTurnStatus }) {
   if (status === 'queued' || status === 'running') return <LoaderCircle size={15} />;
   if (status === 'waiting') return <CircleDashed size={15} />;
   if (status === 'failed') return <TriangleAlert size={15} />;
+  if (status === 'aborted') return <Square size={15} />;
   return <Check size={15} />;
 }
 
@@ -1026,7 +1030,7 @@ function taskStatus(value: string): string {
 }
 
 function activityStatusLabel(status: AgentActivityProjection['status']): string {
-  return ({ running: '进行中', waiting: '待确认', completed: '完成', failed: '失败' })[status];
+  return ({ running: '进行中', waiting: '待确认', completed: '完成', failed: '失败', aborted: '已停止' })[status];
 }
 
 function publicText(value: unknown, fallback: string): string {

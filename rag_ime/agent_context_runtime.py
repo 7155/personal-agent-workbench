@@ -425,12 +425,18 @@ class AgentContextRuntime:
         now_ms: int | None = None,
         limit: int = 32,
         char_budget: int = _MAX_MATERIALIZED_CHARS,
+        _coordinator_result_item_id: str = "",
     ) -> dict[str, object]:
         session = _required_text(session_id, "sessionId", 240)
         now = _now_ms() if now_ms is None else max(0, int(now_ms))
         bounded_limit = max(1, min(int(limit), 64))
         bounded_budget = max(512, min(int(char_budget), _MAX_MATERIALIZED_CHARS))
         with self._connect(immediate=True) as conn:
+            if _coordinator_result_item_id and conn.execute(
+                "SELECT 1 FROM agent_context_items WHERE item_id=? AND session_id=? AND source_kind='coordinator_result' AND lifecycle='until_ack'",
+                (_coordinator_result_item_id, session),
+            ).fetchone() is None:
+                raise ValueError("automatic result selector must name this Source's coordinator result")
             conn.execute(
                 """
                 UPDATE agent_context_items
@@ -447,6 +453,7 @@ class AgentContextRuntime:
                 SELECT * FROM agent_context_items
                 WHERE session_id = ?
                   AND available_at_ms <= ?
+                  AND (? = '' OR source_kind <> 'coordinator_result' OR item_id = ?)
                   AND (
                     status = 'pending'
                     OR (
@@ -467,7 +474,7 @@ class AgentContextRuntime:
                   item_id ASC
                 LIMIT ?
                 """,
-                (session, now, bounded_limit),
+                (session, now, _coordinator_result_item_id, _coordinator_result_item_id, bounded_limit),
             ).fetchall()
 
         packed: list[dict[str, object]] = []
@@ -515,6 +522,7 @@ class AgentContextRuntime:
         now_ms: int | None = None,
         limit: int = 32,
         char_budget: int = _MAX_MATERIALIZED_CHARS,
+        _coordinator_result_item_id: str = "",
     ) -> dict[str, object]:
         """Reserve one-shot items before crossing the Runtime RPC boundary.
 
@@ -532,6 +540,7 @@ class AgentContextRuntime:
             now_ms=now_ms,
             limit=limit,
             char_budget=char_budget,
+            _coordinator_result_item_id=_coordinator_result_item_id,
         )
         items = [
             dict(item)

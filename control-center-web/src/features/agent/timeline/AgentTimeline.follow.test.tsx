@@ -60,6 +60,43 @@ afterEach(() => {
 });
 
 describe('Agent timeline follow intent', () => {
+  it('keeps a focused transcript action clear when a later snapshot appends content', async () => {
+    useAgentLiveStore.getState().hydrateSnapshot(SESSION_ID, previewAgentSnapshot(SESSION_ID));
+    const onFollowStateChange = vi.fn();
+    render(<TooltipProvider><AgentTimeline modelSelectionAvailable onApprovalDecision={() => {}}
+      onRetryTurn={() => false} onSwitchModel={() => {}} sessionId={SESSION_ID}
+      onFollowStateChange={onFollowStateChange} /></TooltipProvider>);
+    await waitFor(() => expect(virtuosoMock.scroller).toBeTruthy());
+    const scroller = virtuosoMock.scroller!;
+    Object.defineProperty(scroller, 'scrollHeight', { configurable: true, value: 900 });
+    Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: 400 });
+    scroller.scrollTop = 215;
+    expect(virtuosoMock.followOutput?.()).toBe('auto');
+    const action = scroller.querySelector<HTMLButtonElement>('button')!;
+    expect(action).toBeTruthy();
+    act(() => action.focus());
+    expect(action).toHaveFocus();
+    expect(virtuosoMock.followOutput?.()).toBe(false);
+    act(() => useAgentLiveStore.getState().appendOptimistic(SESSION_ID, {
+      clientMessageId: 'later-snapshot-content', text: 'Later original snapshot content', nowMs: 200,
+    }));
+    await waitFor(() => expect(onFollowStateChange).toHaveBeenLastCalledWith({ following: false, unseenUpdates: 1 }));
+    await act(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    expect(scroller.scrollTop).toBe(215);
+    expect(action).toHaveFocus();
+  });
+
+  it('keeps live follow when the scrollport itself receives focus', async () => {
+    useAgentLiveStore.getState().hydrateSnapshot(SESSION_ID, previewAgentSnapshot(SESSION_ID));
+    render(<TooltipProvider><AgentTimeline modelSelectionAvailable onApprovalDecision={() => {}}
+      onRetryTurn={() => false} onSwitchModel={() => {}} sessionId={SESSION_ID} /></TooltipProvider>);
+    await waitFor(() => expect(virtuosoMock.scroller).toBeTruthy());
+    const scroller = virtuosoMock.scroller!;
+    scroller.tabIndex = 0;
+    act(() => scroller.focus());
+    expect(virtuosoMock.followOutput?.()).toBe('auto');
+  });
+
   it('counts only the owning transport and resets follow state when the provider changes', async () => {
     const a = new MockControlTransport();
     const b = new MockControlTransport();

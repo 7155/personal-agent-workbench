@@ -489,6 +489,69 @@ describe('TraceAgentFeature', () => {
     expect(prompt).not.toContain('trace:handoff');
   });
 
+  it('keeps normal correction and validation prose in the timeline, not failure evidence', async () => {
+    const normal = '此前保存失败，请验证原记录；error/fail/timeout 是要核对的内容';
+    const observation = observationSnapshot();
+    const transport = traceAgentTransport({
+      observationSource: {
+        ...observation,
+        items: [{ ...observation.items[0], status: 'completed', name: 'validation', summary: '验证已完成' }],
+      },
+      sourceSnapshot: {
+        ...sessionSourceSnapshot(),
+        items: ['user', 'assistant'].map((role) => ({
+          id: `normal-${role}`, role, status: 'completed', createdAtMs: 150,
+          summary: normal,
+          blocks: [{ id: `${role}-text`, type: 'text', status: 'completed', data: { text: normal } }],
+        })),
+        liveEvents: [
+          { eventId: 'normal-tool', eventType: 'tool_finished', status: 'completed', createdAtMs: 155, payload: { summary: '验证已完成' } },
+          { eventId: 'unknown-event', eventType: 'participant_activity', createdAtMs: 160, payload: { summary: '失败是否发生仍未知' } },
+          { eventId: 'stopped-event', eventType: 'turn_completed', status: 'aborted', createdAtMs: 165, payload: { summary: '已停止；未继续验证' } },
+        ],
+      },
+    });
+    renderFeature(transport, []);
+    const timeline = await screen.findByRole('region', { name: '原始对话时间线' });
+    await waitFor(() => expect(timeline).toHaveTextContent(normal));
+    const evidence = screen.getByRole('region', { name: '已读取的失败证据' });
+    expect(evidence).toHaveTextContent('当前没有已投影的失败明细');
+    expect(evidence).not.toHaveTextContent(normal);
+    expect(evidence.querySelectorAll('article')).toHaveLength(0);
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.prompt')).toBe(false);
+  });
+
+  it('retains explicit failed and error receipts without requiring failure words', async () => {
+    const transport = traceAgentTransport({
+      sourceSnapshot: {
+        ...sessionSourceSnapshot(),
+        items: [
+          { id: 'failed-direct', role: 'assistant', status: 'failed', createdAtMs: 150, summary: '原请求 A 未返回' },
+          { id: 'explicit-error', role: 'assistant', status: 'completed', createdAtMs: 151, errorMessage: '服务回执 B' },
+          { id: 'failed-tool', role: 'tool', status: 'failed', createdAtMs: 152,
+            blocks: [{ id: 'tool-result', type: 'tool_result', status: 'failed', data: { content: '原工具回执 C' } }] },
+          { id: 'error-block', role: 'assistant', status: 'completed', createdAtMs: 153,
+            blocks: [{ id: 'error', type: 'error', status: 'completed', data: { message: '原运行回执 D' } }] },
+        ],
+        liveEvents: [
+          { eventId: 'failed-event', eventType: 'turn_failed', createdAtMs: 154, payload: { summary: '原终态回执 E' } },
+          { eventId: 'payload-failed', eventType: 'tool_finished', createdAtMs: 155, payload: { status: 'failed', summary: '原工具回执 F' } },
+          { eventId: 'explicit-event-error', eventType: 'participant_activity', createdAtMs: 156, payload: { errorMessage: '服务回执 G' } },
+        ],
+      },
+    });
+    renderFeature(transport, []);
+    const evidence = await screen.findByRole('region', { name: '已读取的失败证据' });
+    await waitFor(() => expect(evidence).toHaveTextContent('原请求 A 未返回'));
+    for (const text of ['服务回执 B', '原工具回执 C', '原运行回执 D', '原终态回执 E', '原工具回执 F', '服务回执 G']) {
+      expect(evidence).toHaveTextContent(text);
+    }
+    expect(evidence).toHaveTextContent('write/edit validation error');
+    const unknown = within(evidence).getByText('服务回执 G').closest('article');
+    expect(unknown?.querySelector('.trace-agent-evidence__dot')).toHaveClass('trace-agent-evidence__dot--participant_activity');
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.prompt')).toBe(false);
+  });
+
   it('shows transcript and Trace failure evidence, then starts a full-trust Skill-bound diagnostic Session with unrestricted reads', async () => {
     const user = userEvent.setup();
     const routes: string[] = [];

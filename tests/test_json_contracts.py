@@ -13,6 +13,29 @@ from rag_ime.contracts.json_schema import ContractValidationError, load_contract
 
 
 class JsonContractTests(unittest.TestCase):
+    def test_durable_model_catalog_accepts_advertised_compaction_recovery(self) -> None:
+        capabilities: dict[str, object] = {key: False for key in (
+            "gatewayTools", "compaction", "resume", "exactAbort", "nativeMcp",
+            "codemode", "managedPlugins", "conversationFork", "conversationRewrite",
+            "commandCatalog", "images",
+        )}
+        packet = {
+            "schemaVersion": "rag-ime.agent-model-catalog.v1", "ok": True,
+            "sessionId": "agent:durable", "selected": None, "thinkingLevel": "off",
+            "providers": [], "runtimeEngine": "durable", "engineCapabilities": capabilities,
+        }
+        validate_contract(packet, "agent-model-catalog.v1.json")
+        capabilities["compactionRecovery"] = True
+        validate_contract(packet, "agent-model-catalog.v1.json")
+        for invalid in ("true", None, 1):
+            capabilities["compactionRecovery"] = invalid
+            with self.assertRaises(ContractValidationError):
+                validate_contract(packet, "agent-model-catalog.v1.json")
+        capabilities["compactionRecovery"] = True
+        capabilities["unknownRecovery"] = True
+        with self.assertRaises(ContractValidationError):
+            validate_contract(packet, "agent-model-catalog.v1.json")
+
     def setUp(self) -> None:
         clear = getattr(json_schema, "clear_contract_cache", None)
         if clear is not None:

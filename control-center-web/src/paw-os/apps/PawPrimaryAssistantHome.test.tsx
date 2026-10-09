@@ -14,8 +14,8 @@ afterEach(() => {
   cleanup();
   for (const id of Object.keys(useAgentLiveStore.getState().projections)) useAgentLiveStore.getState().clear(id);
 });
-const primary: SessionSummary = { id: 'primary', title: '我的助手', status: 'idle', mode: 'assistant', roleId: '', roleVersion: '', roleBookRevisionId: '', workspaceRoots: [], updatedAtMs: 1, executionMode: 'read_only', metadata: { primaryAssistant: true } };
-const task: SessionSummary = { ...primary, id: 'task', title: '检查项目', executionMode: 'workspace_managed', metadata: { primaryTask: true, sourceSessionId: 'primary' } };
+const primary: SessionSummary = { id: 'primary', title: '我的助手', status: 'idle', mode: 'assistant', roleId: '', roleVersion: '', roleBookRevisionId: '', workspaceRoots: [], updatedAtMs: 1, executionMode: 'read_only', metadata: { primaryAssistant: true, assistantId: 'assistant-one' } };
+const task: SessionSummary = { ...primary, id: 'task', title: '检查项目', executionMode: 'workspace_managed', metadata: { primaryTask: true, sourceSessionId: 'primary', assistantId: 'assistant-one' } };
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done; }); return { promise, resolve }; }
 function setup(routes: Partial<Record<ControlRequest['pathId'], MockRouteHandler>> = {}, initialSource?: PrimaryAssistantSource) {
   const transport = new MockControlTransport({ routes: { 'agent.primary.ensure': { ok: true, session: primary, tasks: [] },
@@ -25,9 +25,21 @@ function setup(routes: Partial<Record<ControlRequest['pathId'], MockRouteHandler
   return { transport, onOpen, ...render(tree) };
 }
 async function openTaskRecords() {
-  fireEvent.click(await screen.findByRole('button', { name: /^任务记录/ }));
+  await screen.findByRole('region', { name: '助手控制的 Sessions' });
 }
 describe('primary assistant home', () => {
+  it('always exposes owned task Sessions and excludes unrelated directory entries before opening', async () => {
+    const unrelated = { ...task, id: 'unrelated', title: '其他讨论的任务', metadata: { ...task.metadata, sourceSessionId: 'other-primary' } };
+    const { onOpen, transport } = setup({ 'agent.primary.ensure': { ok: true, session: primary, tasks: [task, unrelated] } });
+    const owned = await screen.findByRole('button', { name: /打开 检查项目/ });
+    expect(owned).toBeVisible();
+    expect(screen.queryByRole('button', { name: /其他讨论的任务/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^停止 / })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^继续 / })).not.toBeInTheDocument();
+    fireEvent.click(owned);
+    expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ id: task.id }));
+    expect(transport.requests.some(({ request }) => ['agent.session.prompt', 'agent.session.abort', 'agent.session.resume'].includes(request.pathId))).toBe(false);
+  });
   it.each(['primary', 'different-discussion'])('carries an anonymous unsent source draft only back to its owning discussion: %s', async (sessionId) => {
     const { onOpen, transport } = setup({}, { sessionId, workspaceRoots: [], unsentDraft: '原草稿 A' });
     await waitFor(() => expect(screen.getByRole('button', { name: /进入对话/ })).toBeEnabled());
@@ -80,6 +92,7 @@ describe('primary assistant home', () => {
     fireEvent.click(screen.getByRole('button', { name: '交给助手做' }));
     const input = screen.getByRole('textbox', { name: '和我的助手聊聊' });
     fireEvent.change(input, { target: { value: objective } });
+    fireEvent.click(screen.getByText('完成标准', { selector: 'summary' }));
     fireEvent.change(screen.getByRole('textbox', { name: '完成标准' }), { target: { value: criteria } });
     fireEvent.change(screen.getByRole('textbox', { name: '本次工作目录' }), { target: { value: '/work/project' } });
     fireEvent.click(screen.getByRole('checkbox'));
@@ -99,6 +112,7 @@ describe('primary assistant home', () => {
     const objective = '🙂'.repeat(4000);
     const criteria = [...Array(19).fill('x'), 'y'.repeat(1962)];
     fireEvent.change(screen.getByRole('textbox', { name: '和我的助手聊聊' }), { target: { value: objective } });
+    fireEvent.click(screen.getByText('完成标准', { selector: 'summary' }));
     fireEvent.change(screen.getByRole('textbox', { name: '完成标准' }), { target: { value: criteria.join('\n') } });
     fireEvent.change(screen.getByRole('textbox', { name: '本次工作目录' }), { target: { value: '/work/project' } });
     fireEvent.click(screen.getByRole('checkbox'));
@@ -260,11 +274,13 @@ describe('primary assistant home', () => {
     await screen.findByRole('button', { name: /进入对话/ });
     fireEvent.change(screen.getByRole('textbox', { name: '和我的助手聊聊' }), { target: { value: '检查项目' } });
     fireEvent.click(screen.getByRole('button', { name: '交给助手做' }));
+    fireEvent.click(screen.getByText('完成标准', { selector: 'summary' }));
     fireEvent.change(screen.getByRole('textbox', { name: '完成标准' }), { target: { value: '保留来源\n说明验证结果' } });
     fireEvent.change(screen.getByRole('textbox', { name: '本次工作目录' }), { target: { value: '/work/project' } });
     fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(screen.getByRole('button', { name: '授权并开始任务' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('草稿已保留');
     expect(screen.getByRole('textbox', { name: '和我的助手聊聊' })).toHaveValue('检查项目');
+    fireEvent.click(screen.getByText('完成标准', { selector: 'summary' }));
     fireEvent.change(screen.getByRole('textbox', { name: '完成标准' }), { target: { value: '\n 保留来源\n\n说明验证结果 \n' } });
     fireEvent.click(screen.getByRole('button', { name: '授权并开始任务' }));
     await waitFor(() => expect(transport.requests.filter(({ request }) => request.pathId === 'agent.primary.tasks.create')).toHaveLength(2));
@@ -293,15 +309,12 @@ describe('primary assistant home', () => {
   it('keeps older tasks reachable and reads completion only from goal state', async () => {
     const tasks = Array.from({ length: 5 }, (_, index) => ({ ...task, id: `task-${index}`, title: `任务 ${index}`, lastTerminalTurnId: 'last-turn', goal: { goalId: 'goal', revision: 1, status: index === 4 ? 'completed' : 'active', objective: 'work', successCriteria: '' } }));
     setup({ 'agent.primary.ensure': { ok: true, session: primary, tasks } });
-    const records = await screen.findByRole('button', { name: /任务记录.*5 个任务/ });
-    expect(records).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.queryByRole('button', { name: /任务 0/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /任务 4/ })).not.toBeInTheDocument();
-    fireEvent.click(records);
-    expect(records).toHaveAttribute('aria-expanded', 'true');
+    await screen.findByRole('region', { name: '助手控制的 Sessions' });
     expect(screen.getByRole('button', { name: /任务 0/ })).toHaveTextContent('任务未完成');
+    expect(screen.queryByRole('button', { name: /任务 4/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /显示更多 还有 1 个/ }));
     expect(screen.getByRole('button', { name: /任务 4/ })).toHaveTextContent('已完成');
-    fireEvent.click(records);
+    fireEvent.click(screen.getByRole('button', { name: '收起对话' }));
     expect(screen.queryByRole('button', { name: /任务 4/ })).not.toBeInTheDocument();
   });
   it('does not send into the previous project when the newly selected project is disconnected', async () => {
@@ -431,14 +444,16 @@ describe('primary assistant home', () => {
         ...taskSnapshot(String(request.params?.sessionId), 'active'), status: request.params?.sessionId === 'bounded-10' ? 'busy' : 'idle',
       }),
     });
-    await waitFor(() => expect(transport.activeSubscriptionCount()).toBe(1));
-    fireEvent.click(screen.getByRole('button', { name: /任务记录.*12 个任务/ }));
+    await waitFor(() => expect(transport.activeSubscriptionCount()).toBe(5));
+    expect(screen.queryByRole('button', { name: /任务 11/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /显示更多 还有 8 个/ }));
+    fireEvent.click(screen.getByRole('button', { name: /显示更多 还有 4 个/ }));
     expect(screen.getByRole('button', { name: /任务 11/ })).toBeVisible();
     await waitFor(() => expect(transport.activeSubscriptionCount()).toBe(5));
     fireEvent.focus(screen.getByRole('button', { name: /任务 6/ }));
     await waitFor(() => expect(transport.activeSubscriptionCount()).toBe(6));
-    fireEvent.click(screen.getByRole('button', { name: /任务记录.*12 个任务/ }));
-    await waitFor(() => expect(transport.activeSubscriptionCount()).toBe(1));
+    fireEvent.click(screen.getByRole('button', { name: '收起对话' }));
+    await waitFor(() => expect(transport.activeSubscriptionCount()).toBe(5));
   });
 });
 

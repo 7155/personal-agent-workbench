@@ -10,6 +10,7 @@ from pathlib import Path
 from rag_ime.local_sqlite_core import LocalSqliteCoreClient
 from rag_ime.memory_projection_consistency import (
     authoritative_retrieval_doc,
+    authoritative_retrieval_docs,
     invalidate_superseded_atom_dependencies,
     restore_dependency_invalidation,
 )
@@ -30,6 +31,59 @@ class MemoryProjectionConsistencyTests(unittest.TestCase):
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
         return conn
+
+    def test_bounded_pack_authority_queries_are_batched(self) -> None:
+        from rag_ime.hybrid_rag_models import HybridRagQuery
+        from rag_ime.hybrid_rag_retriever import _active_docs
+
+        with closing(self.connect()) as conn:
+            for index in range(100):
+                self._insert_atom(conn, f"batch:{index}", f"public fact {index}", 10)
+            rebuild_retrieval_docs(conn, project="test")
+            statements: list[str] = []
+            conn.set_trace_callback(statements.append)
+            docs = _active_docs(conn, query=HybridRagQuery(query_text="public", project="test"),
+                                source_ids=tuple(f"batch:{index}" for index in range(64)))
+            conn.set_trace_callback(None)
+            self.assertEqual(len(docs), 64)
+            authority = [sql for sql in statements if "FROM memory_atoms" in sql or "FROM memory_source_generations" in sql]
+            self.assertLessEqual(len(authority), 2, authority)
+
+    def test_batch_preserves_duplicates_revisions_and_caller_transaction(self) -> None:
+        with closing(self.connect()) as conn:
+            self._insert_atom(conn, "batch:current", "public fact", 10)
+            rebuild_retrieval_docs(conn, project="test")
+            doc = dict(conn.execute("SELECT * FROM memory_retrieval_docs WHERE source_id = 'batch:current'").fetchone())
+            conn.commit()
+            inputs = [doc, {**doc, "source_id": "absent"}, {**doc, "projection_version": 2},
+                      {**doc, "source_revision": 999}, {**doc, "source_revision": "bad"}, doc]
+            self.assertEqual(authoritative_retrieval_docs(conn, inputs), [True, False, False, False, False, True])
+            conn.execute("BEGIN")
+            conn.execute("UPDATE memory_atoms SET status = 'forgotten' WHERE id = 'batch:current'")
+            self.assertEqual(authoritative_retrieval_docs(conn, [doc]), [False])
+            self.assertTrue(conn.in_transaction)
+            conn.rollback()
+            self.assertEqual(authoritative_retrieval_docs(conn, [doc]), [True])
+
+    def test_batch_book_and_phrase_dependencies_invalidate_without_projection_rebuild(self) -> None:
+        with closing(self.connect()) as conn:
+            self._insert_atom(conn, "atom:old", "public supporting fact", 10)
+            self._insert_atom(conn, "atom:other", "second public support", 10)
+            self._insert_book(conn, "book:batch", "active")
+            conn.execute("INSERT INTO memory_items(memory_id, kind, text, normalized_text, summary, project, status, privacy_class, created_at_ms, updated_at_ms, metadata_json) VALUES ('phrase:batch','phrase','public phrase','public phrase','support','test','approved','local',10,10,'{\"sourceEventIds\":[10]}')")
+            rebuild_retrieval_docs(conn, project="test")
+            docs = [dict(row) for row in conn.execute("SELECT * FROM memory_retrieval_docs WHERE source_id IN ('book:batch','phrase:batch') ORDER BY doc_type").fetchall()]
+            self.assertEqual([doc["doc_type"] for doc in docs], ["book", "phrase"])
+            self.assertEqual(authoritative_retrieval_docs(conn, docs), [True, True])
+            conn.execute("UPDATE memory_atoms SET privacy_level = 'sensitive' WHERE id = 'atom:old'")
+            self.assertEqual(authoritative_retrieval_docs(conn, docs), [False, True])
+            conn.execute("UPDATE memory_atoms SET claim_state = 'superseded' WHERE id = 'atom:other'")
+            self.assertEqual(authoritative_retrieval_docs(conn, docs), [False, False])
+            conn.execute("UPDATE memory_atoms SET privacy_level = 'local' WHERE id = 'atom:old'")
+            conn.execute("UPDATE memory_source_generations SET generation = generation + 1 WHERE source_type = 'atom' AND source_id = 'atom:old'")
+            self.assertEqual(authoritative_retrieval_docs(conn, docs), [True, False])
+            conn.execute("UPDATE memory_books SET metadata_json = '{\"retrievalStale\":true}' WHERE book_id = 'book:batch'")
+            self.assertEqual(authoritative_retrieval_docs(conn, docs), [False, False])
 
     def test_in_place_revision_keeps_group_membership_and_can_restore_book(self) -> None:
         with closing(self.connect()) as conn:

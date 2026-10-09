@@ -60,7 +60,13 @@
 .paw-rich-toolbar__label > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .paw-rich-toolbar__label > small { color: var(--rc-faint); font-size: 11px; white-space: nowrap; }
 .paw-rich-toolbar__actions { display: flex; align-items: center; gap: 2px; flex: none; }
-.agent-code-block.paw-rich-code { display: block; position: relative; overflow: visible; width: 100%; margin: 20px 0; border: 1px solid var(--rc-line); border-radius: var(--rc-radius); box-shadow: none; background: var(--rc-soft); }
+.agent-code-block.paw-rich-code {
+  /* The inserted code surface owns a matching foreground/background pair,
+     including embedded Apps without the legacy Agent window palette. */
+  --color-code-bg: var(--rc-soft); --color-code-surface: var(--rc-soft);
+  --color-code-text: var(--rc-ink); --color-code-muted: var(--rc-muted); --color-code-border: var(--rc-line);
+  display: block; position: relative; overflow: visible; width: 100%; margin: 20px 0; border: 1px solid var(--rc-line); border-radius: var(--rc-radius); box-shadow: none; background: var(--rc-soft);
+}
 .agent-code-block.paw-rich-code > figcaption { margin: 0; }
 .paw-rich-code .paw-rich-toolbar { background: transparent; }
 .paw-rich-code__tabs { display: flex; align-items: center; gap: 2px; padding: 0 12px; border-bottom: 1px solid var(--rc-line); background: var(--rc-paper); }

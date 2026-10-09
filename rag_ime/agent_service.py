@@ -11,7 +11,7 @@ import tempfile
 import time
 import uuid
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import replace
 from pathlib import Path
 from threading import RLock
@@ -62,7 +62,10 @@ from .agent_command_receipts import (
 )
 from .agent_events import AgentEventHub
 from .agent_event_projection import AgentEventProjectionService
+from .agent_coordinator_work import AgentCoordinatorWork
+from .agent_coordinator_delivery import AgentCoordinatorDelivery
 from .agent_block_store import AgentBlockStore
+from .agent_coordinator import CoordinatorPorts, coordinator_command, coordinator_identity, ensure_coordinator
 from .agent_delegation import AgentDelegationCoordinator
 from .agent_file_preview import AgentFilePreviewReader
 from .agent_media import AgentMediaStore, IMAGE_MIME_TYPES, TEXT_MEDIA_MIME_TYPES
@@ -121,7 +124,7 @@ from .agent_runtime_driver import (
 )
 from rag_ime.rooms.store import AgentRoomEventHub, AgentRoomNotFound
 from .agent_roles import PersonaManifest
-from .agent_sessions import AgentSessionStore
+from .agent_sessions import AgentGoalExecutionBlocked, AgentSessionNotFound, AgentSessionStore
 from .agent_wake_scheduler import AgentWakeScheduleStore, AgentWakeScheduler
 from .agent_wake_application import AgentWakeApplicationService
 from .contracts.json_schema import validate_contract
@@ -228,6 +231,8 @@ class AgentService:
     ) -> None:
         self.db_path = Path(db_path)
         self.project = str(project or "")
+        self._close_lock = RLock()
+        self._closed = False
         self._startup_recovery_enabled = bool(startup_recovery_enabled)
         self._startup_recovery_run_lock = RLock()
         self._startup_recovery_status_lock = RLock()
@@ -310,7 +315,7 @@ class AgentService:
         self.eval_lab = EvalLabProjection(db_path, source_ledger_path=source_ledger)
         self.eval_lab_scene_recipe_store = AgentLabSceneRecipeStore(
             db_path,
-            experiment_provider=lambda: self.eval_lab.list_runs()["experiments"],
+            experiment_provider=lambda: self.eval_lab.list_experiments(),
         )
         # The evidence catalog is a read-only view over the optional
         # source-local evaluation archive.  It never joins the archive into
@@ -536,6 +541,8 @@ class AgentService:
                 memory_enabled_provider=self.memory_enabled,
                 session_memory_enabled_provider=self._session_memory_disclosed,
                 personal_profile_provider=self._personal_profile,
+                personal_profile_scope_provider=self._coordinator_personal_profile_scope,
+                query_refresh_scope_provider=self._coordinator_personal_profile_scope,
             )
         )
         self.memory_evidence_application = (
@@ -694,6 +701,7 @@ class AgentService:
         self.wake_schedules = AgentWakeScheduleStore(db_path)
         self.wake_schedules.initialize()
         self.wake_application = AgentWakeApplicationService(
+            command_receipts=self.command_receipts,
             schedules=self.wake_schedules,
             sessions=self.sessions,
             personas=self.personas,
@@ -719,9 +727,11 @@ class AgentService:
             on_tick=self._run_scheduled_work_once,
         )
         self.wake_application.bind_scheduler(self.wake_scheduler)
-        self._remove_wake_observer = self.events.add_observer(
-            self.wake_scheduler.observe_event
-        )
+        def observe_wake_event(event: AgentEventEnvelope) -> None:
+            # EventHub notifications discard the settlement result.
+            self.wake_scheduler.observe_event(event)
+
+        self._remove_wake_observer = self.events.add_observer(observe_wake_event)
         self.room_dispatch = RoomSessionDispatchService(
             rooms=self.rooms, room_work=self.room_work, room_events=self.room_events,
             room_turns=self.room_turns, room_partner_dispatches=self.room_partner_dispatches,
@@ -880,6 +890,18 @@ class AgentService:
                 self.room_turns.user_priority_sessions
             ),
         )
+        self.coordinator_work = AgentCoordinatorWork(
+            sessions=self.sessions, receipts=self.command_receipts, context=self.context_runtime,
+            read_result=lambda target, turn, client: self.message_snapshot.read_result(
+                target, turn, client, _allow_host_open=False,
+                acceptance=self.command_receipts.acceptance_evidence_for_exact_command(
+                    command_scope="session_prompt", scope_id=target, client_message_id=client)
+                or self.sessions.prompt_acceptance_evidence(target, client)),
+        )
+        self.coordinator_delivery = AgentCoordinatorDelivery(
+            sessions=self.sessions, receipts=self.command_receipts, context=self.context_runtime,
+            eligible=self._coordinator_delivery_eligible, submit=self._deliver_coordinator_result,
+        )
         if self._startup_recovery_enabled and not defer_startup_recovery:
             self.run_startup_recovery()
 
@@ -940,6 +962,21 @@ class AgentService:
                 self.room_work.reconcile_intercom_outcomes()
                 self.room_partner_application.reconcile()
                 self.jev_application.recover()
+                self.coordinator_work.reconcile_once(limit=20)
+                with self._startup_recovery_status_lock:
+                    self._startup_recovery_report = {
+                        **self._startup_recovery_report,
+                        "status": "complete",
+                        "ok": True,
+                        "error": "",
+                        "approvalExecutionRecovery": (
+                            approval_execution_recovery
+                        ),
+                        "retiredRoomStartGateCount": (
+                            retired_room_start_gate_count
+                        ),
+                    }
+                self.wake_scheduler.start()
             except Exception as exc:
                 with self._startup_recovery_status_lock:
                     self._startup_recovery_report = {
@@ -949,19 +986,6 @@ class AgentService:
                         "error": exc.__class__.__name__,
                     }
                 raise
-            with self._startup_recovery_status_lock:
-                self._startup_recovery_report = {
-                    **self._startup_recovery_report,
-                    "status": "complete",
-                    "ok": True,
-                    "error": "",
-                    "approvalExecutionRecovery": (
-                        approval_execution_recovery
-                    ),
-                    "retiredRoomStartGateCount": (
-                        retired_room_start_gate_count
-                    ),
-                }
 
     def _close_runtime_session(self, session_id: str) -> None:
         close_session = getattr(self.runtime, "close_session", None)
@@ -1038,9 +1062,14 @@ class AgentService:
         return self.eval_runs.get(eval_run_id) is not None
 
     def _run_scheduled_work_once(self, now_ms: int | None = None) -> int:
+        reconciled_wakes = self.wake_application.reconcile_once()
         application = getattr(self, "jev_application", None)
         count = application.tick() if application is not None else 0
-        return count + self._run_eval_schedules_once(now_ms)
+        work = getattr(self, "coordinator_work", None)
+        harvested = work.reconcile_once(limit=20) if work is not None else 0
+        delivery = getattr(self, "coordinator_delivery", None)
+        notified = delivery.reconcile_once() if delivery is not None else 0
+        return reconciled_wakes + count + harvested + notified + self._run_eval_schedules_once(now_ms)
 
     def jev_workspace(self, room_id: str, graph_id: str = "") -> dict[str, object]:
         return self.jev_application.projection(room_id, graph_id)
@@ -1489,6 +1518,16 @@ class AgentService:
             "agentScenario": scenario.scenario_id,
             "agentScenarioVariant": scenario.variant,
         }
+        session_id = str(session.get("id") or "")
+        try:
+            identity = coordinator_identity(self.sessions, session_id)
+        except (KeyError, ValueError):
+            identity = ""
+        # Internal context only: mode/role or caller metadata cannot confer this identity.
+        scenario_context["_persistentCoordinator"] = (
+            {"coordinatorId": identity, "sourceSessionId": session_id, "personaVersion": "1"}
+            if identity else None
+        )
         if isinstance(participant, Mapping):
             scenario_context["roomParticipant"] = dict(participant)
         delegation = getattr(self, "delegation", None)
@@ -1500,7 +1539,6 @@ class AgentService:
                     **scenario_context,
                     "resourceDisclosurePolicy": resource_policy,
                 }
-        session_id = str(session.get("id") or "")
         session_context = "\n\n".join(
             value
             for value in (
@@ -1519,6 +1557,13 @@ class AgentService:
         """Resolve the live memory master switch for the next Runtime call."""
 
         return memory_enabled_from_settings(self.db_path)
+
+    def _coordinator_personal_profile_scope(self, session_id: str) -> bool:
+        # Resolve the original current Source, never a client identity claim.
+        try:
+            return bool(coordinator_identity(self.sessions, session_id))
+        except (KeyError, ValueError):
+            return False
 
     def _session_memory_disclosed(self, session_id: str) -> bool:
         return capability_disclosure_enabled(
@@ -1778,7 +1823,7 @@ class AgentService:
                     knowledge=self._knowledge_resource(),
                     start_knowledge=lambda request_id, spec: self.eval_lab_trial_start({"clientRequestId": request_id, "sceneId": "knowledge-resource", "spec": spec}),
                     cancel_knowledge=lambda job_id: self.eval_lab_trial_cancel({"jobId": job_id}),
-                    read_experiments=self.eval_lab._experiments_with_source_ledger,
+                    read_experiments=self.eval_lab.list_experiments,
                     read_trials=self.eval_lab_trials,
                     command_app=self.eval_lab_app_command,
                 )
@@ -2476,6 +2521,35 @@ class AgentService:
     def create_session(self, payload: Mapping[str, object]) -> dict[str, object]:
         return self.session_application.create_session(payload)
 
+    def _coordinator_ports(self) -> CoordinatorPorts:
+        return CoordinatorPorts(
+            sessions=self.sessions,
+            rooms=self.rooms,
+            session_application=self.session_application,
+            runtime=self.runtime,
+            create_room=self.room_management.lifecycle.create,
+            activate_room=self._activate_room_unrestricted_execution,
+            room_artifacts=self.room_artifacts,
+            require_mutable=self._require_mutable_session,
+            prompt=self.prompt,
+            abort=self.abort,
+            resume=self.resume_session,
+            post_room=self.post_room_message,
+            abort_room=self.abort_room_turn,
+            session_result=lambda target, turn, client: self.message_snapshot.read_result(
+                target, turn, client, acceptance=self.command_receipts.acceptance_evidence_for_exact_command(
+                    command_scope="session_prompt", scope_id=target, client_message_id=client)
+                or self.sessions.prompt_acceptance_evidence(target, client)),
+            register_session_prompt=self.coordinator_work.register_prompt,
+            reconcile_session_acceptance=self.coordinator_work.reconcile_acceptance,
+        )
+
+    def ensure_coordinator(self, payload: Mapping[str, object]) -> dict[str, object]:
+        return ensure_coordinator(self._coordinator_ports(), payload)
+
+    def coordinator_command(self, payload: Mapping[str, object], *, execution_binding: Mapping[str, object] | None = None) -> dict[str, object]:
+        return coordinator_command(self._coordinator_ports(), payload, execution_binding=execution_binding)
+
     def ensure_primary_assistant(self, payload: Mapping[str, object]) -> dict[str, object]:
         return self.session_application.ensure_primary_assistant(payload)
 
@@ -2616,32 +2690,8 @@ class AgentService:
     def update_role_runtime_defaults(self, payload: Mapping[str, object]) -> dict[str, object]:
         return self.role_application.update_runtime_defaults(payload)
 
-    def _role_payload(
-        self,
-        value: Mapping[str, object],
-        *,
-        available_models: set[tuple[str, str]] | None = None,
-    ) -> dict[str, object]:
-        return self.role_application.role_payload(
-            value,
-            available_models=available_models,
-        )
 
-    def _initial_role_runtime_defaults(
-        self,
-        role: PersonaManifest,
-        *,
-        default_model_profile: str | None = None,
-        available_models: set[tuple[str, str]] | None = None,
-    ) -> dict[str, str]:
-        return self.role_application.initial_runtime_defaults(
-            role,
-            default_model_profile=default_model_profile,
-            available_models=available_models,
-        )
 
-    def _available_role_models(self) -> set[tuple[str, str]] | None:
-        return self.role_application.available_models()
 
     def preview_wake_schedule(
         self,
@@ -2696,11 +2746,6 @@ class AgentService:
             require_confirmation=require_confirmation,
         )
 
-    def _validated_wake_schedule(
-        self,
-        payload: Mapping[str, object],
-    ) -> dict[str, object]:
-        return self.wake_application.validate(payload)
 
     def _dispatch_scheduled_wake(self, claim: Mapping[str, object]) -> None:
         self.wake_application.dispatch(claim)
@@ -2765,25 +2810,7 @@ class AgentService:
     def list_rooms(self, payload: Mapping[str, object] | None = None) -> dict[str, object]:
         return self.room_management.list_rooms(payload)
 
-    def _room_participant_sessions(
-        self,
-        room: Mapping[str, object],
-    ) -> list[dict[str, object]]:
-        return self.room_management.participant_sessions(room)
 
-    def _repair_room_participant_session(
-        self,
-        room: Mapping[str, object],
-        participant: Mapping[str, object],
-    ) -> dict[str, object]:
-        repaired = self.room_management._repair_participant_session(
-            room,
-            participant,
-        )
-        self._activate_room_unrestricted_execution(
-            str(room.get("id") or ""),
-        )
-        return repaired
 
     def _restore_room_participant_sessions(
         self,
@@ -3753,6 +3780,7 @@ class AgentService:
             requested_participant_ids=requested_participant_ids,
             work_item_id=work_item_id,
             attachment_ids=attachment_ids,
+            admission_fence=getattr(self.runtime, "gateway_dispatch_fence", nullcontext),
         )
 
     def send_room_intercom(
@@ -3933,28 +3961,8 @@ class AgentService:
             payload,
         )
 
-    def _rewrite_session_once(
-        self,
-        *,
-        session_id: str,
-        entry_id: str,
-        message: str,
-        attachment_ids: list[str],
-        client_message_id: str,
-    ) -> dict[str, object]:
-        return self.session_branching.rewrite_session_once(
-            session_id=session_id,
-            entry_id=entry_id,
-            message=message,
-            attachment_ids=attachment_ids,
-            client_message_id=client_message_id,
-        )
 
-    def _rewritable_session(self, session_id: str) -> dict[str, object]:
-        return self.session_branching.rewritable_session(session_id)
 
-    def _forkable_session(self, session_id: str) -> dict[str, object]:
-        return self.session_branching.forkable_session(session_id)
 
     @staticmethod
     def _room_public_projection_events(
@@ -4258,13 +4266,37 @@ class AgentService:
     def deep_search(self, payload: Mapping[str, object]) -> dict[str, object]:
         return self.prompt_application.deep_search(payload)
 
-    def _deep_search_session(
-        self,
-        runtime: Mapping[str, object],
-    ) -> tuple[dict[str, object], bool]:
-        return self.prompt_application.deep_search_session(
-            runtime
-        )
+
+    def _coordinator_delivery_eligible(self, session_id: str) -> bool:
+        try:
+            session = self.sessions.get(session_id)
+            self.sessions.require_goal_execution(session_id)
+        except (AgentGoalExecutionBlocked, AgentSessionNotFound):
+            return False
+        observe = getattr(self.runtime, "is_resident_idle", None)
+        return bool(session.get("status") == "idle" and not session.get("evaluationSnapshot")
+                    and callable(observe) and observe(session_id)
+                    and not self.room_turns.session_turn_active(session_id))
+
+    def _deliver_coordinator_result(self, *, source_id: str, client: str, item_id: str,
+                                   message: str, on_prepared: Callable[[Mapping[str, object]], None],
+                                   before_native_write: Callable[[], None]) -> Mapping[str, object]:
+        # The existing mode/priority claim encloses admission before command
+        # creation. The existing application owns the same receipt and Stop.
+        with self._direct_agent_entry(source_id):
+            reserve = getattr(self.runtime, "reserve_prompt_admission")
+            release = getattr(self.runtime, "release_prompt_admission")
+            reserve(source_id, client_message_id=client, _resident_only=True)
+            try:
+                return self.prompt_application.prompt(source_id, {
+                    "message": message, "clientMessageId": client,
+                    "_contextSource": "coordinator_result", "_contextSourceToken": self._context_source_token,
+                }, _dispatch_checkpoint=lambda **kwargs: self.prompt_application.prompt_with_checkpoint(
+                    **kwargs, on_prepared=on_prepared, resident_only=True, coordinator_result_item_id=item_id,
+                    before_native_write=before_native_write))
+            finally:
+                # Runtime refuses release for a dispatched unknown/active turn.
+                release(source_id, client_message_id=client)
 
     def _prompt_with_checkpoint(
         self,
@@ -4402,16 +4434,6 @@ class AgentService:
             session
         )
 
-    def _ensure_memory_bootstrap(
-        self,
-        session: Mapping[str, object],
-        *,
-        query_text: str,
-    ) -> dict[str, object]:
-        return self.memory_context_application.ensure_bootstrap(
-            session,
-            query_text=query_text,
-        )
 
     def refresh_session_context(
         self,
@@ -4419,15 +4441,6 @@ class AgentService:
     ) -> dict[str, object]:
         return self.memory_context_application.refresh(payload)
 
-    def _replace_recent_recall_messages(
-        self,
-        session_id: str,
-        messages: Sequence[Mapping[str, object]],
-    ) -> None:
-        self.memory_context_application.replace_recent_messages(
-            session_id,
-            messages,
-        )
 
     def _append_recent_recall_message(
         self,
@@ -4444,20 +4457,6 @@ class AgentService:
             session_id
         )
 
-    def _record_user_evidence_safely(
-        self,
-        *,
-        session_id: str,
-        pi_entry_id: str,
-        turn_id: str,
-        text: str,
-    ) -> dict[str, object]:
-        return self.memory_evidence_application.record_user(
-            session_id=session_id,
-            pi_entry_id=pi_entry_id,
-            turn_id=turn_id,
-            text=text,
-        )
 
     def _record_assistant_evidence_safely(
         self,
@@ -4502,22 +4501,32 @@ class AgentService:
 
     def abort(self, session_id: str, payload: Mapping[str, object] | None = None) -> dict[str, object]:
         self._require_mutable_session(session_id)
-        if payload:
+        turn_target = payload.get("turnTarget") if payload else None
+        if turn_target is not None and (not isinstance(turn_target, Mapping)
+            or set(turn_target) != {"turnId", "clientMessageId"}
+            or any(not isinstance(turn_target.get(key), str) or not str(turn_target[key]).strip()
+                   for key in ("turnId", "clientMessageId"))):
+            raise ValueError("Stop requires the exact turnId and clientMessageId")
+        if payload and turn_target is None:
             # Compaction identity carries no authority over turns or jobs.
             return self.session_application.abort_compaction(session_id, payload)
         self.session_application.require_turn_abort_target(session_id)
         wait_commands = (self._workspace_command_cancellation(session_id)
-                         if self._workspace_command_cancellation is not None else None)
+                         if self._workspace_command_cancellation is not None and turn_target is None else None)
         wait_jobs: Callable[[], dict[str, object]] | None = None
         def capture_jobs(identity: Mapping[str, object]) -> None:
-            nonlocal wait_jobs
-            wait_jobs = self.background_jobs.request_turn_cancellation(session_id, identity)
+            nonlocal wait_jobs, wait_commands
+            if turn_target is not None and self._workspace_command_cancellation is not None:
+                wait_commands = self._workspace_command_cancellation(session_id)
+            if self.background_jobs.execution_owner:
+                wait_jobs = self.background_jobs.request_turn_cancellation(session_id, identity)
         try:
             # A Room/control facade can stop its native Session, but only the
             # Gateway job owner may fan out to standalone background processes.
             receipt = self.session_application.abort(
                 session_id,
-                capture_cancellation=(capture_jobs if self.background_jobs.execution_owner else None),
+                capture_cancellation=(capture_jobs if self.background_jobs.execution_owner or turn_target is not None else None),
+                expected_identity=turn_target if isinstance(turn_target, Mapping) else None,
             )
         finally:
             commands = wait_commands() if wait_commands is not None else None
@@ -4680,42 +4689,12 @@ class AgentService:
     def decide_approval(self, approval_id: str, payload: Mapping[str, object]) -> dict[str, object]:
         return self.approval_application.decide_approval(approval_id, payload)
 
-    def _finish_approval_decision(
-        self,
-        approval: Mapping[str, object],
-        *,
-        pending_in_pi: bool,
-    ) -> dict[str, object]:
-        return self.approval_application.finish_decision(
-            approval,
-            pending_in_pi=pending_in_pi,
-        )
 
     def auto_approve_pending(self, approval: Mapping[str, object]) -> dict[str, object]:
         return self.approval_application.auto_approve_pending(approval)
 
-    def _execute_approved_operation(
-        self,
-        decided: Mapping[str, object],
-    ) -> dict[str, object]:
-        return self.approval_application.execute_approved(decided)
 
-    def _checkpoint_applied_approval(
-        self,
-        approval: Mapping[str, object],
-    ) -> dict[str, object]:
-        return self.approval_application.checkpoint_applied(approval)
 
-    def _finish_terminal_approval(
-        self,
-        approval: Mapping[str, object],
-        *,
-        pending_in_pi: bool,
-    ) -> dict[str, object]:
-        return self.approval_application.finish_terminal(
-            approval,
-            pending_in_pi=pending_in_pi,
-        )
 
     def finalize_external_approval(
         self,
@@ -6752,6 +6731,17 @@ class AgentService:
 
 
     def close(self) -> None:
+        with self._close_lock:
+            if self._closed:
+                return
+            self._closed = True
+            self._close_owned_services()
+
+    def _close_owned_services(self) -> None:
+        # Stop admission and drain existing scheduler callbacks before closing
+        # the Runtime, event and SQLite owners those callbacks still use.
+        self.wake_scheduler.close()
+        self.room_intercom.close()
         with self._eval_lab_trial_lock:
             self._eval_lab_trial_closed = True
             trial_application = self._eval_lab_trial_application
@@ -6775,8 +6765,6 @@ class AgentService:
         self.observations.close()
         self._remove_wake_observer()
         self.wake_scheduler.bind_terminal_observer(None)
-        self.wake_scheduler.close()
-        self.room_intercom.close()
         self.rooms.close()
         self.sessions.close()
         self.configuration_store.close()
@@ -6902,11 +6890,7 @@ class AgentService:
     def _cancel_room_turn(self, session_id: str, room_turn_id: str) -> None:
         self.room_turns.cancel(session_id, room_turn_id)
 
-    def _room_turn_for_event(self, event: AgentEventEnvelope) -> str:
-        return self.room_turns.turn_for_event(event)
 
-    def _room_dispatch_for_event(self, event: AgentEventEnvelope) -> str:
-        return self.room_turns.dispatch_for_event(event)
 
     def _finish_room_turn(
         self,
@@ -6920,8 +6904,6 @@ class AgentService:
             room_turn_id,
         )
 
-    def _drop_room_topic_if_idle_locked(self, room_turn_id: str) -> None:
-        self.room_turns.drop_topic_if_idle(room_turn_id)
 
     def _room_topic_for_turn(self, room_turn_id: str) -> str:
         return self.room_turns.topic_for_turn(room_turn_id)

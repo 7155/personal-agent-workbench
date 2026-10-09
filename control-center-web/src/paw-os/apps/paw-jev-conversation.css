@@ -85,3 +85,29 @@
 @media (prefers-reduced-motion: reduce) { .paw-jev-tool-records__ticks > i { animation: none !important; } }
 [data-reduce-motion='true'] .paw-jev-tool-records__ticks > i { animation: none !important; }
 @media (max-width: 600px) { .paw-jev-tool-records__ticks { display: none; } }
+
+/* Match the Session reading lane, including settled grouped tool receipts. */
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation[data-chat-presentation-version='v2'] .ccui-user-bubble { background: var(--color-surface-subtle); font-size: 16px; line-height: 1.66; }
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation[data-chat-presentation-version='v2'] .ccui-markdown { font-size: var(--reading-body-size, 16px); line-height: 1.66; }
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation[data-chat-presentation-version='v2'] .ccui-tool-card.status-success[data-expanded='false'] { border-color: transparent; background: transparent; }
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation[data-chat-presentation-version='v2'] .paw-jev-tool-records__trigger { min-height: 40px; padding: 7px 8px; border-color: transparent; border-radius: var(--radius-3); background: transparent; }
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation[data-chat-presentation-version='v2'] .paw-jev-tool-records__trigger[data-status='error'] { border-left: 2px solid var(--color-danger); background: color-mix(in srgb, var(--color-danger) 4%, var(--color-workspace-paper)); }
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation[data-chat-presentation-version='v2'] .paw-jev-tool-records__trigger[data-status='running'] { border-left: 2px solid var(--color-accent); }
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation[data-chat-presentation-version='v2'] .paw-jev-tool-records__trigger[data-status='pending'] { border-left: 2px solid var(--color-warning); }
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation[data-chat-presentation-version='v2'] .paw-jev-tool-records__trigger:hover { background: var(--color-surface-hover); }
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation[data-chat-presentation-version='v2'] .paw-jev-tool-records__latest { font-size: 12px; }
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation[data-chat-presentation-version='v2'] .ccui-tool-head { min-height: 32px; }
+@container paw-room-workspace (max-width: 470px) {
+  .paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation[data-chat-presentation-version='v2'] :is(.ccui-tool-head, .paw-jev-tool-records__trigger) { min-height: 40px; }
+  .paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation[data-chat-presentation-version='v2'] .paw-jev-tool-records__latest { display: none; }
+}
+
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation[data-chat-presentation-version='v2'] .ccui-user-text { font-size: 16px; line-height: 1.66; }
+
+/* A quiet status line above the editor; task detail remains available on demand. */
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation[data-chat-presentation-version='v2'] .paw-room-work-status { border: 0; background: transparent; box-shadow: none; color: var(--color-text); }
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation[data-chat-presentation-version='v2'] .paw-room-work-status__bar { padding: 6px 10px; }
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation[data-chat-presentation-version='v2'] .paw-room-work-status__actions button { border-color: transparent; font-size: 13px; }
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation[data-chat-presentation-version='v2'] .paw-room-work-status__actions button:hover { background: var(--color-surface-hover); }
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation[data-chat-presentation-version='v2'] .paw-room-work-status__copy strong { font-weight: 500; }
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation[data-chat-presentation-version='v2'] .paw-room-work-status__detail { border-color: var(--color-border); }

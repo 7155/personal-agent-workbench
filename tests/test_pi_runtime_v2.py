@@ -7229,6 +7229,114 @@ class PiRuntimeV2Tests(unittest.TestCase):
         with patch.object(client, "send", side_effect=observe_send):
             self.runtime.abort(session_id)
 
+    def test_stopped_user_only_history_projects_exact_receipt_without_touching_other_turns(self) -> None:
+        from rag_ime.agent_protocol import AgentMessage
+        session_id = str(self.first["id"])
+        user = {"schemaVersion":"rag-ime.agent-message.v1","id":"native-user","sessionId":session_id,
+            "turnId":"original-stopped","role":"user","status":"completed","blocks":[],"attachments":[],"citations":[],"createdAtMs":100}
+        successor = {**user,"id":"successor-user","turnId":"successor","createdAtMs":300}
+        self.events.publish(session_id,"turn_completed",{"status":"aborted","aborted":True},turn_id="different-turn")
+        self.assertEqual(self.runtime._restore_aborted_history_messages(session_id,[user,successor]),[user,successor])
+        self.events.publish(session_id,"turn_completed",{"status":"aborted","aborted":True},turn_id=user["turnId"])
+        projected = self.runtime._restore_aborted_history_messages(session_id,[user,successor])
+        self.assertEqual(len(projected),3)
+        self.assertEqual(projected[0],user)
+        self.assertEqual(projected[2],successor)
+        stopped = AgentMessage.from_payload(projected[1])
+        self.assertEqual((stopped.turn_id,stopped.role,stopped.status),("original-stopped","assistant","aborted"))
+        self.assertEqual(stopped.blocks[0].data,{"text":"已停止。"})
+        self.assertEqual(self.runtime._restore_aborted_history_messages(session_id,projected),projected)
+        # A completed reply before cancellation remains evidence; append a
+        # separate exact turn receipt instead of rewriting its result.
+        partial = {**user,"id":"partial-answer","role":"assistant","blocks":[{"id":"result","type":"text","status":"completed","data":{"text":"Completed result before Stop"}}]}
+        with_result = self.runtime._restore_aborted_history_messages(session_id,[user,partial])
+        self.assertEqual(with_result[1],partial)
+        self.assertEqual(with_result[-1]["status"],"aborted")
+
+    def test_native_durable_user_only_snapshot_adds_stop_receipt_without_changing_engine_recovery(self) -> None:
+        session = self.store.create(title="Native stopped history",runtime_engine="durable")
+        session_id,turn_id = str(session["id"]),"native-stopped-turn"
+        self.events.publish(session_id,"turn_completed",{"status":"aborted","aborted":True},turn_id=turn_id)
+        native = {"messages":[{"role":"user","id":"durable-input","_ragImeTurnId":turn_id,"timestamp":100,
+                    "content":[{"type":"text","text":"Native admitted input"}]}],
+                  "runtimeEngine":"durable","activeTurn":None,"paused":False,"recoverable":False,
+                  "compactionTarget":None,"partial":True,"historyCursor":"native-page-cursor","projectionCurrent":True}
+        with patch.object(self.runtime,"_inspection_snapshot",return_value=native), \
+             patch.object(self.runtime,"_require_client",side_effect=AssertionError("no model/Host dispatch")):
+            snapshot=self.runtime.session_snapshot(session_id,_view="recent")
+        self.assertEqual(snapshot["runtimeEngine"],"durable")
+        self.assertEqual((snapshot["paused"],snapshot["recoverable"],snapshot["partial"],snapshot["historyCursor"]),(False,False,True,"native-page-cursor"))
+        self.assertEqual([(m["turnId"],m["role"],m["status"]) for m in snapshot["messages"]],[(turn_id,"user","completed"),(turn_id,"assistant","aborted")])
+        self.assertEqual(len(native["messages"]),1)
+
+    def test_stopped_history_uses_exact_terminal_receipt_and_keeps_completed_results(self) -> None:
+        session_id = str(self.first["id"])
+        message = {"id": "assistant", "turnId": "stopped-turn", "role": "assistant", "status": "failed", "blocks": [
+            {"id": "stopped-turn:failure-text:0", "type": "text", "status": "failed", "data": {"text": "generic model failure"}},
+            {"id": "stopped-turn:error:0", "type": "error", "status": "failed", "data": {"message": "This operation was aborted"}},
+            {"id": "retained-file", "type": "file", "status": "completed", "data": {"path": "report.txt"}},
+        ]}
+        self.assertEqual(self.runtime._restore_aborted_history_messages(session_id, [message]), [message])
+        self.events.publish(session_id, "turn_completed", {"status": "aborted", "aborted": True}, turn_id="other-turn")
+        self.assertEqual(self.runtime._restore_aborted_history_messages(session_id, [message]), [message])
+        self.events.publish(session_id, "turn_completed", {"status": "aborted", "aborted": True}, turn_id="stopped-turn")
+        restored = self.runtime._restore_aborted_history_messages(session_id, [message])[0]
+        self.assertEqual(restored["status"], "aborted")
+        self.assertEqual(restored["blocks"][0], message["blocks"][2])
+        self.assertEqual(restored["blocks"][1]["data"], {"text": "已停止。"})
+        self.assertEqual(message["status"], "failed")
+
+    def test_coordinator_dispatch_rechecks_source_after_target_preflight_without_nested_host_read(self) -> None:
+        from rag_ime.pi.runtime import PiRuntimeTurnConflict
+        source_id, target_id = str(self.first["id"]), str(self.second["id"])
+        self.runtime.ensure(source_id)
+        source = self.runtime._states[source_id]
+        source.turn_id, source.client_message_id = "controller-turn", "controller-client"
+        binding = {"turnId":source.turn_id,"clientMessageId":source.client_message_id}
+        with self.runtime.gateway_control_scope(source_id,binding):
+            self.runtime.reserve_prompt_admission(target_id,client_message_id="target-client")
+            # Simulate Stop winning during context/model-catalog preparation.
+            source.abort_requested_turn_id = source.turn_id
+            with patch.object(self.runtime,"is_gateway_turn_active",side_effect=AssertionError("before_write must not issue nested Host read")):
+                with self.assertRaises(PiRuntimeTurnConflict):
+                    self.runtime._mark_prompt_dispatched(target_id,"target-client")
+            self.assertFalse(self.runtime._states[target_id].prompt_dispatched)
+        # Caller context is cleared; a later ordinary UI request keeps its owner.
+        self.runtime._mark_prompt_dispatched(target_id,"target-client")
+        self.assertTrue(self.runtime._states[target_id].prompt_dispatched)
+
+    def test_recent_uncached_stop_history_restores_exact_receipt_for_complete_and_partial_windows(self) -> None:
+        session_id = str(self.first["id"])
+        message = {"id":"assistant","turnId":"receipt-turn","role":"assistant","status":"failed","blocks":[
+            {"id":"receipt-turn:failure-text:0","type":"text","status":"failed","data":{"text":"generic failure"}}]}
+        self.events.publish(session_id,"turn_completed",{"status":"aborted","aborted":True},turn_id="receipt-turn")
+        for complete in (True,False):
+            with patch.object(self.runtime,"_recent_projection_identity",return_value=None), \
+                 patch.object(self.runtime,"_recent_projected_messages",return_value=None), \
+                 patch.object(self.runtime,"_recent_durable_history_messages",return_value=([],[],complete)), \
+                 patch.object(self.runtime,"_save_recent_message_projection",return_value=False), \
+                 patch.object(self.runtime,"_schedule_recent_projection_refresh"), \
+                 patch("rag_ime.pi.runtime.recent_public_message_window",return_value=[message]), \
+                 patch("rag_ime.pi.runtime.recent_tool_history_events",return_value=[]):
+                snapshot=self.runtime.recent_session_snapshot(session_id)
+                self.assertEqual(snapshot["messages"][0]["status"],"aborted")
+                self.assertEqual(snapshot["messages"][0]["blocks"][0]["data"],{"text":"已停止。"})
+
+    def test_exact_coordinator_abort_rejects_successor_before_cancellation_fence(self) -> None:
+        from rag_ime.pi.runtime import PiRuntimeTurnConflict
+        session_id = str(self.first["id"])
+        self.runtime.ensure(session_id)
+        state = self.runtime._states[session_id]
+        state.turn_id = "successor-turn"
+        state.client_message_id = "successor-client"
+        cancelled = []
+        with self.assertRaises(PiRuntimeTurnConflict):
+            self.runtime.abort_with_approval_fence(session_id,
+                lambda identity: cancelled.append(identity),
+                expected_identity={"turnId": "original-turn", "clientMessageId": "original-client"})
+        self.assertEqual(cancelled, [])
+        self.assertEqual(state.turn_id, "successor-turn")
+
     def test_cancelled_admission_ack_never_reopens_gateway_before_exact_abort(self) -> None:
         self._assert_cancelled_admission_ack_stays_fenced("")
 
@@ -7257,7 +7365,7 @@ class PiRuntimeV2Tests(unittest.TestCase):
             return original_send(method, params, timeout=timeout, before_write=before_write)
 
         def inspect_before_abort(sid, **kwargs):
-            if "_expected_identity" in kwargs:
+            if kwargs.get("_expected_identity") is not None:
                 observed.append(self.runtime.is_gateway_turn_active(sid, turn_id, client_message_id=client_id))
             return original_abort(sid, **kwargs)
 

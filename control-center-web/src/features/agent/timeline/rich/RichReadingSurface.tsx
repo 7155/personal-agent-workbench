@@ -1,6 +1,8 @@
 import { AlignLeft, ChevronDown, List, Type, X } from 'lucide-react';
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { updateReadingPreferences, usePresentationMotion, useReadingPreferences } from '../../../conversation-ui/reading/reading-preferences';
+import { ChatPresentationSettings } from '../../../conversation-ui/reading/ChatPresentationSettings';
+import { useChatPresentation } from '../../../conversation-ui/reading/chat-presentation';
 import './reading-surface.css';
 
 type ReadingAnchor = { element: HTMLElement; label: string; level: number };
@@ -25,6 +27,7 @@ export function RichReadingSurface({ children, source, documentKey, streaming = 
   const [menu, setMenu] = useState<'outline' | 'settings' | null>(null);
   const [index, setIndex] = useState<ReadingIndex>(EMPTY);
   const preferences = useReadingPreferences();
+  const presentation = useChatPresentation();
   const motion = usePresentationMotion();
   const highlight = useRef<{ node: HTMLElement; timer: ReturnType<typeof setTimeout> } | null>(null);
   const focusCleanup = useRef<(() => void) | null>(null);
@@ -110,7 +113,8 @@ export function RichReadingSurface({ children, source, documentKey, streaming = 
   };
 
   return <div className="paw-reading-surface" data-reading-size={preferences.size}
-    data-reading-spacing={preferences.spacing} data-reduce-motion={!motion || undefined}>
+    data-reading-spacing={preferences.spacing} data-reduce-motion={!motion || undefined}
+    data-chat-presentation-version={presentation?.version}>
     {navigable ? <div className="paw-reading-bar" ref={controls}
       onKeyDown={event => { if (event.key === 'Escape' && menu) { event.preventDefault(); event.stopPropagation(); closeMenu(); } }}>
       <span className="paw-reading-bar__label"><AlignLeft size={13} aria-hidden />本段内容
@@ -131,6 +135,7 @@ export function RichReadingSurface({ children, source, documentKey, streaming = 
       </nav> : null}
       {menu === 'settings' ? <section className="paw-reading-menu" id={`${id}-settings`} aria-label="阅读显示设置">
         <header><strong>让文字更好读</strong><button type="button" aria-label="关闭阅读设置" onClick={() => closeMenu()}><X size={14} aria-hidden /></button></header>
+        <ChatPresentationSettings />
         <fieldset><legend>正文字号</legend><div>
           <button type="button" aria-pressed={preferences.size === 'standard'} onClick={() => updateReadingPreferences({ size: 'standard' })}>标准 <small>16</small></button>
           <button type="button" aria-pressed={preferences.size === 'large'} onClick={() => updateReadingPreferences({ size: 'large' })}>大字 <small>18</small></button>

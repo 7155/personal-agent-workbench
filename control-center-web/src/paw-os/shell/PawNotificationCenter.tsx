@@ -1,6 +1,7 @@
 import { Bell, Info, ShieldAlert, TriangleAlert, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useMotionActivity } from '@/design/motion';
 import { useGlobalFeedback, type GlobalNotice } from '@/components/feedback';
 import './paw-shell-status.css';
 
@@ -11,6 +12,7 @@ const noticeIcons = {
 } as const;
 
 export function PawNotificationCenter() {
+  const motionActive = useMotionActivity();
   const { clearNotices, dismissNotice, notices } = useGlobalFeedback();
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -55,6 +57,7 @@ export function PawNotificationCenter() {
       aria-hidden={!open}
       aria-label="通知中心"
       className="paw-notification-center"
+      data-motion-active={motionActive}
       data-open={open || undefined}
       id="paw-notification-center-panel"
       inert={!open ? true : undefined}

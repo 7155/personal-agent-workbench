@@ -146,6 +146,8 @@ class AgentRoomStore:
         owner_app_id: str = "",
         surface_key: str = "",
         created_at_ms: int | None = None,
+        coordinator_binding: Mapping[str, object] | None = None,
+        effect_fence: Callable[[], object] | None = None,
     ) -> dict[str, object]:
         normalized_title = " ".join(str(title).split())[:120]
         if not normalized_title:
@@ -185,7 +187,8 @@ class AgentRoomStore:
         participant_ids = [f"participant:{uuid.uuid4()}" for _ in values]
         moderator_id = participant_ids[moderator_ordinal]
         room_file = self._room_file(room_id)
-        with self._connect() as conn:
+        from contextlib import nullcontext
+        with (effect_fence() if effect_fence is not None else nullcontext()), self._connect() as conn:
             conn.execute(
                 """
                 INSERT INTO agent_rooms(
@@ -220,6 +223,9 @@ class AgentRoomStore:
                     timestamp,
                 ),
             )
+            if coordinator_binding is not None:
+                from ..agent_coordinator import insert_binding
+                insert_binding(conn, room_id, "room", coordinator_binding)
             for ordinal, (participant_id, value) in enumerate(zip(participant_ids, values, strict=True)):
                 session_id = _required_text(value, "sessionId")
                 role_id = canonical_agent_role_id(
@@ -2356,13 +2362,14 @@ class AgentRoomStore:
         return events
 
     def control_events_for_turn(
-        self, room_id: str, turn_id: str,
+        self, room_id: str, turn_id: str, *, through_sequence: int | None = None,
     ) -> list[dict[str, object]]:
         """Resolve control identity independently of the retained display tail.
 
         Accepted command receipts own the original user/route anchors even
         after streaming activity has evicted those events from the timeline.
         They are control evidence only; never republish them into live history.
+        An optional caller snapshot bounds pages and receipt fallback together.
         """
         events: list[dict[str, object]] = []
         cursor = 0
@@ -2370,7 +2377,7 @@ class AgentRoomStore:
             page = self.list_events_for_turn(
                 room_id, turn_id,
                 event_types=("user_message", "route_decision", "turn_completed", "turn_failed"),
-                after_sequence=cursor, limit=2000,
+                after_sequence=cursor, through_sequence=through_sequence, limit=2000,
             )
             events.extend(page)
             if len(page) < 2000:
@@ -2396,6 +2403,7 @@ class AgentRoomStore:
                     and event.get("turnId") == turn_id
                     and event.get("eventType") in {"user_message", "route_decision"}
                     and event.get("eventId")
+                    and (through_sequence is None or int(event.get("sequence") or 0) <= through_sequence)
                 ):
                     by_id.setdefault(str(event["eventId"]), event)
         return sorted(by_id.values(), key=lambda event: int(event["sequence"]))
@@ -2407,9 +2415,10 @@ class AgentRoomStore:
         *,
         event_types: Sequence[str] = (),
         after_sequence: int = 0,
+        through_sequence: int | None = None,
         limit: int = 500,
     ) -> list[dict[str, object]]:
-        """Read one turn without decoding unrelated retained Room events."""
+        """Read one turn, optionally capped at a fixed original-event watermark."""
 
         self.get(room_id)
         normalized_types = tuple(
@@ -2430,6 +2439,9 @@ class AgentRoomStore:
             str(turn_id or ""),
             max(0, int(after_sequence)),
         ]
+        if through_sequence is not None:
+            query += " AND sequence <= ?"
+            parameters.append(max(0, int(through_sequence)))
         if normalized_types:
             placeholders = ", ".join("?" for _ in normalized_types)
             query += f" AND event_type IN ({placeholders})"

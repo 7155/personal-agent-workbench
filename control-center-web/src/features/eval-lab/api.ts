@@ -193,8 +193,7 @@ export type EvalLabEvidenceTurn = {
   entryRef?: string;
 };
 
-export type EvalLabEvidenceDetail = {
-  status: string;
+type EvalLabEvidenceDetailMetadata = {
   runId: string;
   taskIndex?: number;
   /** Preview fixtures may expose bounded sample turns, never source transcripts. */
@@ -209,13 +208,6 @@ export type EvalLabEvidenceDetail = {
     messageCount?: number;
   };
   environment?: EvalLabEvidenceEnvironment;
-  turns: readonly EvalLabEvidenceTurn[];
-  tools: readonly {
-    toolName: string;
-    status: string;
-    text: string;
-    timestampMs?: number;
-  }[];
   protected?: {
     sourceReadOnly?: boolean;
     thinkingShown?: boolean;
@@ -229,6 +221,31 @@ export type EvalLabEvidenceDetail = {
   message?: string;
   summary?: EvalLabEvidenceRun;
 };
+
+/** These legal responses carry identity/reason, without a readable payload. */
+export type EvalLabEvidenceUnavailableDetail = EvalLabEvidenceDetailMetadata & {
+  status: 'invalid_run_id' | 'source_unavailable' | 'not_found' | 'task_not_found';
+  turns?: never;
+  tools?: never;
+};
+
+export type EvalLabEvidenceProjectionDetail = EvalLabEvidenceDetailMetadata & {
+  status: 'available' | 'report_available' | 'report_only' | 'report_unavailable' | 'no_sessions' | 'transcript_missing';
+  turns: readonly EvalLabEvidenceTurn[];
+  tools: readonly {
+    toolName: string;
+    status: string;
+    text: string;
+    timestampMs?: number;
+  }[];
+};
+
+export type EvalLabEvidenceDetail = EvalLabEvidenceUnavailableDetail | EvalLabEvidenceProjectionDetail;
+
+export function isEvalLabEvidenceUnavailable(detail: EvalLabEvidenceDetail): detail is EvalLabEvidenceUnavailableDetail {
+  return detail.status === 'invalid_run_id' || detail.status === 'source_unavailable'
+    || detail.status === 'not_found' || detail.status === 'task_not_found';
+}
 
 export type EvalLabEvidenceResponse = {
   schemaVersion: 'rag-ime.eval-lab-evidence.v1';
@@ -323,19 +340,54 @@ export function requestEvalLabEvidence(
     pathId: 'agent.eval-lab.evidence',
     query,
     signal,
-  }).then(parseEvalLabEvidenceResponse);
+  }).then((value) => parseEvalLabEvidenceResponse(value, Boolean(params.runId)));
 }
 
-export function parseEvalLabEvidenceResponse(value: unknown): EvalLabEvidenceResponse {
+export function parseEvalLabEvidenceResponse(value: unknown, requireDetail = false): EvalLabEvidenceResponse {
   if (!isRecord(value)
     || value.schemaVersion !== 'rag-ime.eval-lab-evidence.v1'
     || value.ok !== true
     || !isRecord(value.source)
+    || typeof value.source.label !== 'string'
     || !Array.isArray(value.runs)
-    || typeof value.total !== 'number') {
+    || typeof value.total !== 'number'
+    || (requireDetail && value.detail === undefined)
+    || (value.detail !== undefined && !isEvidenceDetail(value.detail))) {
     throw new Error('评测对话证据格式暂不可用。');
   }
-  return value as unknown as EvalLabEvidenceResponse;
+  const detail = isRecord(value.detail) ? value.detail : undefined;
+  return {
+    ...value,
+    runs: value.runs.map(evidenceRunWithMetrics),
+    ...(detail?.summary !== undefined ? { detail: { ...detail, summary: evidenceRunWithMetrics(detail.summary) } } : {}),
+  } as unknown as EvalLabEvidenceResponse;
+}
+
+function evidenceRunWithMetrics(value: unknown): Record<string, unknown> {
+  if (!isRecord(value) || (value.metrics != null && !isRecord(value.metrics))) {
+    throw new Error('评测对话证据格式暂不可用。');
+  }
+  // Older unavailable projections omitted this container; an empty record carries no scores.
+  return value.metrics == null ? { ...value, metrics: {} } : value;
+}
+
+function isEvidenceDetail(value: unknown): value is EvalLabEvidenceDetail {
+  if (!isRecord(value) || typeof value.runId !== 'string' || typeof value.status !== 'string'
+    || (value.taskIndex !== undefined && (typeof value.taskIndex !== 'number' || !Number.isInteger(value.taskIndex) || value.taskIndex < 0))
+    || (value.origin !== undefined && typeof value.origin !== 'string')
+    || (value.message !== undefined && typeof value.message !== 'string')
+    || ['task', 'session', 'environment', 'protected', 'report', 'summary'].some((key) => value[key] !== undefined && !isRecord(value[key]))) return false;
+  if (value.status === 'invalid_run_id' || value.status === 'source_unavailable'
+    || value.status === 'not_found' || value.status === 'task_not_found') return true;
+  if (!['available', 'report_available', 'report_only', 'report_unavailable', 'no_sessions', 'transcript_missing'].includes(value.status)) return false;
+  return Array.isArray(value.turns) && value.turns.every((turn) => isRecord(turn)
+    && typeof turn.kind === 'string' && typeof turn.role === 'string' && typeof turn.text === 'string'
+    && ['toolName', 'status', 'entryRef'].every((key) => turn[key] === undefined || typeof turn[key] === 'string')
+    && (turn.argumentKeys === undefined || (Array.isArray(turn.argumentKeys) && turn.argumentKeys.every((key) => typeof key === 'string')))
+    && (turn.timestampMs === undefined || (typeof turn.timestampMs === 'number' && Number.isFinite(turn.timestampMs))))
+    && Array.isArray(value.tools) && value.tools.every((tool) => isRecord(tool)
+      && typeof tool.toolName === 'string' && typeof tool.status === 'string' && typeof tool.text === 'string'
+      && (tool.timestampMs === undefined || (typeof tool.timestampMs === 'number' && Number.isFinite(tool.timestampMs))));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

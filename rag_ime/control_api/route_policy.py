@@ -93,6 +93,8 @@ class ControlPathId(str, Enum):
     AGENT_ORGANIZATION_UNDO = "agent.organization.undo"
     AGENT_SESSIONS_LIST = "agent.sessions.list"
     AGENT_SESSIONS_CREATE = "agent.sessions.create"
+    AGENT_COORDINATOR_ENSURE = "agent.coordinator.ensure"
+    AGENT_COORDINATOR_COMMAND = "agent.coordinator.command"
     AGENT_PRIMARY_ENSURE = "agent.primary.ensure"
     AGENT_PRIMARY_TASK_CREATE = "agent.primary.tasks.create"
     AGENT_SESSIONS_SURFACE_ENSURE = "agent.sessions.surface.ensure"
@@ -901,6 +903,8 @@ def default_route_policy() -> ControlRoutePolicy:
         _route(ControlPathId.AGENT_ORGANIZATION_UNDO, ControlMethod.POST, "/api/agent/organization/undo", None, body={"receiptId"}, required_body={"receiptId"}),
         _route(ControlPathId.AGENT_SESSIONS_LIST, ControlMethod.GET, "/api/agent/sessions", "/control/v1/agent/sessions", scopes=[ControlScope.AGENT_READ], remote_safe=True, query={"includeArchived", "includeInternal", "limit", "beforeUpdatedAtMs", "beforeId", "surfaceKind", "ownerAppId", "surfaceKey"}, remote_query={"includeArchived", "limit", "beforeUpdatedAtMs", "beforeId"}),
         _route(ControlPathId.AGENT_SESSIONS_CREATE, ControlMethod.POST, "/api/agent/sessions", "/control/v1/agent/sessions", scopes=[ControlScope.AGENT_WRITE], remote_safe=True, body={"title", "runtimeEngine", "mode", "roleId", "roleVersion", "modelProfile", "_modelRoute", "toolProfileVersion", "executionMode", "workspaceRoots", "workspaceScopeConfirmation", "dangerousModeConfirmation", "toolAllowlistMode", "allowedTools", "projectContextEnabled", "piSkillsEnabled", "codexSkillsEnabled", "surfaceKind", "ownerAppId", "surfaceKey"}, remote_body={"title", "mode", "roleId", "roleVersion", "modelProfile", "toolProfileVersion"}, remote_body_values={"mode": {"assistant"}}),
+        _route(ControlPathId.AGENT_COORDINATOR_ENSURE, ControlMethod.POST, "/api/agent/coordinator/ensure", None, body=set()),
+        _route(ControlPathId.AGENT_COORDINATOR_COMMAND, ControlMethod.POST, "/api/agent/coordinator/command", None, body={"sourceSessionId", "action", "clientRequestId", "targetId", "input"}, required_body={"sourceSessionId", "action"}),
         _route(ControlPathId.AGENT_PRIMARY_ENSURE, ControlMethod.POST, "/api/agent/primary/ensure", None, body={"workspaceRoots"}),
         _route(ControlPathId.AGENT_PRIMARY_TASK_CREATE, ControlMethod.POST, "/api/agent/primary/tasks", None, body={"clientRequestId", "sourceSessionId", "sourceMessageId", "objective", "acceptanceCriteria", "workspaceRoots", "workspaceScopeConfirmation"}, required_body={"clientRequestId", "sourceSessionId", "objective", "workspaceRoots", "workspaceScopeConfirmation"}),
         _route(ControlPathId.AGENT_SESSIONS_SURFACE_ENSURE, ControlMethod.POST, "/api/agent/sessions/surface/ensure", None, body={"title", "mode", "roleId", "roleVersion", "modelProfile", "_modelRoute", "toolProfileVersion", "executionMode", "workspaceRoots", "workspaceScopeConfirmation", "dangerousModeConfirmation", "projectContextEnabled", "piSkillsEnabled", "codexSkillsEnabled", "surfaceKind", "ownerAppId", "surfaceKey"}, required_body={"title", "mode", "toolProfileVersion", "executionMode", "workspaceRoots", "surfaceKind", "ownerAppId", "surfaceKey"}),

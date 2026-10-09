@@ -13,6 +13,7 @@ from unittest.mock import Mock, patch
 from rag_ime.agent_configuration import default_agent_configuration
 from rag_ime.agent_capability_catalog import build_capability_catalog, capability_disclosure_enabled
 from rag_ime.agent_events import AgentEventHub
+from rag_ime.agent_runtime_driver import AgentRuntimeError
 from rag_ime.agent_gateway_requests import GatewayRequestStore
 from rag_ime.agent_message_snapshot import AgentMessageSnapshotService
 from rag_ime.control_api import ControlAccessContext, ControlApiError, ControlRequest, default_route_policy
@@ -139,6 +140,31 @@ class PiDurableRuntimeTests(unittest.TestCase):
 
     def open(self):
         return self.runtime.ensure(self.session_id)
+
+    def test_passive_cold_durable_history_keeps_original_store_closed(self):
+        with patch.object(self.runtime, "ensure", side_effect=AssertionError("no passive Session open")) as ensure, \
+             patch.object(self.runtime, "_host", side_effect=AssertionError("no passive Host start")) as host:
+            with self.assertRaisesRegex(AgentRuntimeError, "already open"):
+                self.runtime.messages(self.session_id, _allow_host_open=False)
+        ensure.assert_not_called()
+        host.assert_not_called()
+        self.assertEqual(self.host.calls, [])
+
+    def test_passive_durable_history_reads_only_already_open_native_snapshot(self):
+        self.host.initial_active = False
+        self.open()
+        self.host.snapshot["messages"] = [
+            {"id":"original-assistant", "role":"assistant", "content":[{"type":"text", "text":"Original native result"}],
+             "_ragImeTurnId":"original-input"}]
+        self.host.calls.clear()
+        with patch.object(self.runtime, "ensure", side_effect=AssertionError("no passive Session open")) as ensure, \
+             patch.object(self.runtime, "_host", side_effect=AssertionError("no passive Host start")) as host:
+            messages = self.runtime.messages(self.session_id, _allow_host_open=False)
+        ensure.assert_not_called()
+        host.assert_not_called()
+        self.assertEqual([method for method, _ in self.host.calls], ["session.snapshot"])
+        self.assertEqual(messages[0]["id"], "original-assistant")
+        self.assertEqual(messages[0]["turnId"], "original-input")
 
     def test_open_uses_isolated_store_and_preserves_recoverable_original_input(self):
         self.open()

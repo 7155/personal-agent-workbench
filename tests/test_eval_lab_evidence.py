@@ -69,6 +69,26 @@ class EvalLabEvidenceProjectionTests(unittest.TestCase):
         self.assertEqual(report_detail["turns"], [])
         self.assertEqual(report_detail["report"]["schemaVersion"], "paw.enterpriseops-csm-eval.v1")
 
+    def test_unreadable_runs_keep_empty_metrics_and_visible_evidence_gaps(self) -> None:
+        for index in range(9):
+            run = self.root / "runs" / f"public-unreadable-run-{index}"
+            run.mkdir()
+            (run / "paw.sqlite").write_bytes(b"Unreadable public test fixture")
+        database_before = self.db.read_bytes()
+        catalog = EvalLabEvidenceProjection(self.root).read()
+        self.assertEqual(catalog["total"], 10)
+        self.assertEqual(len(catalog["runs"]), 10)
+        unavailable = [run for run in catalog["runs"] if run["status"] == "evidence_unavailable"]
+        self.assertEqual(len(unavailable), 9)
+        for run in unavailable:
+            self.assertEqual(run["evidenceKind"], "unavailable")
+            self.assertEqual(run["metrics"], {})
+            self.assertEqual(run["tasks"], [])
+        readable = next(run for run in catalog["runs"] if run["runId"] == "enterpriseops-test-run")
+        self.assertEqual(readable["metrics"]["taskSuccessCount"], 1)
+        self.assertEqual(readable["metrics"]["verifierPassCount"], 2)
+        self.assertEqual(self.db.read_bytes(), database_before)
+
     def test_transcript_usage_receipt_wins_over_zero_report_placeholder(self) -> None:
         report = json.loads(self.report.read_text(encoding="utf-8"))
         report["usage"] = {

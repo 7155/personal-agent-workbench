@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-import subprocess
-import sys
 import unittest
 from pathlib import Path
+
+from tests.frozen_rag_replay import run_frozen_standard_verifier
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -148,12 +148,8 @@ class EnterpriseRagCandidateCitationRevisionTests(unittest.TestCase):
 
     @unittest.skipUnless(QRELS.is_file(), "Private RAG corpus is not bundled in public source")
     def test_dedicated_verifier_reproduces_the_fixed_point_offline(self) -> None:
-        completed = subprocess.run(
-            [sys.executable, "scripts/verify_enterprise_rag_answer_evidence_candidate_citation_revision.py"],
-            cwd=ROOT,
-            text=True,
-            capture_output=True,
-            check=False,
+        completed = run_frozen_standard_verifier(
+            "verify_enterprise_rag_answer_evidence_candidate_citation_revision.py"
         )
         self.assertEqual(0, completed.returncode, completed.stderr)
         payload = json.loads(completed.stdout)

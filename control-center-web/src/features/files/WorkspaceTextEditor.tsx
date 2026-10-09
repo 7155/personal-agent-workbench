@@ -1,6 +1,7 @@
-import { useMemo, useReducer, type ReactNode } from 'react';
+import { useMemo, useReducer, useRef, type ReactNode } from 'react';
 import { useControlTransport } from '@/app/control-transport';
 import type { ControlTransport } from '@/platform/transport';
+import { readWorkspaceTextDraft, writeWorkspaceTextDraft } from './workspace-text-draft';
 import './files-editor.css';
 
 const MAX_TEXT_BYTES = 2 * 1024 * 1024;
@@ -30,17 +31,37 @@ type Draft = {
   needsCheck?: boolean;
   disk?: Snapshot;
   lastSubmitted?: string;
+  recoveryWarning?: string;
+  persistedValue?: string | null;
 };
 
-/** App-lifetime drafts are keyed by the owning Session and file, independent of reader refreshes. */
+/** Draft recovery is scoped to the stable connection, Session and selected file. */
 export function useWorkspaceTextEditor(file: FileIdentity | null, preview: EditableWorkspacePreview | null, onSaved?: (snapshot: EditableWorkspacePreview & { sessionId: string }) => void): { panel: ReactNode; editing: boolean; copyContent: string | null; resourcePath: string | null; draftPreview: EditableWorkspacePreview | null } {
   const transport = useControlTransport();
   const drafts = useMemo(() => new Map<string, Draft>(), [transport]);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const [, redraw] = useReducer((value: number) => value + 1, 0);
   const key = file ? JSON.stringify([file.sessionId, file.path]) : '';
+  const recovered = useMemo(() => file ? readWorkspaceTextDraft(transport, file, MAX_TEXT_BYTES) : null, [transport, key]);
+  if (recovered && !drafts.has(key)) {
+    drafts.set(key, recovered.draft ? { ...recovered.draft, needsCheck: true,
+      notice: '已恢复本机草稿；保存前请核对磁盘版本。', recoveryWarning: recovered.warning, persistedValue: recovered.persistedValue }
+      : { content: '', editing: false, recoveryWarning: recovered.warning, persistedValue: recovered.persistedValue });
+  }
   const draft = drafts.get(key);
-  function update(target: string, patch: Partial<Draft>): void {
-    drafts.set(target, { content: '', editing: false, ...drafts.get(target), ...patch });
+  function update(target: string, patch: Partial<Draft>, clearRecovery = false): void {
+    const next = { content: '', editing: false, ...drafts.get(target), ...patch };
+    if (file && next.base) {
+      // Write synchronously with input and async completions, even if their
+      // originating view closes. Pending requests themselves are not replayed.
+      const persisted = writeWorkspaceTextDraft(transport, file,
+        !clearRecovery && (next.content !== next.base.content || next.needsCheck)
+          ? { content: next.content, base: next.base, editing: next.editing, lastSubmitted: next.lastSubmitted } : null,
+        MAX_TEXT_BYTES, drafts.get(target)?.persistedValue);
+      next.recoveryWarning = persisted.warning;
+      next.persistedValue = persisted.persistedValue;
+    }
+    drafts.set(target, next);
     redraw();
   }
 
@@ -60,7 +81,7 @@ export function useWorkspaceTextEditor(file: FileIdentity | null, preview: Edita
   async function save(): Promise<void> {
     const current = drafts.get(key);
     if (!file || !current?.base || current.busy || current.needsCheck || current.disk || current.content === current.base.content) return;
-    if ((preview ?? current.base).editability?.editable !== true) return;
+    if (currentEditability(current.base, preview)?.editable !== true) return;
     const content = current.content;
     const targetPath = current.base.canonicalPath ?? current.base.path;
     const body = { path: targetPath, content, resourceRevision: current.base.resourceRevision };
@@ -95,7 +116,9 @@ export function useWorkspaceTextEditor(file: FileIdentity | null, preview: Edita
       const disk = await readCompleteFile(transport, { ...file, path: current.base.canonicalPath ?? current.base.path });
       const latest = drafts.get(key)!;
       if (disk.content === current.lastSubmitted || disk.content === latest.content || disk.resourceRevision === current.base.resourceRevision) {
-        update(key, { base: disk, busy: undefined, needsCheck: false, disk: undefined, notice: disk.content === current.lastSubmitted ? '磁盘内容与上次提交一致。' : '已核对磁盘版本，草稿已保留。' });
+        update(key, { base: disk, busy: undefined, needsCheck: disk.editability?.editable !== true, disk: undefined,
+          notice: disk.editability?.editable !== true ? '已核对当前文件，草稿已保留。'
+            : disk.content === current.lastSubmitted ? '磁盘内容与上次提交一致。' : '已核对磁盘版本，草稿已保留。' });
       } else {
         update(key, { disk, busy: undefined, needsCheck: true, notice: '磁盘文件已变化。请比较两个版本，再选择如何继续。' });
       }
@@ -107,15 +130,32 @@ export function useWorkspaceTextEditor(file: FileIdentity | null, preview: Edita
   if (!file) return { panel: null, editing: false, copyContent: null, resourcePath: null, draftPreview: null };
   const editing = Boolean(draft?.editing && draft.base);
   const changed = Boolean(draft?.base && draft.content !== draft.base.content);
-  const editable = (preview ?? draft?.base)?.editability;
+  const editable = currentEditability(draft?.base, preview);
   const canStart = Boolean(preview?.resourceRevision && editable?.editable === true);
   const resourcePath = draft?.base?.canonicalPath ?? preview?.canonicalPath ?? draft?.base?.path ?? preview?.path ?? null;
   const panel = <div className="paw-files-editor">
     <div className="paw-files-editor__toolbar">
       {editing ? <>
         <span role="status">{draft?.busy === 'saving' ? '正在保存…' : changed ? '未保存的更改' : '与已读取版本一致'}</span>
-        <button disabled={Boolean(draft?.busy || draft?.needsCheck || draft?.disk || !changed || editable?.editable !== true)} onClick={() => void save()} title="保存文件（⌘S / Ctrl+S）" type="button">{draft?.busy === 'saving' ? '正在保存' : '保存文件'}</button>
+        <button
+          aria-busy={draft?.busy === 'saving' || undefined}
+          aria-disabled={draft?.busy === 'saving' || undefined}
+          disabled={Boolean(draft?.busy === 'reading' || draft?.needsCheck || draft?.disk || !changed || editable?.editable !== true)}
+          onClick={(event) => {
+            // Keep the pending action focusable, as Button's loading mode does.
+            // The owning draft also guards shortcuts and same-frame activation.
+            if (drafts.get(key)?.busy === 'saving') { event.preventDefault(); event.stopPropagation(); return; }
+            void save();
+          }}
+          title="保存文件（⌘S / Ctrl+S）"
+          type="button"
+        >保存文件</button>
         <button onClick={() => update(key, { editing: false })} type="button">预览草稿</button>
+        {changed && !draft?.disk ? <button disabled={Boolean(draft?.busy)} onClick={() => {
+          update(key, { content: draft!.base!.content, disk: undefined, lastSubmitted: undefined,
+            notice: '已放弃草稿，恢复编辑前读取的内容。' }, true);
+          inputRef.current?.focus();
+        }} type="button">放弃草稿</button> : null}
       </> : draft?.base ? <>
         <span>{changed ? '此文件有未保存草稿' : '已保留编辑内容'}</span>
         <button onClick={() => void startEditing()} type="button">继续编辑</button>
@@ -127,9 +167,11 @@ export function useWorkspaceTextEditor(file: FileIdentity | null, preview: Edita
     {resourcePath && resourcePath !== file.path ? <p>实际文件：{resourcePath}</p> : null}
     {draft?.base && editable?.editable === false ? <p role="status">{editable.reason || '当前文件为只读，草稿已保留。'}</p> : null}
     {draft?.notice ? <p role="status">{draft.notice}</p> : null}
+    {draft?.recoveryWarning ? <p role="status">{draft.recoveryWarning}</p> : null}
     {draft?.error ? <p role="alert">{draft.error}</p> : null}
     {draft?.needsCheck ? <button disabled={Boolean(draft.busy)} onClick={() => void reconcile()} type="button">{draft.busy === 'reading' ? '正在核对…' : '核对磁盘版本'}</button> : null}
     {editing ? <textarea
+      ref={inputRef}
       aria-label={`编辑 ${file.name}`}
       autoFocus
       autoCapitalize="off"
@@ -153,7 +195,8 @@ export function useWorkspaceTextEditor(file: FileIdentity | null, preview: Edita
       <pre>{draft.disk.content}</pre>
       <div className="paw-files-editor__toolbar">
         <button disabled={draft.disk.editability?.editable !== true} onClick={() => update(key, { base: draft.disk, disk: undefined, needsCheck: false, notice: '已保留草稿。下次保存将基于刚核对的磁盘版本。' })} type="button">保留草稿，基于此版本继续编辑</button>
-        <button onClick={() => update(key, { content: draft.disk!.content, base: draft.disk, disk: undefined, needsCheck: false, notice: '已改用磁盘版本。' })} type="button">改用磁盘版本</button>
+        <button onClick={() => update(key, { content: draft.disk!.content, base: draft.disk, disk: undefined,
+          needsCheck: draft.disk!.editability?.editable !== true, notice: '已改用磁盘版本。' }, true)} type="button">改用磁盘版本</button>
       </div>
     </div> : null}
   </div>;
@@ -165,6 +208,13 @@ export function useWorkspaceTextEditor(file: FileIdentity | null, preview: Edita
     draftPreview = { ...draft.base, content: draft.content, byteSize, loadedBytes: byteSize, truncated: false };
   }
   return { panel, editing: Boolean(draft?.base), copyContent: draft?.base ? draft.content : null, resourcePath, draftPreview };
+}
+
+function currentEditability(base: Snapshot | undefined, preview: EditableWorkspacePreview | null) {
+  const currentPreview = !base || (preview?.canonicalPath ?? preview?.path) === (base.canonicalPath ?? base.path) ? preview : null;
+  if (base?.editability?.editable === false) return base.editability;
+  if (currentPreview?.editability?.editable === false) return currentPreview.editability;
+  return base?.editability ?? currentPreview?.editability;
 }
 
 export async function readCompleteFile(transport: ControlTransport, file: FileIdentity, seed?: EditableWorkspacePreview, maxBytes = MAX_TEXT_BYTES): Promise<Snapshot> {

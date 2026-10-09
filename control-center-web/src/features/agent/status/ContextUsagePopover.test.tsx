@@ -9,6 +9,33 @@ import contextUsageCss from './ContextUsagePopover.css?raw';
 afterEach(() => cleanup());
 
 describe('ContextUsagePopover', () => {
+  it('shows a rejected context read instead of calling it a missing Runtime snapshot', async () => {
+    const user = userEvent.setup();
+    const transport = new MockControlTransport({ routes: {
+      'agent.session.debugContext.get': () => { throw new Error('本机原始上下文调试尚未启用'); },
+    } });
+    render(<ControlTransportProvider transport={transport}><ContextUsagePopover sessionId="private-session" /></ControlTransportProvider>);
+    await user.click(screen.getByRole('button', { name: '上下文用量' }));
+    const dialog = await screen.findByRole('dialog', { name: '上下文用量' });
+    expect(await within(dialog).findByText('本机原始上下文调试尚未启用')).toBeInTheDocument();
+    expect(within(dialog).queryByText(/尚未收到 Runtime 上下文快照/)).not.toBeInTheDocument();
+    expect(within(dialog).getByLabelText('上下文分层占用')).toBeInTheDocument();
+    expect(transport.requests).toHaveLength(1);
+  });
+
+  it('displays the reason of a successful unavailable read, keeping reported totals', async () => {
+    const user = userEvent.setup();
+    const transport = new MockControlTransport({ routes: {
+      'agent.session.debugContext.get': { available: false, reason: 'session_not_resident' },
+    } });
+    render(<ControlTransportProvider transport={transport}><ContextUsagePopover sessionId="cold-session"
+      telemetry={{ tokens: 4000, contextWindow: 100000, percent: 4 }} /></ControlTransportProvider>);
+    await user.click(screen.getByRole('button', { name: '上下文已用 4%' }));
+    const dialog = await screen.findByRole('dialog', { name: '上下文用量' });
+    expect(await within(dialog).findByText('原对话尚未载入，暂时无法查看原始上下文。')).toBeInTheDocument();
+    expect(within(dialog).getByText('已用 4%')).toBeInTheDocument();
+  });
+
   it('opens the Context Usage dialog from the chat composer meter', async () => {
     const user = userEvent.setup();
     const transport = new MockControlTransport({

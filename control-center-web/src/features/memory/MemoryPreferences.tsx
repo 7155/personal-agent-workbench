@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Brain, Gauge, RefreshCw, Save } from 'lucide-react';
+import { useMotionActivity } from '@/design/motion';
 import { useControlTransport } from '@/app/control-transport';
 import { Button, Field, Select, Switch } from '@/components/primitives';
 import {
@@ -63,6 +64,7 @@ const timelineMaxItemsOptions = [
 ] as const;
 
 export function MemoryPreferences() {
+  const motionActive = useMotionActivity();
   const transport = useControlTransport();
   const settingsQuery = useQuery({
     queryKey: ['memory', 'preferences', 'settings'],
@@ -119,7 +121,7 @@ export function MemoryPreferences() {
         <div className="memory-preferences__intro">
           <span aria-hidden="true"><Brain size={22} /></span>
           <div><strong>把第二大脑调成你的记忆方式</strong><p>这里不会删除既有记忆；偏好会从下一次整理和召回开始生效。</p></div>
-          <span className="memory-preferences__persistence" data-state={queryError ? 'pending' : !writesSupported ? 'read-only' : Object.keys(changes).length ? 'pending' : 'synced'}>
+          <span className="memory-preferences__persistence" data-busy={saving || reading} data-motion-active={motionActive} data-state={queryError ? 'pending' : !writesSupported ? 'read-only' : Object.keys(changes).length ? 'pending' : 'synced'}>
             <i aria-hidden="true" />
             {queryError ? '等待读取最新设置' : !writesSupported ? '只读' : Object.keys(changes).length ? '等待保存' : '已从本机读取'}
           </span>

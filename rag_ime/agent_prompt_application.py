@@ -160,7 +160,9 @@ class AgentPromptApplicationService:
         self,
         session_id: str,
         payload: Mapping[str, object],
+        *, _dispatch_checkpoint: Callable[..., Mapping[str, object]] | None = None,
     ) -> dict[str, object]:
+        dispatch_checkpoint = _dispatch_checkpoint or self.dispatch_checkpoint
         request = self._prompt_request(payload)
         if request["screenContext"]:
             receipt = self.media.receipt(str(request["screenContext"]["mediaId"]), session_id=session_id)
@@ -181,7 +183,7 @@ class AgentPromptApplicationService:
                 request,
             )
             try:
-                return dict(self.dispatch_checkpoint(
+                return dict(dispatch_checkpoint(
                     session_id=session_id,
                     **_checkpoint_arguments(request),
                 ))
@@ -249,7 +251,7 @@ class AgentPromptApplicationService:
                 request,
             )
             try:
-                response = dict(self.dispatch_checkpoint(
+                response = dict(dispatch_checkpoint(
                     session_id=session_id,
                     on_accepted=record_acceptance,
                     **_checkpoint_arguments(request),
@@ -571,6 +573,10 @@ class AgentPromptApplicationService:
         on_accepted: (
             Callable[[Mapping[str, object]], None] | None
         ) = None,
+        on_prepared: Callable[[Mapping[str, object]], None] | None = None,
+        resident_only: bool = False,
+        coordinator_result_item_id: str = "",
+        before_native_write: Callable[[], None] | None = None,
     ) -> dict[str, object]:
         session = self.sessions.get(session_id)
         self._require_prompt_admission_active(
@@ -581,6 +587,9 @@ class AgentPromptApplicationService:
         bootstrap = self.memory_context.ensure_bootstrap(
             session,
             query_text=checkpoint_text,
+            client_message_id=client_message_id,
+            context_source=context_source,
+            delivery=delivery,
         )
         self._require_prompt_admission_active(
             session_id,
@@ -613,6 +622,9 @@ class AgentPromptApplicationService:
                     )
                 ),
                 room_id=media_owner_room_id,
+                **({"on_prepared": on_prepared, "resident_only": resident_only,
+                    "coordinator_result_item_id": coordinator_result_item_id,
+                    "before_native_write": before_native_write} if on_prepared is not None else {}),
             )
         )
         if not media_owner_room_id:

@@ -17,6 +17,11 @@ export function MemoryProfile({ onOpenReference, onSaved }: {
 }) {
   const transport = useControlTransport();
   const budgetId = useId();
+  // A tab-local unsaved draft is not Memory. Scope it to the existing transport
+  // identity, and reconcile its base revision before exposing a save action.
+  const draftStorageKey = transport.connectionIdentity ? `paw.memory.profile-draft.v1:${transport.connectionIdentity}` : null;
+  const loadedTransport = useRef<typeof transport | null>(null);
+  const draftBaseRevision = useRef('');
   const [profile, setProfile] = useState<PersonalProfile>();
   const [draft, setDraft] = useState<DraftParagraph[]>([]);
   const [latest, setLatest] = useState<PersonalProfile>();
@@ -34,16 +39,34 @@ export function MemoryProfile({ onOpenReference, onSaved }: {
   useEffect(() => {
     const generation = ++owner.current;
     const controller = new AbortController();
+    loadedTransport.current = null;
     setLoading(true); setError(''); setProfile(undefined); setLatest(undefined); setConflict(false); setSaving(false); setSaved(false); setReadingLatest(false); lock.current = false; latestReadLock.current = false;
     void transport.request({ pathId: 'memory.profile', signal: controller.signal }).then(value => {
       if (owner.current !== generation || controller.signal.aborted) return;
       const next = parsePersonalProfile(value);
-      setProfile(next); setDraft(profileDraft(next));
+      const restored = readProfileDraft(draftStorageKey);
+      loadedTransport.current = transport;
+      draftBaseRevision.current = restored?.baseRevision ?? next.revision;
+      setProfile(next);
+      if (restored) {
+        setDraft(restored.draft);
+        if (restored.baseRevision !== next.revision) {
+          setLatest(next); setConflict(true);
+          setError('关于我已有新版本。已恢复你的未保存草稿，请先核对最新内容。');
+        }
+      } else { setDraft(profileDraft(next)); }
     }).catch(reason => { if (owner.current === generation && !controller.signal.aborted) setError(errorMessage(reason)); })
       .finally(() => { if (owner.current === generation && !controller.signal.aborted) setLoading(false); });
     return () => { controller.abort(); owner.current += 1; };
-  }, [transport, revision]);
+  }, [transport, revision, draftStorageKey]);
   const dirty = profile && JSON.stringify(draft.map(item => ({ id: item.id, text: item.text }))) !== JSON.stringify(profileDraft(profile).map(item => ({ id: item.id, text: item.text })));
+  useEffect(() => {
+    if (!draftStorageKey || !profile || loadedTransport.current !== transport) return;
+    try {
+      if (dirty || conflict) window.sessionStorage.setItem(draftStorageKey, JSON.stringify({ baseRevision: draftBaseRevision.current, draft }));
+      else window.sessionStorage.removeItem(draftStorageKey);
+    } catch { /* Storage denial must never discard the current input. */ }
+  }, [draftStorageKey, profile, draft, dirty, conflict, transport]);
   const normalizedParagraphs = draft.map(item => compactContractText(item.text));
   const total = textCodePointCount(normalizedParagraphs.filter(Boolean).join('\n\n'));
   const invalid = total > 4000 || normalizedParagraphs.some(text => textCodePointCount(text) > 600);
@@ -62,6 +85,7 @@ export function MemoryProfile({ onOpenReference, onSaved }: {
       if (generation !== owner.current) return;
       if (!value.ok) throw new Error('保存尚未确认。请保留草稿后重试。');
       const receipt = parsePersonalProfile(value.profile);
+      draftBaseRevision.current = receipt.revision;
       setProfile(receipt); setDraft(profileDraft(receipt)); setSaved(true); attempt.current = undefined; onSaved?.();
       try {
         const current = parsePersonalProfile(await transport.request({ pathId: 'memory.profile' }));
@@ -98,6 +122,7 @@ export function MemoryProfile({ onOpenReference, onSaved }: {
   }
   function adoptLatest() {
     if (!latest || latestReadLock.current || lock.current) return;
+    draftBaseRevision.current = latest.revision;
     setProfile(latest); setDraft(profileDraft(latest)); setLatest(undefined); setConflict(false); setError(''); setSaved(false); attempt.current = undefined;
   }
   return <section className="memory-profile" aria-label="关于我">
@@ -142,3 +167,19 @@ function profileDraft(profile: PersonalProfile): DraftParagraph[] {
 }
 function errorMessage(value: unknown): string { return value instanceof Error ? value.message : '暂时无法连接记忆服务'; }
 function record(value: unknown): Record<string, unknown> { return value && typeof value === 'object' ? value as Record<string, unknown> : {}; }
+
+function readProfileDraft(key: string | null): { baseRevision: string; draft: DraftParagraph[] } | undefined {
+  if (!key) return undefined;
+  try {
+    const saved = record(JSON.parse(window.sessionStorage.getItem(key) || 'null'));
+    if (typeof saved.baseRevision !== 'string') return undefined;
+    if (!Array.isArray(saved.draft) || saved.draft.length > 12 || saved.draft.some(item => {
+      const row = record(item);
+      return !(row.id === null || typeof row.id === 'string') || typeof row.key !== 'string'
+        || typeof row.text !== 'string' || !Array.isArray(row.memoryIds)
+        || row.memoryIds.some(id => typeof id !== 'string')
+        || !(row.revision === undefined || typeof row.revision === 'string');
+    })) return undefined;
+    return { baseRevision: saved.baseRevision, draft: saved.draft as DraftParagraph[] };
+  } catch { return undefined; }
+}

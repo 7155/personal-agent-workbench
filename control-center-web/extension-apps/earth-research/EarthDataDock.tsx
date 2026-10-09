@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Database, File, FileArchive, FileImage, FileText, Folder, FolderOpen, Layers, Link, PanelRightClose, PanelRightOpen, RefreshCw, Search, Table2, TriangleAlert } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Database, Download, File, FileArchive, FileImage, FileText, Folder, FolderOpen, Layers, Link, PanelRightClose, PanelRightOpen, RefreshCw, Search, Table2, TriangleAlert } from 'lucide-react';
+import { WorkspacePaneResizer } from '@/components/layout/WorkspacePaneResizer';
 import type { EarthRun } from './workspace';
 import { selectedLayerFeatures, type ProjectLayer, type SpatialSourceDraft, type SpatialSourceSummary, type WorkspaceFileSummary } from './layer-catalog';
 import { createPropertyDraft, discardPropertyDraft, hasEditedProperties, materializePropertyDraft, updatePropertyDraft, type PropertyDraft } from './property-draft';
@@ -306,6 +307,7 @@ export function EarthDataDock({ run, workspaceRoot, projectLayers, spatialSource
   </section> : null;
 
   return <aside className={`earth-data-dock${tab === 'attributes' ? ' earth-data-dock--table' : ''}${collapsed ? ' earth-data-dock--collapsed' : ''}`} aria-label="GIS 数据工作区" aria-busy={Boolean(pending)}>
+    {!collapsed ? <WorkspacePaneResizer className="earth-data-resizer" label="调整 GIS 数据栏宽度" defaultSize={320} min={280} max={560} side="status" storageKey="paw-earth-data-width" variable="--earth-data-width" workspaceSelector=".earth-map" /> : null}
     <header className="earth-data-dock__header">
       <div><strong>GIS 数据工作区</strong><small title={activeObjectLabel || selectedLayer?.name}>{draftDirty ? '有未保存的属性修改' : activeObjectLabel ? `Agent · ${shortPath(activeObjectLabel)}` : selectedLayer ? `${selectedLayer.name} · v${selectedLayer.revision ?? 1}` : '图层、属性与运行记录'}</small></div>
       {!collapsed ? <button type="button" className="earth-data-dock__icon-button" aria-label="刷新 GIS 数据" title="刷新图层、文件和数据库目录" disabled={Boolean(pending) || (!onRefreshCatalog && !onRefreshFiles)} onClick={() => void perform('刷新数据', async () => { await Promise.all([onRefreshCatalog?.(), onRefreshFiles?.()]); })}><RefreshCw size={15} className={pending === '刷新数据' ? 'is-refreshing' : undefined} /></button> : null}
@@ -334,8 +336,8 @@ export function EarthDataDock({ run, workspaceRoot, projectLayers, spatialSource
         <details className="earth-data-dock__save-layer" open={!projectLayers.length}><summary>将地图所选保存为新图层 <span>{selectedFeatures.length} 要素</span></summary><div className="earth-data-dock__layer-actions"><input aria-label="新图层名称" value={layerName} onChange={event => setLayerName(event.target.value)} placeholder="图层名称" /><button type="button" disabled={Boolean(pending) || !onSaveLayer || !selectedFeatures.length || !layerName.trim()} onClick={() => void perform('保存图层', () => onSaveLayer?.(layerName.trim(), selectedFeatures))}>保存图层</button></div></details>
         {selectedFeatures.length ? <button type="button" className="earth-data-dock__selection-link" onClick={() => setTab('attributes')}><span>地图已选 {selectedFeatures.length} 个要素</span><strong>{draftDirty ? '继续编辑草稿' : '查看属性与编辑'}</strong></button> : null}
         {attributeEditor && !selectedLayer ? attributeEditor : null}
-        {exportControls}
-        {runLayers.length ? <section className="earth-data-dock__cloud-layers"><div className="earth-data-dock__section-head"><strong>Earth Engine 结果</strong><span>云端图层</span></div>{runLayers.map(layer => <div className="earth-data-dock__run-layer" key={layer.id}><strong>{layer.name}</strong><small>{layer.status || '图层已返回'}</small></div>)}</section> : null}
+        {exportControls ? <details className="earth-data-dock__export-disclosure"><summary><Download size={14} aria-hidden="true" /><span>导出当前图层</span><ChevronDown size={13} aria-hidden="true" /></summary>{exportControls}</details> : null}
+        {runLayers.length ? <section className="earth-data-dock__cloud-layers"><div className="earth-data-dock__section-head"><strong>Earth Engine 结果</strong><span>{runLayers.length} 个云端图层</span></div>{runLayers.map(layer => <div className="earth-data-dock__run-layer" key={layer.id}><strong>{layer.name}</strong><small>{STATUS_LABELS[layer.status || ''] ?? layer.status ?? '图层已返回'}</small></div>)}</section> : null}
       </section> : null}
 
       {tab === 'attributes' ? <section className="earth-data-dock__content" id={`${dockId}-panel-attributes`} role="tabpanel" aria-label="图层属性表">

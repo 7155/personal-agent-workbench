@@ -15,8 +15,8 @@ vi.mock('./PawAgentApp', () => ({
   ),
 }));
 
-vi.mock('./PawAgentCapsuleApp', () => ({
-  PawAgentCapsuleApp: () => <main data-testid="agent-capsule-app">capsule-home</main>,
+vi.mock('./PawCoordinatorApp', () => ({
+  PawCoordinatorApp: () => <main data-testid="starmate-app">persistent-assistant</main>,
 }));
 
 vi.mock('@/features/paw-os/PawOsSatelliteHost', () => ({
@@ -28,9 +28,9 @@ vi.mock('@/features/paw-os/PawOsSatelliteHost', () => ({
 afterEach(cleanup);
 
 describe('PAWOS App runtime', () => {
-  it('mounts Agent Capsule as a managed App entry', async () => {
+  it('restores a legacy Capsule window into the persistent assistant', async () => {
     render(<PawAppBody appId="agent-capsule" />);
-    expect(await screen.findByTestId('agent-capsule-app')).toHaveTextContent('capsule-home');
+    expect(await screen.findByTestId('starmate-app')).toHaveTextContent('persistent-assistant');
   });
 
   it('mounts Trace Agent as an independent App with its own task and library navigation', async () => {

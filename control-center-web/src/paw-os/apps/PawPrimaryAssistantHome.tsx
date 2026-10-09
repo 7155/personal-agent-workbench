@@ -1,4 +1,4 @@
-import { ArrowUpRight, BookOpen, Check, ChevronRight, Folder, LoaderCircle, MessageCircle, Send } from 'lucide-react';
+import { ArrowUp, ArrowUpRight, BookOpen, Check, ChevronRight, Folder, LoaderCircle, MessageCircle } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { useControlTransport } from '@/app/control-transport';
 import { textCodePointCount, trimContractText } from '@/contracts/text-budget';
@@ -14,6 +14,8 @@ import { openPawOsRoute, usePawOsDesktop } from '@/features/paw-os/surface-conte
 import { warmAgentWorkspace, type InitialSessionSubmission, type PrimaryAssistantSource } from './agent-workspace-loader';
 import '@/features/composer/composer-workbench.css';
 import './primary-assistant.css';
+import { RoomPlanetAvatar } from '@/features/rooms/RoomPlanetAvatar';
+import { ControlledSessions, ControlledSessionRow, controlledSessionDetail, type ControlledSessionView } from './ControlledSessions';
 
 export type PrimaryAssistantHomeDraft = { draft: string; execute: boolean; workspace: string; contextWorkspace: string;
   acceptance: string; scopeConfirmed: boolean; tasksExpanded?: boolean; source?: PrimaryAssistantSource; attempt?: { signature: string; id: string } };
@@ -63,7 +65,6 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
   const objectiveErrorId = useId();
   const acceptanceErrorId = useId();
   const workspaceErrorId = useId();
-  const taskRecordsId = useId();
   const message = trimContractText(draft);
   const criteria = acceptance.split('\n').map(trimContractText).filter(Boolean);
   const objectiveLength = textCodePointCount(message);
@@ -236,7 +237,7 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
     <div className="paw-primary-home__body">
       <div className="paw-primary-home__entry">
       <header className="paw-primary-home__heading">
-        <div><small className="paw-primary-home__eyebrow">我的助手</small><h1>{intent === 'execute' ? '把这件事交给助手。' : '这次想做什么？'}</h1><p>和 {identity.assistantName} 说清楚目标，再决定要不要执行。</p></div>
+        <div><h1>这次想做什么？</h1><p>和 {identity.assistantName} 说清楚目标，再决定要不要执行。</p></div>
         {session ? <button className="paw-primary-home__continue" disabled={submitting || pickingWorkspace || loading} onClick={() => enterDiscussion(session)} onPointerEnter={() => warmAgentWorkspace('session')} title="进入这段对话；草稿会带入输入框，点击发送后才会提交" type="button">进入对话 <ArrowUpRight size={15} /></button> : null}
       </header>
       <div className="paw-primary-home__intent agent-composer__controls" role="group" aria-label="本次意图"><button aria-pressed={intent === 'discuss'} disabled={submitting || pickingWorkspace} onClick={() => { setIntent('discuss'); setError(''); input.current?.focus(); }} type="button"><MessageCircle size={14} />聊一聊</button><button aria-pressed={intent === 'execute'} disabled={submitting || pickingWorkspace} onClick={() => { setIntent('execute'); setError(''); input.current?.focus(); }} type="button"><Check size={14} />交给助手做</button></div>
@@ -249,16 +250,16 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
         {intent === 'execute' ? <small className="paw-primary-home__field-counter">{objectiveLength} / 4000 字</small> : null}
         {objectiveInvalid ? <p className="paw-primary-home__field-error" id={objectiveErrorId} role="alert">任务目标最多 4000 字，请精简后再授权。</p> : null}
         {intent === 'execute' ? <div className="paw-primary-home__scope">
-          <p className="paw-primary-home__scope-note">会参考这段讨论中近期的消息，不包含全部历史。请确认要做什么、怎样算完成，以及允许操作的目录。</p>
-          <label>完成标准 <span className="paw-primary-home__criteria-help"><span>可选 · 每行一项</span><span>{criteria.length} / 20 项 · {criteriaLength} / 2000 字（含换行）</span></span><textarea aria-label="完成标准" aria-invalid={criteriaInvalid || undefined} aria-describedby={criteriaInvalid ? acceptanceErrorId : undefined} ref={acceptanceInput} value={acceptance} disabled={submitting} onChange={event => setAcceptance(event.target.value)} placeholder="例如：测试通过，并说明修改了什么" rows={2} /></label>
-          {criteriaInvalid ? <p className="paw-primary-home__field-error" id={acceptanceErrorId} role="alert">完成标准最多 20 项，总计最多 2000 字（含换行）。请精简后再授权。</p> : null}
+          <details className="paw-primary-home__scope-help"><summary><ChevronRight size={14} aria-hidden="true" />执行范围与上下文</summary><p className="paw-primary-home__scope-note">会参考这段讨论中近期的消息，不包含全部历史。请确认要做什么、怎样算完成，以及允许操作的目录。</p></details>
+          <details className="paw-primary-home__criteria" open={criteriaInvalid || undefined}><summary><ChevronRight size={14} aria-hidden="true" />完成标准 <small>可选</small></summary><label>完成标准 <span className="paw-primary-home__criteria-help"><span>可选 · 每行一项</span><span>{criteria.length} / 20 项 · {criteriaLength} / 2000 字（含换行）</span></span><textarea aria-label="完成标准" aria-invalid={criteriaInvalid || undefined} aria-describedby={criteriaInvalid ? acceptanceErrorId : undefined} ref={acceptanceInput} value={acceptance} disabled={submitting} onChange={event => setAcceptance(event.target.value)} placeholder="例如：测试通过，并说明修改了什么" rows={2} /></label>
+          {criteriaInvalid ? <p className="paw-primary-home__field-error" id={acceptanceErrorId} role="alert">完成标准最多 20 项，总计最多 2000 字（含换行）。请精简后再授权。</p> : null}</details>
           <label>本次工作目录<div className="paw-primary-home__folder"><Folder aria-hidden="true" size={15} /><input aria-label="本次工作目录" ref={workspaceInput} aria-invalid={projectMismatch || undefined} aria-describedby={projectMismatch ? workspaceErrorId : undefined} value={workspace} disabled={submitting || pickingWorkspace} onChange={event => { setWorkspace(event.target.value); setScopeConfirmed(false); setPickerNotice(''); }} placeholder="/path/to/project" />{transport.pickFiles ? <button disabled={submitting || pickingWorkspace} aria-busy={pickingWorkspace} onClick={() => void chooseWorkspace()} type="button">{pickingWorkspace ? '正在选择…' : '选择目录'}</button> : null}</div></label>
           {projectMismatch ? <p className="paw-primary-home__field-error" id={workspaceErrorId} role="alert">执行目录与当前讨论项目不一致。<span className="paw-primary-home__source-roots">讨论项目：{sourceRoots.map(root => <code key={root}>{root}</code>)}</span>要换项目，请回到“聊一聊”选择讨论项目。</p> : null}
           {executionRoots.length > 1 ? <ul className="paw-primary-home__root-list" aria-label="本次授权目录">{executionRoots.map(root => <li key={root}>{root}</li>)}</ul> : null}
         </div> : null}
         </div>
         {intent === 'execute' ? <label className="paw-primary-home__consent"><input type="checkbox" checked={scopeConfirmed} disabled={submitting || pickingWorkspace || !workspace.trim()} onChange={event => setScopeConfirmed(event.target.checked)} /><span>允许助手在{executionRoots.length > 1 ? `以上 ${executionRoots.length} 个目录` : '这个目录'}内执行本次任务、修改文件和运行命令。可以随时停止。</span></label> : null}
-        <footer className="agent-composer__toolbar"><button aria-label={intent === 'discuss' ? '发送给我的助手' : '授权并开始任务'} aria-describedby={composerHintId} aria-busy={submitting} className={`paw-primary-home__send${intent === 'discuss' ? ' agent-composer__send' : ''}`} disabled={loading || submitting || pickingWorkspace || !session || !message || taskInvalid || (intent === 'execute' && (!workspace.trim() || !scopeConfirmed))} onClick={() => void submit()} type="button">{submitting ? <LoaderCircle className="ui-spin" size={17} /> : intent === 'discuss' ? <Send size={16} /> : <Check size={17} />}<span>{intent === 'discuss' ? null : '授权并开始'}</span></button></footer>
+        <footer className="agent-composer__toolbar"><button aria-label={intent === 'discuss' ? '发送给我的助手' : '授权并开始任务'} aria-describedby={composerHintId} aria-busy={submitting} className={`paw-primary-home__send${intent === 'discuss' ? ' agent-composer__send' : ''}`} disabled={loading || submitting || pickingWorkspace || !session || !message || taskInvalid || (intent === 'execute' && (!workspace.trim() || !scopeConfirmed))} onClick={() => void submit()} type="button">{submitting ? <LoaderCircle className="ui-spin" size={17} /> : intent === 'discuss' ? <ArrowUp size={20} /> : <Check size={17} />}<span>{intent === 'discuss' ? null : '授权并开始'}</span></button></footer>
         <p data-essential={baseSubmitHint !== 'Enter 发送 · Shift + Enter 换行' || Boolean(pickerNotice) || undefined} className="paw-primary-home__composer-hint" id={composerHintId} role="status">{submitHint}</p>
       </section>
       </div>
@@ -267,10 +268,11 @@ export function PawPrimaryAssistantHome({ initialDraft = '', initialExecute = fa
       </div>
       {transport.kind === 'mock' ? <p className="paw-primary-home__demo">演示模式 · 合成数据，不调用真实模型</p> : null}
       {error ? <div className="paw-primary-home__error" role="alert">{error}{!session && !loading ? <button onClick={() => setRevision(value => value + 1)} type="button">重新连接</button> : null}</div> : null}
-      {tasks.length ? <section className="paw-primary-home__tasks" aria-label="助手的任务">
-        <button className="paw-primary-home__records-toggle" aria-expanded={tasksExpanded} aria-controls={taskRecordsId} onClick={() => setTasksExpanded(value => !value)} type="button"><ChevronRight aria-hidden="true" size={16} /><span>任务记录</span><small>{tasks.length} 个任务</small></button>
-        <ul id={taskRecordsId} hidden={!tasksExpanded}>{tasks.map((task, index) => <PrimaryTaskRow key={task.id} task={task} initiallyVisible={index < 4} hidden={!tasksExpanded} pageVisible={pageVisible} disabled={submitting || pickingWorkspace} onOpen={target => openSession(target)} />)}</ul>
-      </section> : null}
+      {session && tasks.length ? <ControlledSessions owner={session} name={identity.assistantName} avatar={<RoomPlanetAvatar ordinal={0} size={40} decorative activity="static"/>} views={tasks.map<ControlledSessionView>(task => ({
+        session: task, task: controlledSessionDetail(task), statusLabel: taskStatus(task),
+        activity: task.status === 'busy' ? 'running' : task.status === 'faulted' ? 'failed' : task.goal?.status === 'completed' ? 'completed' : task.goal?.status === 'paused' ? 'paused' : 'idle',
+        freshness: 'recovering',
+      }))} onOpen={target => openSession(target)} renderSession={(view, index, hidden) => <PrimaryTaskRow task={view.session} initiallyVisible={index < 4} hidden={hidden} pageVisible={pageVisible} disabled={submitting || pickingWorkspace} onOpen={target => openSession(target)} />} /> : null}
       <button className="paw-primary-home__advanced" onClick={() => { rememberDraft(); onAdvanced(draft); }} disabled={submitting || pickingWorkspace} type="button">新建独立对话或多人协作 <ChevronRight size={13} /></button>
     </div>
   </div>;
@@ -329,9 +331,15 @@ function PrimaryTaskRow({ task, hidden, initiallyVisible, pageVisible, disabled,
   } : task;
   const status = current?.durableRecovery?.paused && !current.durableRecovery.compactionTarget ? '已暂停' : taskStatus(displayed);
   const recoveryState = recovery?.scope === scope ? recovery.state : undefined;
-  const progress = recoveryState === 'failed' ? `暂时无法同步 · 上次状态：${status}`
-    : recoveryState === 'recovering' ? `正在重新同步 · 上次状态：${status}` : status;
-  return <li ref={row} hidden={hidden}><button disabled={disabled} onClick={() => onOpen(displayed)} onFocus={() => setVisible(true)} onPointerEnter={() => { setVisible(true); warmAgentWorkspace('session'); }} type="button"><span><strong>{task.title}</strong><small>{progress}</small></span><ChevronRight aria-hidden="true" size={16} /></button></li>;
+  const liveView: ControlledSessionView = {
+    session: displayed, task: controlledSessionDetail(displayed), statusLabel: status,
+    activity: status === '已暂停' ? 'paused' : current && ['busy', 'analyzing', 'working', 'retrying'].includes(current.status) ? 'running' : displayed.status === 'faulted' ? 'failed' : displayed.goal?.status === 'completed' ? 'completed' : 'idle',
+    freshness: recoveryState === 'failed' ? 'failed' : recoveryState === 'recovering' || !current ? 'recovering' : 'current',
+  };
+  // Classic primary tasks have no exact-turn abort/resume admission in the
+  // panel API. Opening the owning Session exposes its existing lifecycle controls.
+  return <ControlledSessionRow view={liveView} rowRef={row} hidden={hidden} disabled={disabled} onOpen={onOpen}
+    onActivate={() => { setVisible(true); warmAgentWorkspace('session'); }} />;
 }
 
 function taskStatus(task: SessionSummary): string {

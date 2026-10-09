@@ -7,11 +7,23 @@ import type { LabWorkflowNode } from './project-workflow-types';
 afterEach(cleanup);
 const run: LabWorkflowNode = { id: 'one', title: '便宜但质量下降', kind: 'experiment', status: 'completed', summary: '降低模型费用', source: 'runtime', dependencies: [], ref: { kind: 'golden_job', id: 'job-1' }, decision: 'reject', factors: [{ name: 'model', before: '原模型', after: '候选模型', reason: '降低成本' }], metrics: [{ label: '开发通过率', unit: 'ratio', baseline: 1, candidate: .5 }, { label: '费用估算', unit: 'USD', baseline: 2, candidate: .1 }] };
 function mount(nodes = [run], selected?: LabWorkflowNode) { const onSelect = vi.fn(); const onDraft = vi.fn(); const onOpenNode = vi.fn(); const onOpenKnowledge = vi.fn(); render(<LabOptimizationCompare nodes={nodes} selected={selected} onSelect={onSelect} onDraft={onDraft} onOpenNode={onOpenNode} onOpenKnowledge={onOpenKnowledge} />); return { onSelect, onDraft, onOpenNode, onOpenKnowledge }; }
+function openObjectives() { fireEvent.click(screen.getByText(/^下一轮优化倾向/)); }
 describe('optimization objectives, comparison and parameters', () => {
+  it('shows historical results first and opens optional weights when preparing the next round', () => {
+    mount();
+    expect(screen.getByRole('region', { name: '优化轮次对照表' })).toBeVisible();
+    expect(screen.getByRole('slider', { name: '成本权重' })).not.toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '选择优化参数' }));
+    expect(screen.getByRole('slider', { name: '成本权重' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '返回结果对比' }));
+    expect(screen.getByRole('slider', { name: '成本权重' })).not.toBeVisible();
+    expect(screen.getByRole('region', { name: '优化轮次对照表' })).toHaveTextContent('不保留候选');
+  });
   it('links sliders, persists weights and carries exact preferences without changing historical decisions', () => {
     const onDraft = vi.fn();
     const props = { nodes: [run], onSelect: vi.fn(), onOpenNode: vi.fn(), onDraft, preferenceKey: 'weight-test' };
     const view = render(<LabOptimizationCompare {...props} />);
+    openObjectives();
     fireEvent.click(screen.getByText('设置本轮目标与约束'));
     fireEvent.change(screen.getByLabelText('本轮目标'), { target: { value: '我的质量门槛' } });
     fireEvent.change(screen.getByRole('slider', { name: '成本权重' }), { target: { value: '60' } });
@@ -20,6 +32,7 @@ describe('optimization objectives, comparison and parameters', () => {
     expect(screen.getByLabelText('成本优先的取舍')).toHaveTextContent('我的质量门槛');
     expect(screen.getByRole('region', { name: '优化轮次对照表' })).toHaveTextContent('不保留候选');
     view.unmount(); render(<LabOptimizationCompare {...props} />);
+    openObjectives();
     expect(screen.getByRole('slider', { name: '成本权重' })).toHaveValue('60');
     fireEvent.click(screen.getByRole('button', { name: '选择优化参数' }));
     fireEvent.change(screen.getByLabelText('下一轮想改什么'), { target: { value: '比较模型' } });
@@ -47,12 +60,12 @@ describe('optimization objectives, comparison and parameters', () => {
     expect(screen.getByLabelText('下一轮想改什么')).toHaveValue('保留我的草稿');
   });
   it('shows the user-authored goal in the summary instead of stale default copy', () => {
-    mount(); fireEvent.click(screen.getByText('设置本轮目标与约束'));
+    mount(); openObjectives(); fireEvent.click(screen.getByText('设置本轮目标与约束'));
     fireEvent.change(screen.getByLabelText('本轮目标'), { target: { value: '单次任务预算降到 0.1 美元' } });
     expect(screen.getByLabelText('效果优先的取舍')).toHaveTextContent('单次任务预算降到 0.1 美元');
   });
   it('keeps preference separate from methods and never makes a cheap rejected run green', () => {
-    mount(); fireEvent.click(screen.getByRole('button', { name: /成本优先/ }));
+    mount(); openObjectives(); fireEvent.click(screen.getByRole('button', { name: /成本优先/ }));
     expect(screen.getByRole('button', { name: /成本优先/ })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByText('保持基线质量与必过检查，便宜但不达标的候选不保留')).toBeVisible();
     const table = screen.getByRole('region', { name: '优化轮次对照表' });
@@ -89,11 +102,13 @@ describe('optimization objectives, comparison and parameters', () => {
     expect(changes).toHaveTextContent('原模型'); expect(changes).toHaveTextContent('候选模型');
     expect(screen.getByRole('img', { name: /基线 100%.*候选 50%/ })).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: '查看逐题结果与原始运行' })); expect(onOpenNode).toHaveBeenCalledWith(run);
+    openObjectives();
     fireEvent.click(screen.getByRole('button', { name: /速度优先/ }));
     expect(screen.queryByRole('img')).not.toBeInTheDocument();
   });
   it('carries cost objective and constraints into an unsent embedding draft', () => {
     const { onDraft, onOpenKnowledge } = mount();
+    openObjectives();
     fireEvent.click(screen.getByRole('button', { name: /成本优先/ }));
     fireEvent.click(screen.getByText('设置本轮目标与约束'));
     fireEvent.change(screen.getByLabelText('必须保持'), { target: { value: '任务通过 3/3，引用不能减少' } });

@@ -51,9 +51,9 @@ export function ScreenAssistant() {
 
   return <main className="screen-assistant paw-desktop-root" data-app="agent-capsule" data-capsule-surface="capture">
     <header className="screen-assistant__header">
-      <div><strong>Agent Capsule · 选区对话</strong><span>{ready ? '已把当前选区交给同一个 Session，可继续翻译、解释、做笔记或操作。' : '围绕屏幕选区继续对话，完成翻译、解释或笔记。'}</span></div>
+      <div><strong>星伴 · 屏幕对话</strong><span>{ready ? '当前选区保留在同一段屏幕对话中，可继续追问。' : '围绕屏幕选区继续对话，完成翻译、解释或笔记。'}</span></div>
       <div className="screen-assistant__tools">
-        <button aria-label="重新框选" disabled={!window.pawScreenAssistant} title="重新框选，打开另一段对话" onClick={() => { void window.pawScreenAssistant?.capture().catch((reason) => setError(publicAgentErrorText(reason))); }} type="button"><Scan aria-hidden="true" size={17} /></button>
+        <button aria-label="重新框选" disabled={!window.pawScreenAssistant} title="重新框选，打开另一段对话" onClick={() => { void window.pawScreenAssistant?.capture(ready?.capture.sourceSessionId ? { sourceSessionId: ready.capture.sourceSessionId } : undefined).catch((reason) => setError(publicAgentErrorText(reason))); }} type="button"><Scan aria-hidden="true" size={17} /></button>
         {ready && <button aria-label="在 PAW 中打开此会话" title="在 PAW 中打开此会话" onClick={() => { void window.pawScreenAssistant?.openSession(ready.session.id).catch((reason) => setError(publicAgentErrorText(reason))); }} type="button"><ExternalLink aria-hidden="true" size={17} /></button>}
       </div>
     </header>

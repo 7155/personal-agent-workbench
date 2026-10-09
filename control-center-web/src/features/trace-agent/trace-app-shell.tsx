@@ -1,6 +1,6 @@
 import { BookOpen, Boxes, FolderClock, Plus, Search } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { useState, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useControlTransport } from '@/app/control-transport';
 import { Button } from '@/components/primitives';
 import { publicErrorText } from '@/features/overview/management-ui';
@@ -48,6 +48,14 @@ export function TraceKnowledgeLibrary() {
   const [draftQuery, setDraftQuery] = useState('');
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<PatternSummary | null>(null);
+  const selectedTrigger = useRef<HTMLButtonElement | null>(null);
+  const detailRef = useRef<HTMLElement | null>(null);
+  const revealFirstReceipt = useRef(false);
+  function revealDetail() {
+    detailRef.current?.focus({ preventScroll: true });
+    detailRef.current?.scrollIntoView({ block: 'start', behavior: 'instant' });
+  }
+  function closeDetail() { setSelected(null); selectedTrigger.current?.focus(); }
   const library = useQuery({
     enabled: active,
     queryKey: ['trace-agent', 'optimization-library', projectId, query],
@@ -60,6 +68,19 @@ export function TraceKnowledgeLibrary() {
     queryFn: ({ signal }) => transport.request<KnowledgeLibrary>({ pathId: 'observability.traceOptimization.library', query: { projectId: projectId || library.data?.projectId || '', patternId: selected!.patternId, revision: selected!.revision }, signal }),
     retry: false,
   });
+  useLayoutEffect(() => {
+    revealFirstReceipt.current = Boolean(selected && detail.isPending);
+    if (selected) revealDetail();
+  }, [selected?.patternId, selected?.revision]);
+  useLayoutEffect(() => {
+    if (!revealFirstReceipt.current || detail.isPending) return;
+    revealFirstReceipt.current = false;
+    // The initial placeholder can be too short to align this reader. Reveal
+    // its first original body once, only while it still owns keyboard focus.
+    if (detail.data?.pattern && document.activeElement === detailRef.current) {
+      detailRef.current?.scrollIntoView({ block: 'start', behavior: 'instant' });
+    }
+  }, [detail.isPending, detail.data?.pattern]);
   return <section aria-labelledby="trace-library-heading" className="trace-app__page">
     <header className="trace-app__page-heading"><div><h1 id="trace-library-heading">经验库</h1><p>查看项目中有来源的观察、有效方法和被拒绝的尝试。</p></div><Button loading={library.isFetching} onClick={() => void library.refetch()} size="small">刷新</Button></header>
     <form className="trace-app__library-filters" onSubmit={(event) => { event.preventDefault(); setSelected(null); setQuery(draftQuery.trim()); }}>
@@ -67,8 +88,8 @@ export function TraceKnowledgeLibrary() {
       <label>查找经验<input onChange={(event) => setDraftQuery(event.target.value)} placeholder="组件、症状或方法" type="search" value={draftQuery} /></label><Button leadingIcon={<Search size={15} />} type="submit">查找</Button>
     </form>
     {library.isPending ? <LibraryLoading label="正在读取项目经验" /> : library.error ? <LibraryError error={library.error} onRetry={() => void library.refetch()} /> : <div className="trace-app__library-layout">
-      <div>{library.data?.patterns?.length ? <ul className="trace-app__library-list">{library.data.patterns.map((pattern) => <li key={pattern.patternId}><button aria-pressed={selected?.patternId === pattern.patternId} onClick={() => setSelected(pattern)} type="button"><strong>{pattern.title}</strong><p>{pattern.summary}</p><span>{knowledgeStatus(pattern.status)} · {pattern.evidenceCount} 条来源 · 版本 {pattern.revision}</span></button></li>)}</ul> : <LibraryEmpty title={query ? '没有找到匹配经验' : '此项目还没有经验记录'} detail={query ? '换一个组件名或清除查找条件。' : '从工作对话创建沉淀任务，验证后把适用方法与来源保留下来。'} />}{library.data?.truncated ? <p className="trace-app__bounded-note">当前仅显示有界结果，选择项目或查找词可缩小范围。</p> : null}</div>
-      {selected ? <article className="trace-app__pattern-detail"><header><h2>{selected.title}</h2><span>冻结版本 {selected.revision}</span></header>{detail.isPending ? <LibraryLoading label="正在读取此版本" /> : detail.error ? <LibraryError error={detail.error} onRetry={() => void detail.refetch()} /> : detail.data?.pattern ? <PatternContent content={detail.data.pattern.content} /> : <p>这个版本没有可读取的正文；保留来源引用，不补写经历。</p>}</article> : null}
+      <div>{library.data?.patterns?.length ? <ul className="trace-app__library-list">{library.data.patterns.map((pattern) => <li key={pattern.patternId}><button aria-pressed={selected?.patternId === pattern.patternId} onClick={(event) => { selectedTrigger.current = event.currentTarget; if (selected?.patternId === pattern.patternId && selected.revision === pattern.revision) revealDetail(); setSelected(pattern); }} type="button"><strong>{pattern.title}</strong><p>{pattern.summary}</p><span>{knowledgeStatus(pattern.status)} · {pattern.evidenceCount} 条来源 · 版本 {pattern.revision}</span></button></li>)}</ul> : <LibraryEmpty title={query ? '没有找到匹配经验' : '此项目还没有经验记录'} detail={query ? '换一个组件名或清除查找条件。' : '从工作对话创建沉淀任务，验证后把适用方法与来源保留下来。'} />}{library.data?.truncated ? <p className="trace-app__bounded-note">当前仅显示有界结果，选择项目或查找词可缩小范围。</p> : null}</div>
+      {selected ? <article aria-label="经验版本详情" className="trace-app__pattern-detail" ref={detailRef} tabIndex={-1} onKeyDown={(event) => { if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); event.stopPropagation(); closeDetail(); } }}><header><div><h2>{selected.title}</h2><span>冻结版本 {selected.revision}</span></div><Button size="small" variant="quiet" onClick={closeDetail}>返回经验列表</Button></header>{detail.isPending ? <LibraryLoading label="正在读取此版本" /> : detail.error ? <LibraryError error={detail.error} onRetry={() => void detail.refetch()} /> : detail.data?.pattern ? <PatternContent content={detail.data.pattern.content} /> : <p>这个版本没有可读取的正文；保留来源引用，不补写经历。</p>}</article> : null}
     </div>}
   </section>;
 }

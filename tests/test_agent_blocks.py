@@ -19,6 +19,23 @@ def fenced(blocks: list[dict[str, object]]) -> str:
 
 
 class AgentBlocksTest(unittest.TestCase):
+    def test_typed_text_and_code_real_normalizer_obey_shared_summary_budget(self) -> None:
+        from rag_ime.agent_blocks import MAX_SUMMARY_CHARS
+        for block_type, data in [("text", {"text": "x" * 1000}), ("code", {"code": "print(1)", "summary": "y" * 1000})]:
+            with self.subTest(block_type=block_type):
+                blocks = normalize_trusted_agent_blocks(
+                    [{"id": "typed-result", "type": block_type, "data": data}],
+                    source_kind="pi_runtime_event", source_ref="session:message")
+                self.assertEqual(len(blocks), 1)
+                self.assertEqual(blocks[0]["type"], block_type)
+                self.assertEqual(len(blocks[0]["summary"]), MAX_SUMMARY_CHARS)
+                self.assertEqual(blocks[0]["data"], data)
+                message = pi_message_payload(
+                    {"id": "normalizer-message", "role": "assistant", "content": ""},
+                    session_id="session", turn_id="turn", trusted_blocks=[
+                        {"id": "typed-result", "type": block_type, "data": data}]).to_payload()
+                self.assertEqual(message["blocks"][0]["presentationKind"], "markdown" if block_type == "text" else "code")
+
     def test_extracts_complete_typed_blocks_and_separates_text(self) -> None:
         raw = fenced(
             [

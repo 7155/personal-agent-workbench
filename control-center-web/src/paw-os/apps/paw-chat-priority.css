@@ -9,7 +9,7 @@
 .paw-desktop-root .paw-room-window-chrome[data-controls-expanded='false'] > .paw-room-workspace__mode { display: none; }
 .paw-desktop-root .paw-room-workspace--jev[data-controls-expanded='false'][data-panel='none'] .paw-room-workspace__body[data-jev-layout='team'] { grid-template-rows: minmax(0, 1fr); grid-template-areas: 'room-main'; }
 .paw-desktop-root .paw-room-workspace--jev[data-controls-expanded='false'][data-panel='none'] .paw-room-workspace__body[data-jev-rail='open'] { grid-template-areas: 'room-main jev-rail'; }
-.paw-desktop-root .paw-session-workspace[data-design='workbench'] { --wb-read: 760px; }
+.paw-desktop-root .paw-session-workspace[data-design='workbench'][data-chat-presentation-version='v2'] { --wb-read: var(--workspace-measure); }
 .paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-session-workspace__conversation { container: workbench-conversation / inline-size; }
 .paw-desktop-root .paw-session-workspace[data-design='workbench'] .paw-session-workspace__composer { padding: 4px 12px 6px; }
 .paw-desktop-root .paw-session-workspace[data-design='workbench'] .agent-turn { max-width: min(var(--wb-read), 100%); }
@@ -25,26 +25,23 @@
 .agent-first-response { display: flex; align-items: center; gap: 8px; width: min(var(--wb-read, 960px), 100%); margin: 0 auto 6px; padding-inline: 8px; box-sizing: border-box; color: var(--paw-muted); font-size: 13px; }
 .agent-first-response strong { font-weight: 500; }
 .paw-room-response-status span { font-size: 12px; }
-.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer[data-composer-design='workbench']:not([data-expanded]) textarea { min-height: 40px; padding: 8px 42px 6px 12px; }
-.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer[data-composer-design='workbench']:not([data-expanded]) .agent-composer__toolbar { min-height: 36px; padding: 0 8px 5px; gap: 8px; }
-.paw-desktop-root :is(.paw-session-workspace__composer, .paw-room-workspace__composer) .agent-composer[data-composer-design='workbench'] .agent-composer__editor > button { top: 7px; right: 8px; }
 
 /* These rules intentionally come after the migrated Room skin. That skin
  * keeps a 760px/742px legacy reading column; the workbench layout uses one
  * wider column for transcript, status and input so Thinking cannot drift away
  * from the messages it describes. */
-.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation {
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation[data-chat-presentation-version='v2'] {
   --wb-read: 960px !important;
 }
-.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation .paw-room-timeline > .ccui-conversation-surface {
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation[data-chat-presentation-version='v2'] .paw-room-timeline > .ccui-conversation-surface {
   --ccui-reading-width: var(--wb-read) !important;
 }
-.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation .paw-room-workspace__composer > .room-composer-shell,
-.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation .paw-room-workspace__composer .ccui-queue-tray,
-.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation .paw-room-workspace__composer .ccui-queue-panel {
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation[data-chat-presentation-version='v2'] .paw-room-workspace__composer > .room-composer-shell,
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation[data-chat-presentation-version='v2'] .paw-room-workspace__composer .ccui-queue-tray,
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation[data-chat-presentation-version='v2'] .paw-room-workspace__composer .ccui-queue-panel {
   width: min(var(--wb-read), 100%) !important;
 }
-.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation .paw-room-response-status {
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--conversation[data-chat-presentation-version='v2'] .paw-room-response-status {
   width: min(var(--wb-read), 100%) !important;
 }
 

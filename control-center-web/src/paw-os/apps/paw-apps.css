@@ -541,7 +541,7 @@
   .paw-native-app[data-owns-navigation='true'] { grid-template-rows: minmax(0, 1fr); }
   .paw-native-nav { display: flex; align-items: center; min-width: 0; border-right: 0; border-bottom: 1px solid var(--paw-line-soft); }
   .paw-native-nav nav { display: flex; min-width: 0; overflow-x: auto; padding: 5px 8px; }
-  .paw-native-nav nav button { min-width: max-content; grid-template-columns: 15px auto; }
+  .paw-native-app .paw-native-nav nav button { min-width: max-content; min-height: 44px; grid-template-columns: 15px auto; }
   .paw-native-nav nav button > svg:last-child { display: none; }
   .paw-native-stage { grid-template-rows: minmax(0, 1fr); }
 }
@@ -1646,4 +1646,33 @@
 .paw-room-workspace__composer [data-pending-room-input] .agent-review-dialog__actions {
   position: static;
   margin-top: 0;
+}
+
+/* An unresolved original Session is a reading state, outside the compact rail. */
+.paw-agent-session-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  width: min(100%, 42rem);
+  min-width: 0;
+  margin-inline: auto;
+  padding: var(--space-6);
+  color: var(--paw-ink);
+  font-size: var(--font-size-ui-strong);
+  line-height: 1.6;
+}
+.paw-agent-session-status code {
+  max-width: 100%;
+  color: var(--paw-muted);
+  overflow-wrap: anywhere;
+  white-space: normal;
+  font-size: .875em;
+}
+.paw-agent-session-status .ui-button { min-height: var(--space-10); }
+@container paw-agent-shell (max-width: 640px) {
+  .paw-agent-session-status .ui-button {
+    align-self: stretch;
+    min-height: 44px;
+  }
 }

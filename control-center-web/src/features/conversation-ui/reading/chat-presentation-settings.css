@@ -1,0 +1,56 @@
+fieldset.paw-chat-presentation-settings {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+}
+fieldset.paw-chat-presentation-settings > legend {
+  margin: 0 0 8px;
+  padding: 0;
+  color: var(--reading-muted, var(--text-secondary, #64748b));
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+.paw-chat-presentation-settings .paw-chat-presentation-settings__choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.paw-chat-presentation-settings .paw-chat-presentation-settings__button {
+  min-height: 32px;
+  margin: 0;
+  padding: 5px 10px;
+  border: 1px solid var(--reading-line, var(--border-color, #cbd5e1));
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.paw-chat-presentation-settings .paw-chat-presentation-settings__button[aria-pressed='true'] {
+  background: var(--reading-soft, var(--surface-hover, #eaf1f8));
+  border-color: var(--reading-muted, var(--text-secondary, #64748b));
+}
+.paw-chat-presentation-settings .paw-chat-presentation-settings__button:hover {
+  background: var(--reading-soft, var(--surface-hover, #eaf1f8));
+}
+.paw-chat-presentation-settings .paw-chat-presentation-settings__button:focus-visible {
+  outline: 2px solid var(--reading-accent, var(--accent-color, #2563eb));
+  outline-offset: 2px;
+}
+fieldset.paw-chat-presentation-settings > .paw-chat-presentation-settings__button {
+  margin-top: 8px;
+}
+fieldset.paw-chat-presentation-settings > p {
+  margin: 8px 0 0;
+  color: var(--reading-muted, var(--text-secondary, #64748b));
+  font-size: 13px;
+  line-height: 1.5;
+}
+@media (max-width: 600px) {
+  .paw-chat-presentation-settings .paw-chat-presentation-settings__button { min-height: 44px; }
+}

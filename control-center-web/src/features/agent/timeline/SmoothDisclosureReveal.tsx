@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type AriaRole,
+  type FocusEvent,
   type ReactNode,
   type TransitionEvent,
 } from 'react';
@@ -174,6 +175,15 @@ export function SmoothDisclosureReveal({
     finish(openRef.current);
   };
 
+  const handleFocusCapture = (event: FocusEvent<HTMLDivElement>) => {
+    if (!openRef.current || phaseRef.current !== 'opening') return;
+    // Expose the complete scroll range before native focus scrolls this action
+    // into view. The queued height frame must not clip or move it afterwards.
+    // Write our owned height synchronously, then settle the same React state.
+    event.currentTarget.style.height = 'auto';
+    finish(true);
+  };
+
   return (
     <div
       aria-hidden={!open}
@@ -183,6 +193,7 @@ export function SmoothDisclosureReveal({
       data-state={phase}
       id={id}
       inert={open ? undefined : true}
+      onFocusCapture={handleFocusCapture}
       onTransitionEnd={handleTransitionEnd}
       ref={rootRef}
       role={role}

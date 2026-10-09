@@ -51,10 +51,13 @@ export function MotionActivityBoundary({ active, children }: { active: boolean; 
   return <MotionActivityContext.Provider value={parentActive && active}>{children}</MotionActivityContext.Provider>;
 }
 
+function parseMotionPreference(value: string | null): MotionPreference {
+  return value === 'reduce' || value === 'full' || value === 'system' ? value : 'system';
+}
+
 function getStoredPreference(): MotionPreference {
   if (typeof window === 'undefined') return 'system';
-  const stored = window.localStorage.getItem(STORAGE_KEY);
-  return stored === 'reduce' || stored === 'full' || stored === 'system' ? stored : 'system';
+  return parseMotionPreference(window.localStorage.getItem(STORAGE_KEY));
 }
 
 function getSystemPreference(): boolean {
@@ -87,6 +90,17 @@ export function MotionProvider({ children }: { children: ReactNode }) {
   const [preference, setPreferenceState] = useState<MotionPreference>(getStoredPreference);
   const systemReduceMotion = useSyncExternalStore(subscribeSystemPreference, getSystemPreference, () => false);
   const reduceMotion = resolveReduceMotion(preference, systemReduceMotion);
+
+  useEffect(() => {
+    const handleStorage = (event: StorageEvent) => {
+      if ((event.key !== STORAGE_KEY && event.key !== null) || event.storageArea !== window.localStorage) return;
+      // Same-origin surfaces share the saved preference, not a task or motion
+      // lifecycle. No write-back: storage changes must not bounce between windows.
+      setPreferenceState(parseMotionPreference(event.newValue));
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.reduceMotion = String(reduceMotion);

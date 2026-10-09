@@ -34,6 +34,40 @@ afterEach(() => {
 });
 
 describe('ContextDebugFeature', () => {
+  it('distinguishes omitted bodies from no added messages and a genuinely empty request', async () => {
+    const user = userEvent.setup();
+    const payload = debugContextResponse();
+    const omission = { omitted: true, reason: 'retained_byte_budget', limitBytes: 16_777_216 };
+    Object.assign(payload.context.modelCalls[0], { contextMessages: omission, providerContext: omission,
+      assistantMessage: omission, contextDelta: { commonPrefixMessages: 9, removedMessageCount: 0,
+        addedMessageCount: 4, addedMessages: [], omitted: true } });
+    Object.assign(payload.context.modelCalls[1], { contextMessages: [], providerContext: { messages: [] },
+      contextDelta: { commonPrefixMessages: 0, removedMessageCount: 0, addedMessageCount: 0, addedMessages: [] } });
+    Object.assign(payload.context.toolExecutions[0], { result: omission });
+    const transport = new MockControlTransport({ routes: {
+      'agent.sessions.list': { ok: true, sessions: [] },
+      'agent.session.debugContext.get': payload,
+    } });
+    renderFeature(transport, '/context-debug?sessionId=session-a&turnId=turn-a');
+    const omittedCall = await screen.findByRole('region', { name: '第 1 次模型调用' });
+    const emptyCall = screen.getByRole('region', { name: '第 2 次模型调用' });
+    expect(within(omittedCall).getByText('新增消息正文已省略；记录新增 4 条。')).toBeVisible();
+    expect(within(omittedCall).queryByText('本次调用没有新增消息')).not.toBeInTheDocument();
+    expect(within(omittedCall).getByText('模型回复正文已省略。')).toBeVisible();
+    expect(within(emptyCall).getByText('本次调用没有新增消息')).toBeVisible();
+    await user.click(within(omittedCall).getByText('请求详情'));
+    await user.click(within(omittedCall).getByText('消息正文（已省略）'));
+    expect(within(omittedCall).getByText('本次调用的上下文正文已省略，不能据此认定为空。')).toBeVisible();
+    expect(within(omittedCall).queryByText('当前调用上下文为空')).not.toBeInTheDocument();
+    await user.click(within(omittedCall).getByText('memory_search'));
+    expect(within(omittedCall).getByText('工具结果正文已省略。')).toBeVisible();
+    await user.click(within(emptyCall).getByText('请求详情'));
+    await user.click(within(emptyCall).getByText('完整消息'));
+    expect(within(emptyCall).getByText('当前调用上下文为空')).toBeVisible();
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.debugContext.get'
+      && request.params?.sessionId === 'session-a' && request.query?.turnId === 'turn-a')).toBe(true);
+  });
+
   it('shows every model-call delta and truthful parallel tool batch', async () => {
     const user = userEvent.setup();
     const transport = new MockControlTransport({

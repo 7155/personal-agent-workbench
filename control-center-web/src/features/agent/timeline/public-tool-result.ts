@@ -441,7 +441,7 @@ export function publicToolResultView(activity: PublicToolActivityProjection): Pu
   const subagentResult = toolId === 'subagent'
     ? publicSubagentResult(layers)
     : undefined;
-  const error = !expectedNoop && (activity.status === 'failed' || payload.isError === true)
+  const error = activity.status !== 'aborted' && !expectedNoop && (activity.status === 'failed' || payload.isError === true)
     ? publicToolError(layers, carrier)
     : '';
   const recovery = error ? publicToolRecovery(error, payload) : undefined;

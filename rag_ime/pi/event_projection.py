@@ -1,9 +1,12 @@
 """Pure Host event projections; callers retain ordering and terminal authority."""
 
 from __future__ import annotations
+
+import re
 from collections.abc import Mapping
 from .public import (
     inspectable_tool_result,
+    public_durable_tool_outcome,
     public_codemode_nested_calls,
     public_code_tool_activity,
     public_knowledge_tool_activity,
@@ -128,7 +131,8 @@ def runtime_primitive_capabilities(value: object) -> dict[str, object]:
 
 
 def tool_event_payload(
-    raw: Mapping[str, object], *, event_type: str, source_loop_id: str
+    raw: Mapping[str, object], *, event_type: str, source_loop_id: str,
+    durable_context: Mapping[str, str] | None = None,
 ) -> tuple[str, dict[str, object]]:
     mapped_type = {
         "tool_execution_start": "tool_started",
@@ -189,6 +193,14 @@ def tool_event_payload(
                     payload["nestedCallsComplete"] = nested_receipt["complete"]
         elif not public_result:
             payload[result_key] = redact_mapping(as_mapping(raw_result))
+    if event_type == "tool_execution_end" and durable_context:
+        outcome = public_durable_tool_outcome(
+            raw.get("durableToolOutcome"), **durable_context,
+            tool_call_id=str(raw.get("toolCallId") or ""), tool_name=tool_name,
+            assistant_message_id=source_loop_id,
+        )
+        if outcome is not None:
+            payload["durableToolOutcome"] = outcome
     return mapped_type, payload
 
 
@@ -216,9 +228,18 @@ def text_delta_payload(
     replace_content = current_text.lstrip().startswith("<")
     if replace_content:
         delta = visible_message_text("assistant", current_text)
+    # Durable assigns one immutable identity per native assistant task. Its
+    # completion/transcript use this id too; a turn-wide live alias would leave
+    # a second message beside the final receipt, including incomplete streams.
+    # Classic retains its turn alias and segment behavior around Tool calls.
+    message_id = (
+        source_loop_id
+        if re.fullmatch(r"durable:task:[1-9][0-9]*:assistant", source_loop_id)
+        else f"{turn_id}:assistant"
+    )
     return {
-        "messageId": f"{turn_id}:assistant",
-        "blockId": f"{turn_id}:assistant:text",
+        "messageId": message_id,
+        "blockId": f"{message_id}:text",
         "contentIndex": content_index,
         "delta": delta,
         **({"replaceContent": True} if replace_content else {}),

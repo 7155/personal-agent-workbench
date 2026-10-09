@@ -1814,3 +1814,8 @@
 ) { font-size: 13px; }
 /* UR-102 monitor-observability semantic typography end */
 .schedule-eval-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+
+@container paw-window (max-width: 620px) {
+  :is(main, section)[data-route-id='observability'] .observation-search input { font-size: 16px; }
+  :is(main, section)[data-route-id='observability'] :is(.observation-canonical__disclosure, .observation-schedules__create) > summary { min-height: 44px; }
+}

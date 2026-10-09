@@ -26,6 +26,7 @@ import type { AssistantBlock, AssistantMessage, ToolCallBlock } from '@/features
 import { roomCollaborationRoleLabel } from '@/features/rooms/room-copy';
 import type { RoomSummary, RoomWorkItem } from '@/features/rooms/room-types';
 import { roomWorkStateLabel } from '@/features/rooms/room-presentation';
+import { useChatPresentation } from '@/features/conversation-ui/reading/chat-presentation';
 import { RoomPlanetAvatar } from '@/features/rooms/RoomPlanetAvatar';
 import { openPawOsRoute, usePawOsDesktop } from '@/features/paw-os/surface-context';
 import { JEV_TASK_STAGE_LABELS, type JevSnapshot, type JevTask } from '@/features/semantic-workspace/jev-execution';
@@ -98,6 +99,8 @@ export function PawRoomConversation({
     ?? room.participants.find((participant) => participant.sessionId);
   const quickActionSessionId = quickActionParticipant?.sessionId ?? '';
   const quickActionCwd = room.workspaceRoots?.[0] ?? '';
+  const recordedTasks = (room.workItems ?? []).filter(task => task.roomId === room.id && (!rootId || task.rootTurnId === rootId) && (!participantId || task.accountableParticipantId === participantId || task.currentOwnerParticipantId === participantId));
+  const taskRecords = !projection.needsSnapshot && recordedTasks.length ? <RoomTaskRecords tasks={recordedTasks}/> : null;
   const quickActions = !readOnly && quickActionSessionId && quickActionCwd ? (
     <ProjectQuickActions active={active} compact context={{
       projectId: room.id,
@@ -349,6 +352,7 @@ export function PawRoomConversation({
       : { messageId: planningMessage?.id ?? '', blockId: '' };
   }, [collaborationMode, graph?.rootId, planReview, rootId, transcript.activityByBlockId, transcript.messages]);
 
+  const avatarVariant = useChatPresentation()?.version === 'v2' ? 'sphere' : 'classic';
   const controller = useMemo<ConversationSurfaceController>(() => ({
     conversationId: participantId ? `${room.id}:${participantId}:${rootId || "history"}` : room.id,
     messages: transcript.messages,
@@ -387,7 +391,7 @@ export function PawRoomConversation({
     resolveMessageSessionId: (message) => boundParticipant(message.actorId, message.actorSessionId ?? '')?.sessionId ?? '',
     renderMessageAvatar: (message) => {
       const participant = room.participants.find(item => item.id === message.actorId);
-      return participant ? <RoomPlanetAvatar ordinal={participant.ordinal} size={25} decorative /> : undefined;
+      return participant ? <RoomPlanetAvatar variant={avatarVariant} ordinal={participant.ordinal} size={25} decorative /> : undefined;
     },
     renderMessageIdentity: (message) => {
       const participant = boundParticipant(message.actorId, message.actorSessionId ?? '');
@@ -397,11 +401,12 @@ export function PawRoomConversation({
         className="paw-room-conversation__identity-link"
         href={`#/agent?session=${encodeURIComponent(participant.sessionId)}`}
         onClick={(event) => { event.preventDefault(); openPawOsRoute(desktop, `/agent?session=${encodeURIComponent(participant.sessionId)}`); }}
-      ><RoomPlanetAvatar ordinal={participant.ordinal} size={25} decorative /><strong>{message.actor}</strong></a>;
+      ><RoomPlanetAvatar variant={avatarVariant} ordinal={participant.ordinal} size={25} decorative /><strong>{participant.displayName || message.actor}</strong><small>{roomFocusCelestialName(participant.ordinal)}</small></a>;
     },
     readOnly,
     formatTimestamp: conversationClock,
   }), [
+    avatarVariant,
     onRetryTurn,
     onContinueTurn,
     boundParticipant,
@@ -425,7 +430,7 @@ export function PawRoomConversation({
     controller={controller}
     density={participantId ? 'compact' : 'comfortable'}
     label={participantId ? '行星公开对话' : 'Room 公开对话'}
-    {...(quickActions || lead ? { lead: <>{quickActions}{lead}</> } : {})}
+    {...(quickActions || lead || taskRecords ? { lead: <>{quickActions}{taskRecords}{lead}</> } : {})}
     {...(empty ? { empty } : {})}
   /><PawJevToolRecordDialog
     open={Boolean(toolInspection)}
@@ -433,6 +438,14 @@ export function PawRoomConversation({
     onClose={() => setToolInspection(null)}
     renderDetail={block => renderBlockDetail(block) ?? toolInspection?.details[block.id]}
   /></>;
+}
+
+function RoomTaskRecords({ tasks }: { tasks: RoomWorkItem[] }) {
+  const done = tasks.filter(task => task.state === 'done').length;
+  return <details className="paw-room-conversation__task-records">
+    <summary><ListChecks size={15}/><strong>工作项记录</strong><span>{done}/{tasks.length}</span><ChevronRight size={14}/></summary>
+    <ul>{tasks.map(task => <li key={task.id} data-state={task.state}><span>{task.state === 'done' ? <Check size={14}/> : <GitBranch size={14}/>}</span><div><strong>{task.objective}</strong><small>{roomWorkStateLabel(task.state)} · 修订 {task.revision}</small>{task.resultSummary ? <p>{task.resultSummary}</p> : null}</div></li>)}</ul>
+  </details>;
 }
 
 type RoomFinalReportState = 'running' | 'completed' | 'failed' | 'aborted';

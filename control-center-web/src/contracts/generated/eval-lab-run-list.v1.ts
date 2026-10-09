@@ -25,6 +25,18 @@ export interface EvalLabRunListV1 {
   }[];
   experimentTotal: number;
   /**
+   * Display bounds after complete evaluation-only pagination and run grouping. total remains the full run count; aggregate run statistics include all eligible tasks.
+   */
+  truncation?: {
+    runLimit: 500;
+    taskLimit: 500;
+    omittedRunCount: number;
+    /**
+     * Task rows omitted only within returned runs; does not count tasks in omitted runs.
+     */
+    omittedTaskCount: number;
+  };
+  /**
    * @maxItems 32
    */
   pathSearches?: PathSearch[];

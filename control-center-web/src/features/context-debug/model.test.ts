@@ -2,6 +2,24 @@ import { describe, expect, it } from 'vitest';
 import { describeDebugTurn, deriveToolBatches, normalizeDebugContextResponse } from './model';
 
 describe('context debug model', () => {
+  it('preserves omission receipts and counts while keeping real empty context distinct', () => {
+    const omission = { omitted: true, reason: 'retained_byte_budget', limitBytes: 16_777_216, path: 'modelCalls.0.contextMessages' };
+    const response = normalizeDebugContextResponse({ available: true, context: {
+      sessionId: 'session-omitted', turnId: 'original-turn', clientMessageId: 'original-command',
+      modelCalls: [
+        { index: 7, contextMessages: omission, providerContext: omission,
+          contextDelta: { omitted: true, addedMessageCount: 4, addedMessages: [] } },
+        { index: 8, contextMessages: [], providerContext: { messages: [] },
+          contextDelta: { addedMessageCount: 0, addedMessages: [] } },
+      ],
+    } });
+    expect(response.context?.modelCalls[0]).toMatchObject({ index: 7, contextMessages: [],
+      contextMessagesOmission: omission, contextDelta: { omitted: true, addedMessageCount: 4, addedMessages: [] } });
+    expect(response.context?.modelCalls[1].contextMessagesOmission).toBeUndefined();
+    expect(response.context?.modelCalls[1].contextDelta.omitted).not.toBe(true);
+    expect(response.context?.raw).toMatchObject({ turnId: 'original-turn', clientMessageId: 'original-command' });
+  });
+
   it('keeps model-call deltas and explicit runtime tool batches', () => {
     const response = normalizeDebugContextResponse({
       available: true,

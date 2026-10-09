@@ -63,6 +63,8 @@ export function ManagementMutationWorkflow<Context>({
   onRolledBack,
   risk,
   title,
+  triggerVariant = 'primary',
+  presentation = 'standard',
 }: {
   availability: MutationAvailability;
   description: string;
@@ -81,8 +83,14 @@ export function ManagementMutationWorkflow<Context>({
   onRolledBack?: (receipt: ManagementWorkReceipt) => void;
   risk: 'R1' | 'R2' | 'R3';
   title: string;
+  /** Visual priority of the direct action; R3 confirmation keeps its danger treatment. */
+  triggerVariant?: 'primary' | 'secondary';
+  /** Compact action entry; authoritative preview, errors and results remain visible. */
+  presentation?: 'standard' | 'action';
 }) {
   const [stage, setStage] = useState<'idle' | 'preview' | 'approval' | 'receipt' | 'rolled-back'>('idle');
+  const [pendingTriggerLabel, setPendingTriggerLabel] = useState<string | null>(null);
+  const [pendingPreviewError, setPendingPreviewError] = useState<unknown>(null);
   const [approved, setApproved] = useState(false);
   const [preview, setPreview] = useState<ManagementWorkPreview<Context> | null>(null);
   const [receipt, setReceipt] = useState<ManagementWorkReceipt | null>(null);
@@ -186,6 +194,9 @@ export function ManagementMutationWorkflow<Context>({
   const actionable = availability.state === 'available' && !disabled;
   const previewExpired = Boolean(preview && preview.expiresAtMs <= Date.now());
   const isWorking = previewMutation.isPending || applyMutation.isPending || rollbackMutation.isPending;
+  const retryingPreview = stage === 'idle' && isWorking && pendingPreviewError != null;
+  const displayedPreviewError = previewMutation.error ?? (retryingPreview ? pendingPreviewError : null);
+  const triggerLabel = previewMutation.isError ? '重新尝试' : declaredDangerous ? '查看影响' : title;
   const liveStatus = previewMutation.isPending
     ? declaredDangerous ? '正在准备影响说明' : '正在准备更改'
     : applyMutation.isPending
@@ -194,9 +205,15 @@ export function ManagementMutationWorkflow<Context>({
         ? '正在撤销更改'
         : '';
 
+  const showHeading = presentation === 'standard' || requiresConfirmation || stage !== 'idle'
+    || Boolean(displayedPreviewError) || !['available', 'checking'].includes(availability.state);
+
   return (
     <div
       className="mgmt-workflow"
+      aria-label={presentation === 'action' ? title : undefined}
+      role={presentation === 'action' ? 'group' : undefined}
+      data-presentation={presentation === 'action' ? presentation : undefined}
       data-availability={availability.state}
       data-confirmation={requiresConfirmation ? 'dangerous' : 'direct'}
       data-stage={stage}
@@ -205,22 +222,28 @@ export function ManagementMutationWorkflow<Context>({
         {liveStatus}
       </span>
       <div className="mgmt-workflow__heading">
-        <div>
+        {showHeading ? <div>
           {requiresConfirmation ? <span className="mgmt-workflow__risk">{riskLabel(effectiveRisk)}</span> : null}
           <strong>{title}</strong>
-          <p>{description}</p>
-        </div>
+          {presentation === 'standard' || requiresConfirmation ? <p>{description}</p> : null}
+        </div> : null}
         {stage === 'idle' && (availability.state === 'available' || availability.state === 'checking') ? (
           <Button
             ref={triggerRef}
             disabled={!actionable}
             leadingIcon={declaredDangerous ? <ShieldCheck size={15} /> : <Check size={15} />}
             loading={previewMutation.isPending || applyMutation.isPending || availability.state === 'checking'}
-            onClick={() => previewMutation.mutate()}
+            onClick={() => {
+              // Keep the last failure's layout until this retry reaches its next stage.
+              setPendingTriggerLabel(triggerLabel);
+              setPendingPreviewError(previewMutation.error);
+              previewMutation.mutate();
+            }}
+            preserveFocusWhileLoading
             size="small"
-            variant={declaredDangerous ? 'danger' : 'primary'}
+            variant={declaredDangerous ? 'danger' : triggerVariant}
           >
-            {previewMutation.isError ? '重新尝试' : declaredDangerous ? '查看影响' : title}
+            {isWorking ? pendingTriggerLabel ?? triggerLabel : triggerLabel}
           </Button>
         ) : null}
       </div>
@@ -233,16 +256,19 @@ export function ManagementMutationWorkflow<Context>({
         ) : <p className="mgmt-workflow__hint">{availability.reason}</p>
       ) : null}
 
-      {previewMutation.error ? (
+      {displayedPreviewError ? (
         <div ref={previewErrorRef} className="mgmt-workflow__feedback" tabIndex={-1}>
-          <InlineNotice title={declaredDangerous ? '暂时无法查看影响' : '预览失败'} tone="danger">
-            {publicErrorText(previewMutation.error, declaredDangerous ? '暂时无法查看影响，请稍后重试。' : '暂时无法预览，请稍后重试。')}
+          <InlineNotice
+            title={retryingPreview ? applyMutation.isPending ? '正在保存本次更改' : '正在重试上次操作' : declaredDangerous ? '暂时无法查看影响' : '预览失败'}
+            tone={retryingPreview ? 'info' : 'danger'}
+          >
+            {publicErrorText(displayedPreviewError, declaredDangerous ? '暂时无法查看影响，请稍后重试。' : '暂时无法预览，请稍后重试。')}
             <TraceAgentHandoffButton handoff={{
               kind: 'runtime',
               entityId: `${draftKey}:preview`,
               title: `${title}预检失败`,
-              summary: publicErrorText(previewMutation.error, '操作预检失败。'),
-              error: previewMutation.error instanceof Error ? previewMutation.error.message : String(previewMutation.error),
+              summary: publicErrorText(displayedPreviewError, '操作预检失败。'),
+              error: displayedPreviewError instanceof Error ? displayedPreviewError.message : String(displayedPreviewError),
               refs: { stage: 'preview', risk: effectiveRisk },
             }} />
           </InlineNotice>
@@ -311,6 +337,7 @@ export function ManagementMutationWorkflow<Context>({
               disabled={!approved || previewExpired || !actionable || applyMutation.isError}
               loading={applyMutation.isPending}
               onClick={() => applyMutation.mutate(preview)}
+              preserveFocusWhileLoading
               size="small"
               variant={preview.summary.risk === 'R3' ? 'danger' : 'primary'}
             >
@@ -351,6 +378,7 @@ export function ManagementMutationWorkflow<Context>({
                 leadingIcon={<RotateCcw size={14} />}
                 loading={rollbackMutation.isPending}
                 onClick={() => rollbackMutation.mutate({ applied: receipt, boundPreview: preview })}
+                preserveFocusWhileLoading
                 size="small"
               >
                 {requiresConfirmation ? '撤销这次更改' : '撤销'}
@@ -389,6 +417,7 @@ export function ManagementMutationWorkflow<Context>({
 
   function reset() {
     setStage('idle');
+    setPendingPreviewError(null);
     setApproved(false);
     setPreview(null);
     setReceipt(null);

@@ -920,7 +920,8 @@
   .evolution-report__toc { padding-inline: 18px; }
   .evolution-report__title-row { display: grid; gap: 12px; }
   .evolution-report__toc { flex-wrap: wrap; overflow-x: visible; }
-  .evolution-report__toc button { flex: 1 0 auto; }
+  .evolution-report__toc button { flex: 1 0 auto; min-height: 44px; }
+  .evolution-report-site-header a { min-height: 44px; }
   .evolution-report__section { scroll-margin-top: 132px; }
   .evolution-report__snapshot { text-align: left; }
   .evolution-report__comparison-head { display: none; }

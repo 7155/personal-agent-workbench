@@ -133,3 +133,30 @@
 .paw-jev-task-progress[data-compact] > ol { margin: 0; }
 .paw-jev-task-progress[data-compact] > ol > li { font-size: 10px; gap: 3px; }
 .paw-jev-task-progress[data-compact] > ol > li:not(:last-child)::after { margin-inline: 3px; }
+
+/* The rail is a list. The expanded inspector keeps the full partner reader. */
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--jev[data-chat-presentation-version='v2'] .paw-jev-rail .paw-jev-partner[data-compact] {
+  display: grid; grid-template-columns: 28px minmax(0, 1fr) 32px;
+  grid-template-rows: minmax(32px, auto) auto auto; gap: 3px 8px;
+  margin: 0; padding: 8px 0; border: 0; border-radius: 0; background: transparent;
+}
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--jev[data-chat-presentation-version='v2'] .paw-jev-rail .paw-jev-partner[data-compact] + .paw-jev-partner[data-compact] { border-top: 1px solid var(--paw-line); }
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--jev[data-chat-presentation-version='v2'] .paw-jev-rail .paw-jev-partner[data-compact] > header { display: contents; }
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--jev[data-chat-presentation-version='v2'] .paw-jev-rail .paw-jev-partner[data-compact] > header > div { display: none; }
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--jev[data-chat-presentation-version='v2'] .paw-jev-rail .paw-jev-partner[data-compact] > header > .room-planet-avatar { grid-column: 1; grid-row: 1 / 4; width: 28px; height: 28px; margin-top: 2px; }
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--jev[data-chat-presentation-version='v2'] .paw-jev-rail .paw-jev-partner[data-compact] > header > button { grid-column: 3; grid-row: 1; width: 32px; height: 32px; }
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--jev[data-chat-presentation-version='v2'] .paw-jev-rail .paw-jev-partner[data-compact] .paw-jev-partner__task-title { grid-column: 2; grid-row: 1; width: 100%; min-height: 32px; align-items: center; font-size: 13px; font-weight: 600; }
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--jev[data-chat-presentation-version='v2'] .paw-jev-rail .paw-jev-partner[data-compact] .paw-jev-partner__task-title > span { display: block; white-space: nowrap; }
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--jev[data-chat-presentation-version='v2'] .paw-jev-rail .paw-jev-partner[data-compact] .paw-jev-partner__state { grid-column: 2 / 4; grid-row: 2; margin: 0; font-size: 12px; line-height: 1.5; }
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--jev[data-chat-presentation-version='v2'] .paw-jev-rail .paw-jev-partner[data-compact] .paw-jev-partner__recent { grid-column: 2 / 4; grid-row: 3; min-height: 32px; align-items: center; }
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--jev[data-chat-presentation-version='v2'] .paw-jev-rail .paw-jev-partner[data-compact] .paw-jev-partner__recent > span { font-size: 12px; }
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--jev[data-chat-presentation-version='v2'] .paw-jev-rail .paw-jev-files > li { padding: 0; border-width: 0 0 1px; border-radius: 0; background: transparent; }
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--jev[data-chat-presentation-version='v2'] .paw-jev-rail .paw-jev-files .paw-jev-record-row { padding: 10px 0; }
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--jev[data-chat-presentation-version='v2'] .paw-jev-rail__section-head > button { min-height: 32px; }
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--jev[data-chat-presentation-version='v2'] .paw-jev-team__toggle { min-height: 32px; padding-inline: 6px; }
+.paw-desktop-root .paw-room-workspace.paw-room-workspace--jev[data-chat-presentation-version='v2'] .paw-jev-record-row strong { font-weight: 600; }
+@container paw-room-workspace (max-width: 470px) {
+  .paw-desktop-root .paw-room-workspace.paw-room-workspace--jev[data-chat-presentation-version='v2'] .paw-jev-rail :is(.paw-jev-team__toggle, .paw-jev-rail__section-head > button, .paw-jev-record-row) { min-height: 40px; }
+  .paw-desktop-root .paw-room-workspace.paw-room-workspace--jev[data-chat-presentation-version='v2'] .paw-jev-rail .paw-jev-partner[data-compact] > header > button { width: 40px; height: 40px; }
+  .paw-desktop-root .paw-room-workspace.paw-room-workspace--jev[data-chat-presentation-version='v2'] .paw-jev-rail .paw-jev-partner[data-compact] { grid-template-columns: 28px minmax(0, 1fr) 40px; }
+}

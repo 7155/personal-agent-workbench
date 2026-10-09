@@ -127,6 +127,7 @@ import type { ObservationSnapshotV1 } from './generated/observation-snapshot.v1'
 import type { OverlayConfigV1 } from './generated/overlay-config.v1';
 import type { PawPluginUsageQueryV1 } from './generated/paw.plugin-usage-query.v1';
 import type { PawPluginUsageV1 } from './generated/paw.plugin-usage.v1';
+import type { PiDurableToolOutcomeV1 } from './generated/pi-durable-tool-outcome.v1';
 import type { PiRuntimeManifestV1 } from './generated/pi-runtime-manifest.v1';
 import type { PromptCompileReceiptV1 } from './generated/prompt-compile-receipt.v1';
 import type { PromptPlanV1 } from './generated/prompt-plan.v1';
@@ -301,6 +302,7 @@ export type {
   OverlayConfigV1,
   PawPluginUsageQueryV1,
   PawPluginUsageV1,
+  PiDurableToolOutcomeV1,
   PiRuntimeManifestV1,
   PromptCompileReceiptV1,
   PromptPlanV1,
@@ -476,6 +478,7 @@ export interface ContractTypeMap {
   'overlay-config.v1': OverlayConfigV1;
   'paw.plugin-usage-query.v1': PawPluginUsageQueryV1;
   'paw.plugin-usage.v1': PawPluginUsageV1;
+  'pi-durable-tool-outcome.v1': PiDurableToolOutcomeV1;
   'pi-runtime-manifest.v1': PiRuntimeManifestV1;
   'prompt-compile-receipt.v1': PromptCompileReceiptV1;
   'prompt-plan.v1': PromptPlanV1;

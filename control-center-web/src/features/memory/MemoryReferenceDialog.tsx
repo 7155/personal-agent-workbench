@@ -2,12 +2,11 @@ import {
   ArrowLeft,
   ChevronRight,
   EyeOff,
-  Fingerprint,
   GitBranch,
   LoaderCircle,
   ShieldAlert,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
   Dialog,
@@ -23,6 +22,7 @@ import {
   StatusBadge,
   publicErrorText,
 } from '@/features/overview/management-ui';
+import { useMotionActivity } from '@/design/motion';
 import { useMemoryReference, type MemoryReferenceKind } from './api';
 import { publicMemoryOwnerLabel, publicMemoryText } from './public-copy';
 import type { MemoryReferenceV1 } from '@/contracts/generated/memory-reference.v1';
@@ -49,11 +49,26 @@ export function MemoryReferenceDialog({
     () => ({ kind, referenceId, label }),
     [kind, label, referenceId],
   );
-  const [stack, setStack] = useState<MemoryReferenceSelection[]>(referenceId ? [root] : []);
+  const motionActive = useMotionActivity();
+  const lastReadError = useRef<{ key: string; error: unknown } | null>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const viewRef = useRef<HTMLDivElement>(null);
+  const scrollPositions = useRef(new Map<string, number>());
+  const childControls = useRef(new Map<string, HTMLButtonElement>());
+  const navigation = useRef<{ key: string; childKey?: string } | null>(null);
+  const [storedStack, setStack] = useState<MemoryReferenceSelection[]>(referenceId ? [root] : []);
+  const rootKey = referenceKey(root);
+  const previousRootKey = useRef(rootKey);
+  const stack = storedStack[0] && referenceKey(storedStack[0]) === rootKey ? storedStack : referenceId ? [root] : [];
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    const rootChanged = previousRootKey.current !== rootKey;
+    previousRootKey.current = rootKey;
+    lastReadError.current = null;
+    scrollPositions.current.clear();
+    navigation.current = rootChanged ? { key: rootKey } : null;
     setStack(referenceId ? [root] : []);
-  }, [referenceId, root]);
+  }, [referenceId, root, rootKey]);
 
   const current = stack[stack.length - 1] ?? root;
   const query = useMemoryReference(current.kind, current.referenceId, Boolean(referenceId));
@@ -76,39 +91,75 @@ export function MemoryReferenceDialog({
   const title = item?.title || item?.textPreview || item?.text || current.label || current.referenceId;
   const displayTitle = displayReferenceLabel(title, current.kind);
   const content = redacted ? '' : publicMemoryText(item?.detail || item?.summary || item?.text || '');
+  const titleRepeatsContent = Boolean(content) && (
+    content.trim() === displayTitle.trim()
+    || (current.kind === 'evidence' && item?.sourceKind === 'user_message'
+      && content.trim().startsWith(displayTitle.trim()))
+  );
   const currentKey = referenceKey(current);
   const visited = new Set(stack.map(referenceKey));
+  // Keep only this exact reference's last real read error while its retry is
+  // pending. Query still owns the request/data; changing roots cannot reuse it.
+  const readError = query.error ?? (query.isPending && query.isFetching && lastReadError.current?.key === currentKey
+    ? lastReadError.current.error : null);
+  const heading = query.isPending || readError || !resolvedReference || titleRepeatsContent
+    ? referenceKindLabel(current.kind) : displayTitle;
+
+  useEffect(() => {
+    if (query.error) lastReadError.current = { key: currentKey, error: query.error };
+    else if (!query.isPending && !query.isFetching) lastReadError.current = null;
+  }, [currentKey, query.error, query.isPending, query.isFetching]);
 
   function openReference(next: MemoryReferenceSelection) {
     const nextKey = referenceKey(next);
     if (visited.has(nextKey) || stack.length >= maximumReferenceDepth) return;
-    setStack((currentStack) => [...currentStack, next]);
+    scrollPositions.current.set(currentKey, viewRef.current?.scrollTop ?? 0);
+    navigation.current = { key: nextKey };
+    setStack([...stack, next]);
   }
+
+  function returnReference() {
+    const previous = stack[stack.length - 2];
+    if (!previous) return;
+    scrollPositions.current.set(currentKey, viewRef.current?.scrollTop ?? 0);
+    navigation.current = { key: referenceKey(previous), childKey: currentKey };
+    setStack((items) => items.slice(0, -1));
+  }
+
+  useLayoutEffect(() => {
+    const pending = navigation.current;
+    if (!pending || pending.key !== currentKey || query.isPending) return;
+    if (viewRef.current) viewRef.current.scrollTop = scrollPositions.current.get(currentKey) ?? 0;
+    const focusTarget = pending.childKey ? childControls.current.get(pending.childKey) : headingRef.current;
+    (focusTarget ?? headingRef.current)?.focus({ preventScroll: true });
+    navigation.current = null;
+  }, [currentKey, query.isPending, query.error, payload]);
 
   return (
     <Dialog open={Boolean(referenceId)} onOpenChange={onOpenChange}>
-      <DialogContent className="memory-reference-dialog">
+      <DialogContent className="memory-reference-dialog" data-motion-active={motionActive}
+        onOpenAutoFocus={(event) => { event.preventDefault(); headingRef.current?.focus({ preventScroll: true }); }}>
         <DialogHeader>
-          <DialogTitle>{displayTitle || '记忆来源'}</DialogTitle>
-          <DialogDescription>
+          <DialogTitle ref={headingRef} tabIndex={-1} title={displayTitle}>{heading || '记忆来源'}</DialogTitle>
+          <DialogDescription className="memory-reference-dialog__description">
             {referenceKindLabel(current.kind)} · 可追溯来源
           </DialogDescription>
         </DialogHeader>
 
-        {query.isPending ? (
+        {query.isPending && !readError ? (
           <p aria-live="polite" className="memory-layer-loading" role="status"><LoaderCircle size={15} />正在读取引用详情</p>
         ) : null}
-        {query.error ? (
+        {readError ? (
           <div className="memory-reference-dialog__feedback">
-            <InlineNotice title="引用暂时无法读取" tone="danger">
-              {publicErrorText(query.error, '引用可能已归档，或详情尚未准备好。')}
+            <InlineNotice title={query.isPending ? '正在重新读取原引用' : '引用暂时无法读取'} tone={query.isPending ? 'info' : 'danger'}>
+              {publicErrorText(readError, '引用可能已归档，或详情尚未准备好。')}
             </InlineNotice>
-            <Button disabled={query.isFetching} onClick={() => void refetch()} size="small" variant="quiet">
-              {query.isFetching ? '正在重试' : '重试读取'}
+            <Button loading={query.isFetching} onClick={() => { navigation.current = { key: currentKey }; void refetch(); }} size="small" variant="quiet">
+              重试读取
             </Button>
           </div>
         ) : null}
-        {!query.isPending && !query.error && !resolvedReference ? (
+        {!query.isPending && !readError && !resolvedReference ? (
           <div className="memory-reference-dialog__feedback">
             <InlineNotice title="没有可显示的引用" tone="info">
               当前来源没有返回可安全显示的详情。它可能已归档，或不在当前控制中心的所属范围内。
@@ -117,26 +168,22 @@ export function MemoryReferenceDialog({
           </div>
         ) : null}
 
-        {!query.isPending && !query.error && resolvedReference ? (
-          <div className="memory-reference-view" data-reference-key={currentKey}>
+        {!query.isPending && !readError && resolvedReference ? (
+          <div className="memory-reference-view" data-reference-key={currentKey} ref={viewRef}>
+            <div className="memory-reference-view__metadata">
             <nav className="memory-reference-path" aria-label="记忆来源路径">
               <ol>
                 {stack.map((step, index) => (
                   <li data-current={index === stack.length - 1 || undefined} key={referenceKey(step)}>
                     <span>{referenceKindCode(step.kind)}</span>
-                    <small>{displayReferenceLabel(step.label, step.kind)}</small>
+                    {stack.length > 1 ? <small>{displayReferenceLabel(step.label, step.kind)}</small> : null}
                     {index < stack.length - 1 ? <ChevronRight aria-hidden="true" size={13} /> : null}
                   </li>
                 ))}
               </ol>
             </nav>
-            <div className="memory-reference-view__identity">
-              <span><Fingerprint size={16} /></span>
-              <div><small>当前内容</small><strong>{referenceKindLabel(current.kind)}</strong></div>
-              <StatusBadge
-                label={referenceStatusLabel(disposition, current.kind)}
-                tone={referenceStatusTone(disposition, current.kind)}
-              />
+              <StatusBadge label={referenceStatusLabel(disposition, current.kind)} tone={referenceStatusTone(disposition, current.kind)} />
+              <time>{referenceTime(resolvedReference.item)}</time>
             </div>
 
             {redacted ? (
@@ -151,23 +198,6 @@ export function MemoryReferenceDialog({
             ) : null}
             {content ? <p className="memory-reference-view__content">{content}</p> : null}
 
-            <dl className="memory-reference-view__facts">
-              <ReferenceFact label="当前层" value={referenceKindLabel(current.kind)} />
-              <ReferenceFact label="时间" value={referenceTime(resolvedReference.item)} />
-              <ReferenceFact label="相关来源" value={`${references.length} 条`} />
-            </dl>
-            <Disclosure className="memory-reference-view__advanced" summary="高级：引用详情">
-              <dl className="memory-reference-view__facts">
-                <ReferenceFact label="引用编号" value={current.referenceId} />
-                <ReferenceFact label="来源类别" value={resolvedReference.source.sourceKind || resolvedReference.source.kind} />
-                <ReferenceFact label="来源对象" value={resolvedReference.source.id} />
-                <ReferenceFact
-                  label="归属"
-                  value={publicMemoryOwnerLabel(resolvedReference.item.ownerKind ?? '', resolvedReference.item.ownerId ?? '') || '未标注'}
-                />
-                {resolvedReference.item.ownerId ? <ReferenceFact label="内部归属编号" value={resolvedReference.item.ownerId} /> : null}
-              </dl>
-            </Disclosure>
             {current.kind === 'event' ? (
               <section className="memory-reference-view__source-context" aria-label="整理使用的输入上下文">
                 <header>
@@ -200,12 +230,13 @@ export function MemoryReferenceDialog({
                 const depthLimited = stack.length >= maximumReferenceDepth;
                 return (
                   <button
+                    ref={(node) => { if (node) childControls.current.set(childKey, node); else childControls.current.delete(childKey); }}
                     disabled={loop || depthLimited}
                     key={childKey}
                     onClick={() => openReference(reference)}
                     type="button"
                   >
-                    <span><small>{referenceKindCode(reference.kind)} · {referenceKindLabel(reference.kind)}</small><strong>{displayReferenceLabel(reference.label, reference.kind)}</strong></span>
+                    <span><small>{referenceKindLabel(reference.kind)}</small><strong>{displayReferenceLabel(reference.label, reference.kind)}</strong></span>
                     {loop ? <b>已在路径中</b> : depthLimited ? <b>已到最深层</b> : <ChevronRight size={15} />}
                   </button>
                 );
@@ -213,6 +244,21 @@ export function MemoryReferenceDialog({
                 <p>这是当前来源的最末层记录，没有更深一层引用。</p>
               )}
             </section>
+
+            <Disclosure className="memory-reference-view__advanced" summary="高级：引用详情">
+              <dl className="memory-reference-view__facts">
+                {displayTitle ? <ReferenceFact label="完整标题" value={displayTitle} /> : null}
+                <ReferenceFact label="当前层" value={referenceKindLabel(current.kind)} />
+                <ReferenceFact label="引用编号" value={current.referenceId} />
+                <ReferenceFact label="来源类别" value={resolvedReference.source.sourceKind || resolvedReference.source.kind} />
+                <ReferenceFact label="来源对象" value={resolvedReference.source.id} />
+                <ReferenceFact
+                  label="归属"
+                  value={publicMemoryOwnerLabel(resolvedReference.item.ownerKind ?? '', resolvedReference.item.ownerId ?? '') || '未标注'}
+                />
+                {resolvedReference.item.ownerId ? <ReferenceFact label="内部归属编号" value={resolvedReference.item.ownerId} /> : null}
+              </dl>
+            </Disclosure>
 
             {stack.length >= maximumReferenceDepth ? (
               <p className="memory-reference-view__guard"><ShieldAlert size={14} />已达到 {maximumReferenceDepth} 层查看上限，避免异常引用链无限展开。</p>
@@ -222,7 +268,7 @@ export function MemoryReferenceDialog({
 
         <DialogFooter>
           {stack.length > 1 ? (
-            <Button leadingIcon={<ArrowLeft size={14} />} onClick={() => setStack((items) => items.slice(0, -1))} variant="quiet">
+            <Button leadingIcon={<ArrowLeft size={14} />} onClick={returnReference} variant="quiet">
               返回 {referenceKindCode(stack[stack.length - 2]!.kind)}
             </Button>
           ) : null}

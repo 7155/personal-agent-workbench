@@ -37,7 +37,7 @@
   --text-section-lead-lh: 28px;
   --text-subsection: 16px;      /* subsection heading        */
   --text-subsection-lh: 24px;
-  --text-reading: 15px;         /* Agent prose, long-form    */
+  --text-reading: 15px;         /* Pinned v1 reading default */
   --text-reading-lh: 25px;
   --text-ui: 14px;              /* controls, tabs, nav       */
   --text-ui-lh: 20px;
@@ -227,6 +227,8 @@
   --radius-2: 3px;
   --radius-3: 4px;
   --radius-sheet: 5px;
+  --radius-composer: 24px;
+  --radius-picker: 20px;
   --radius-round: 999px;
 
   /* Elevation ramp. Level 1 is resting cards, 2 is raised/hovered surfaces,

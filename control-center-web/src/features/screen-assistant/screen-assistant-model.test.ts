@@ -7,6 +7,40 @@ import {
 } from './screen-assistant-model';
 
 describe('screen conversation ownership', () => {
+  it('reconciles a lost controlled-creation receipt with the original request and does not send the capture', async () => {
+    const capture = { dataUrl: 'data:image/png;base64,YWJj', mimeType: 'image/png', pixelWidth: 1, pixelHeight: 1,
+      sourceAppBundleId: '', capturedAtMs: 1000, sourceSessionId: 'agent:source', creationRequestId: 'screen-capture:original' };
+    const host = { getCapture: vi.fn().mockResolvedValue(capture), rememberConversation: vi.fn() } as unknown as ScreenAssistantHost;
+    const target = { id: 'agent:screen', mode: 'assistant', runtimeEngine: 'classic', executionMode: 'per_action' };
+    const request = vi.fn().mockRejectedValueOnce(new Error('receipt lost')).mockResolvedValue({ kind: 'session', target });
+    const pasteImages = vi.fn().mockResolvedValue([{ id: 'media_abcdefghijklmnop', name: '屏幕选区.png', mimeType: 'image/png', byteSize: 3 }]);
+    const transport = { request, pasteImages } as unknown as ControlTransport;
+    const state: CapturePreparation = {};
+    await expect(prepareScreenConversation(transport, host, state)).rejects.toThrow('receipt lost');
+    const ready = await prepareScreenConversation(transport, host, state);
+    expect(request.mock.calls[0][0]).toEqual(request.mock.calls[1][0]);
+    expect(request.mock.calls[1][0]).toMatchObject({ pathId: 'agent.coordinator.command', body: {
+      sourceSessionId: 'agent:source', action: 'create_session', clientRequestId: 'screen-capture:original', input: { purpose: 'screen_capture' },
+    } });
+    expect(ready.session).toEqual(target);
+    expect(host.getCapture).toHaveBeenCalledTimes(1);
+    expect(pasteImages).toHaveBeenCalledOnce();
+    expect(request.mock.calls.some(([input]) => input.pathId === 'agent.session.prompt')).toBe(false);
+  });
+
+  it('uses the existing persistent assistant for a shortcut capture when the server advertises that capability', async () => {
+    const host = { getCapture: vi.fn().mockResolvedValue({ dataUrl: 'data:image/png;base64,YWJj', mimeType: 'image/png',
+      pixelWidth: 1, pixelHeight: 1, sourceAppBundleId: '', capturedAtMs: 1000, creationRequestId: 'screen-capture:shortcut' }) } as unknown as ScreenAssistantHost;
+    const request = vi.fn(async (input) => input.pathId === 'agent.coordinator.ensure' ? { sourceSessionId: 'agent:persistent' }
+      : { kind: 'session', target: { id: 'agent:screen' } });
+    const pasteImages = vi.fn().mockResolvedValue([{ id: 'media_abcdefghijklmnop', name: '屏幕选区.png', mimeType: 'image/png', byteSize: 3 }]);
+    const transport = { request, pasteImages, capabilities: vi.fn().mockResolvedValue({ routeIds: ['agent.coordinator.ensure'] }) } as unknown as ControlTransport;
+    await prepareScreenConversation(transport, host, {});
+    expect(request.mock.calls[0][0]).toEqual({ pathId: 'agent.coordinator.ensure', body: {} });
+    expect(request.mock.calls[1][0]).toMatchObject({ pathId: 'agent.coordinator.command', body: { sourceSessionId: 'agent:persistent' } });
+    expect(request.mock.calls.some(([input]) => input.pathId === 'agent.sessions.create' || input.pathId === 'agent.session.prompt')).toBe(false);
+  });
+
   it('restores the same Session and media after a renderer reload without reattaching a delivered capture', async () => {
     let remembered = {};
     const host = {

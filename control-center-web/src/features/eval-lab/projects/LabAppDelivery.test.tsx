@@ -8,7 +8,7 @@ import { currentPawApps, pawApp, pawAppForPath } from '@/paw-os/runtime/app-regi
 import { pawExtensionApps, registerLabExtensionApps } from '@/paw-os/extensions/registry';
 import { LabAppDelivery } from './LabAppDelivery';
 import { LabAppConfiguration } from './LabAppConfiguration';
-import { LabAppPreview } from './LabAppPreview';
+import { LabAppPreview, labAppBridge } from './LabAppPreview';
 import type { LabApp, LabAppCall, LabAppVersion } from './apps';
 import { parseLabAppRead } from './apps';
 import type { ControlRequest } from '@/platform/transport';
@@ -23,6 +23,22 @@ const version = (appId = firstId): LabAppVersion => ({ appId, version: 1, conten
   sourceFiles: [{ path: 'SKILL.md', byteSize: 100, sha256: 'a'.repeat(64) }], spec: { title: '售后助手', description: '按当前规则工作', html: 'index.html', skill: 'SKILL.md', context: ['rules.md'],
     model: { provider: 'test', model: 'test-model', thinkingLevel: 'medium' }, actions: [{ id: 'answer', title: '处理问题', prompt: '按规则回答', inputSchema: { type: 'object' } }] } });
 const clients: QueryClient[] = [];
+describe('portable App presentation identity', () => {
+  it('exposes only frozen App identity without requesting or granting execution', () => {
+    const child: { pawApp?: { identity: { appId: string; version: number }; capabilities: { cancel: boolean }; invoke: unknown; models: unknown } } = {};
+    const parent = { postMessage: vi.fn() };
+    const source = labAppBridge(firstId, 2).replace(/^<script>|<\/script>$/gu, '');
+    new Function('window', 'parent', 'addEventListener', 'crypto', source)(child, parent, vi.fn(), crypto);
+    expect(child.pawApp?.identity).toEqual({ appId: firstId, version: 2 });
+    expect(Object.isFrozen(child.pawApp?.identity)).toBe(true);
+    expect(child.pawApp?.capabilities.cancel).toBe(true);
+    expect(child.pawApp?.invoke).toBeTypeOf('function');
+    expect(child.pawApp?.models).toBeTypeOf('function');
+    expect(parent.postMessage).not.toHaveBeenCalled();
+    expect(labAppBridge('</script>', 1)).not.toContain('"appId":"</script>"');
+  });
+});
+
 describe('Frozen App configuration', () => {
   it('shows the actual selected method, corpus and evaluation without starting execution', () => {
     const value = version(); value.spec.knowledge = { documentCount: 209, sourceCount: 209, chunkCount: 20017, profile: { mode: 'hybrid', topK: 8, contextChars: 24000 }, sourceIndexId: 'full-index', snapshotSha256: 'c'.repeat(64) };

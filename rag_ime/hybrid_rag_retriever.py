@@ -17,7 +17,7 @@ from .knowledge_scope import KnowledgeCallerContext, scope_sql_predicate
 from .memory_ingest import normalize_text
 from .memory_ownership import resolve_visible_memory_owners, sql_memory_owner_predicate
 from .memory_projectors import ImeMemoryProjector
-from .memory_projection_consistency import authoritative_retrieval_doc
+from .memory_projection_consistency import authoritative_retrieval_docs
 from .query_expansion import build_query_expansion
 from .retrieval_vector_index import load_retrieval_doc_vectors
 from .text_utils import compact_whitespace, token_terms
@@ -58,24 +58,35 @@ def retrieve_hybrid_rag_candidates(
     )
     timeline_requested = timeline_intent.requested
     retrieval_now_ms = int(time.time() * 1_000)
-    docs = _active_docs(
-        conn,
-        query=query,
-        timeline_intent=timeline_intent,
-        now_ms=retrieval_now_ms,
-    )
     blocked = _blocked_sets(conn)
     vector_available = bool(embedding_provider and embedding_provider.fingerprint != "none")
     enabled_lanes = _resolved_lane_enabled(query.enabled_lanes, vector_available=vector_available)
-    # Daily timelines are a derived, short-lived view. They must not compete
-    # with stable Atoms and topic Books for an ordinary semantic question.
-    # A temporal query opts into both the documents and their dedicated lane.
     enabled_lanes["time"] = enabled_lanes["time"] and timeline_requested
     lane_weights = _resolved_lane_weights(query.lane_weights)
-    # Keep the recall pool independent of a small presentation top_k. With a
-    # top_k-derived pool, asking for 5 results could entirely omit the exact
-    # fact that appears when asking for 12, making ranking non-monotonic.
     lane_limit = max(64, query.top_k * 4)
+    lexical_specs = {
+        "bm25_raw": ((expansion.primary_query, *expansion.lexical_terms), ("raw_text",)),
+        "bm25_tags": ((*expansion.matched_aliases, *expansion.activated_tags, *expansion.expansion_terms),
+                      ("tags_text", "aliases_text", "surface_hints_text", "query_expansions_text")),
+        "tagmemo": (expansion.activated_tags, ("tags_text", "aliases_text", "query_expansions_text")),
+    }
+    candidate_rows, discovery_reason = _lexical_candidate_rows(
+        conn, query=query, lexical_specs=lexical_specs, enabled_lanes=enabled_lanes,
+        visible_owners=visible_owners, vector_available=vector_available, limit=lane_limit,
+    )
+    doc_ids = tuple(sorted({str(row["doc_id"]) for rows in candidate_rows.values() for row in rows})) if candidate_rows is not None else None
+    docs = _active_docs(conn, query=query, timeline_intent=timeline_intent,
+                        now_ms=retrieval_now_ms, doc_ids=doc_ids)
+    if candidate_rows is not None:
+        eligible_ids = {str(doc["doc_id"]) for doc in docs if not _doc_blocked(doc, blocked)}
+        if any(rows and not any(str(row["doc_id"]) in eligible_ids for row in rows)
+               for rows in candidate_rows.values()):
+            # The existing lexical ranker falls back to complete substring
+            # ranking when its FTS prefix has no governed winner. Keep that
+            # recall guarantee instead of pretending an empty prefix is final.
+            docs = _active_docs(conn, query=query, timeline_intent=timeline_intent, now_ms=retrieval_now_ms)
+            discovery_reason = "governed_fts_prefix_empty"
+            doc_ids = None
     vectors = (
         load_retrieval_doc_vectors(conn, embedding_provider.fingerprint, (str(doc["doc_id"]) for doc in docs))
         if vector_available and embedding_provider is not None else {}
@@ -99,6 +110,7 @@ def retrieve_hybrid_rag_candidates(
             conn,
             docs=docs,
             lane="bm25_raw",
+            candidate_rows=candidate_rows.get("bm25_raw") if candidate_rows is not None else None,
             terms=(expansion.primary_query, *expansion.lexical_terms),
             fields=("raw_text",),
             blocked=blocked,
@@ -114,6 +126,7 @@ def retrieve_hybrid_rag_candidates(
             conn,
             docs=docs,
             lane="bm25_tags",
+            candidate_rows=candidate_rows.get("bm25_tags") if candidate_rows is not None else None,
             terms=(*expansion.matched_aliases, *expansion.activated_tags, *expansion.expansion_terms),
             fields=("tags_text", "aliases_text", "surface_hints_text", "query_expansions_text"),
             blocked=blocked,
@@ -129,6 +142,7 @@ def retrieve_hybrid_rag_candidates(
             conn,
             docs=docs,
             lane="tagmemo",
+            candidate_rows=candidate_rows.get("tagmemo") if candidate_rows is not None else None,
             terms=expansion.activated_tags,
             fields=("tags_text", "aliases_text", "query_expansions_text"),
             blocked=blocked,
@@ -260,6 +274,16 @@ def retrieve_hybrid_rag_candidates(
         },
         "elapsedMs": elapsed_ms,
         "parallelExecution": True,
+        "candidateDiscovery": {
+            "strategy": discovery_reason,
+            "candidateCountBounded": doc_ids is not None,
+            # Final admitted documents, not all body rows fetched before filtering.
+            "admittedDocuments": len(docs),
+            "candidateLimitPerLexicalLane": lane_limit * 8,
+            "candidateIds": len(doc_ids) if doc_ids is not None else None,
+            # FTS scoring and fallback scans still do corpus-dependent work.
+            "scanBounded": False,
+        },
         "vectorIndexDocuments": len(vectors),
         "overBudget": elapsed_ms > max(1, int(query.latency_budget_ms)),
         "hits": [hit.__dict__ for hit in hits],
@@ -470,10 +494,11 @@ def _active_docs(
     timeline_intent: TimelineIntent | None = None,
     now_ms: int | None = None,
     source_ids: tuple[str, ...] | None = None,
+    doc_ids: tuple[str, ...] | None = None,
 ) -> list[dict[str, object]]:
     # The primary Session boundary revalidates a bounded existing pack with
     # the same source/scope owner, without searching or loading the corpus.
-    if source_ids is not None and not source_ids:
+    if (source_ids is not None and not source_ids) or (doc_ids is not None and not doc_ids):
         return []
     source_clause = (
         " AND source_id IN (" + ",".join("?" for _ in source_ids) + ")"
@@ -488,6 +513,12 @@ def _active_docs(
         query.knowledge_caller,
         table_alias="memory_retrieval_docs",
     )
+    # Start from the selected primary keys, not a status-prefix corpus scan.
+    # CROSS JOIN fixes the loop order even on small databases without ANALYZE.
+    doc_source = "memory_retrieval_docs" if doc_ids is None else (
+        "json_each(?) AS selected CROSS JOIN memory_retrieval_docs "
+        "ON memory_retrieval_docs.doc_id = selected.value"
+    )
     rows = conn.execute(
         f"""
         SELECT doc_id, doc_type, source_id, raw_text, tags_text, aliases_text, surface_hints_text,
@@ -495,7 +526,7 @@ def _active_docs(
                knowledge_domain, scope_kind, scope_id, visibility,
                authorization_revision, binding_id, scope_mode,
                source_revision, projection_version, updated_at_ms, metadata_json
-        FROM memory_retrieval_docs
+        FROM {doc_source}
         WHERE status = 'active'
           AND doc_type != 'item'
           AND (? = '' OR project = ? OR project = '')
@@ -504,7 +535,8 @@ def _active_docs(
           AND {scope_clause}
           {source_clause}
         """,
-        (query.project, query.project, query.app, query.app, *owner_params, *scope_params,
+        (*((json.dumps(doc_ids),) if doc_ids is not None else ()),
+         query.project, query.project, query.app, query.app, *owner_params, *scope_params,
          *(source_ids or ())),
     ).fetchall()
     current_group = ContextGroup(
@@ -544,16 +576,9 @@ def _active_docs(
         resolved_timeline_intent,
         now=resolved_now,
     )
-    for row, metadata in parsed_rows:
-        if not authoritative_retrieval_doc(
-            conn,
-            {
-                "doc_type": row["doc_type"],
-                "source_id": row["source_id"],
-                "source_revision": row["source_revision"],
-                "projection_version": row["projection_version"],
-            },
-        ):
+    authority = authoritative_retrieval_docs(conn, (dict(row) for row, _ in parsed_rows))
+    for (row, metadata), valid in zip(parsed_rows, authority):
+        if not valid:
             continue
         source_event_ids = _metadata_source_event_ids(metadata)
         if source_event_ids and not set(source_event_ids).issubset(
@@ -686,8 +711,6 @@ def _governed_visible_event_ids(
     return visible
 
 
-def _timeline_requested(query: HybridRagQuery) -> bool:
-    return _timeline_intent_for_query(query).requested
 
 
 def _recent_timeline_requested(
@@ -818,6 +841,7 @@ def _rank_fts5_docs(
     visible_owners: tuple[tuple[str, str], ...],
     knowledge_caller: KnowledgeCallerContext | None = None,
     limit: int,
+    candidate_rows: list[sqlite3.Row] | None = None,
 ) -> tuple[list[HybridRagHit], str]:
     """Run a column-scoped FTS5 BM25 query, with an explicit safe fallback.
 
@@ -833,38 +857,11 @@ def _rank_fts5_docs(
     docs_by_id = {str(doc["doc_id"]): doc for doc in docs}
     if not docs_by_id:
         return [], "sqlite_fts5_bm25"
-    owner_clause, owner_params = sql_memory_owner_predicate(
-        visible_owners,
-        table_alias="d",
-    )
-    scope_clause, scope_params = scope_sql_predicate(knowledge_caller, table_alias="d")
     try:
-        rows = conn.execute(
-            f"""
-            SELECT d.doc_id, bm25(memory_retrieval_docs_fts) AS bm25_score
-            FROM memory_retrieval_docs_fts
-            JOIN memory_retrieval_docs AS d
-              ON d.rowid = memory_retrieval_docs_fts.rowid
-            WHERE memory_retrieval_docs_fts MATCH ?
-              AND d.status = 'active'
-              AND (? = '' OR d.project = ? OR d.project = '')
-              AND (? = '' OR d.app = ? OR d.app = '')
-              AND {owner_clause}
-              AND {scope_clause}
-            ORDER BY bm25(memory_retrieval_docs_fts) ASC, d.updated_at_ms DESC
-            LIMIT ?
-            """,
-            (
-                match_query,
-                project,
-                project,
-                app,
-                app,
-                *owner_params,
-                *scope_params,
-                max(1, limit * 8),
-            ),
-        ).fetchall()
+        rows = candidate_rows if candidate_rows is not None else _fts5_candidate_rows(
+            conn, match_query=match_query, project=project, app=app,
+            visible_owners=visible_owners, knowledge_caller=knowledge_caller, limit=limit,
+        )
     except sqlite3.OperationalError:
         return (
             _rank_docs(docs, lane=lane, terms=terms, fields=fields, blocked=blocked, limit=limit),
@@ -897,6 +894,93 @@ def _rank_fts5_docs(
         if fallback_hits:
             return fallback_hits, "lexical_substring_fallback"
     return hits, "sqlite_fts5_bm25"
+
+
+def _fts5_candidate_rows(
+    conn: sqlite3.Connection,
+    *,
+    match_query: str,
+    project: str,
+    app: str,
+    visible_owners: tuple[tuple[str, str], ...],
+    knowledge_caller: KnowledgeCallerContext | None,
+    limit: int,
+) -> list[sqlite3.Row]:
+    owner_clause, owner_params = sql_memory_owner_predicate(
+        visible_owners,
+        table_alias="d",
+    )
+    scope_clause, scope_params = scope_sql_predicate(knowledge_caller, table_alias="d")
+    return conn.execute(
+            f"""
+            SELECT d.doc_id, bm25(memory_retrieval_docs_fts) AS bm25_score
+            FROM memory_retrieval_docs_fts
+            JOIN memory_retrieval_docs AS d
+              ON d.rowid = memory_retrieval_docs_fts.rowid
+            WHERE memory_retrieval_docs_fts MATCH ?
+              AND d.status = 'active'
+              AND (? = '' OR d.project = ? OR d.project = '')
+              AND (? = '' OR d.app = ? OR d.app = '')
+              AND {owner_clause}
+              AND {scope_clause}
+            ORDER BY bm25(memory_retrieval_docs_fts) ASC, d.updated_at_ms DESC
+            LIMIT ?
+            """,
+            (
+                match_query,
+                project,
+                project,
+                app,
+                app,
+                *owner_params,
+                *scope_params,
+                max(1, limit * 8),
+            ),
+        ).fetchall()
+
+
+def _lexical_candidate_rows(
+    conn: sqlite3.Connection,
+    *,
+    query: HybridRagQuery,
+    lexical_specs: dict[str, tuple[tuple[str, ...], tuple[str, ...]]],
+    enabled_lanes: dict[str, bool],
+    visible_owners: tuple[tuple[str, str], ...],
+    vector_available: bool,
+    limit: int,
+) -> tuple[dict[str, list[sqlite3.Row]] | None, str]:
+    # Exact cosine and temporal/feedback scoring do not yet have indexed
+    # discovery. Do not substitute lexical IDs for their independent recall.
+    if vector_available:
+        return None, "exact_dense_requires_complete_scan"
+    if enabled_lanes["time"]:
+        return None, "temporal_requires_complete_scan"
+    if enabled_lanes["feedback"] and conn.execute(
+        """SELECT 1 FROM candidate_feedback WHERE action = 'accepted'
+           AND (? = '' OR project = ? OR project = '')
+           AND (? = '' OR app = ? OR app = '') LIMIT 1""",
+        (query.project, query.project, query.app, query.app),
+    ).fetchone() is not None:
+        return None, "feedback_requires_complete_scan"
+    result: dict[str, list[sqlite3.Row]] = {}
+    for lane, (terms, fields) in lexical_specs.items():
+        if not enabled_lanes[lane]:
+            continue
+        match_query = _fts5_match_query(terms, fields=fields)
+        if not match_query:
+            result[lane] = []
+            continue
+        try:
+            rows = _fts5_candidate_rows(conn, match_query=match_query,
+                                       project=query.project, app=query.app,
+                                       visible_owners=visible_owners,
+                                       knowledge_caller=query.knowledge_caller, limit=limit)
+        except sqlite3.OperationalError:
+            return None, "fts_unavailable_substring_scan"
+        if not rows:
+            return None, "fts_no_match_substring_scan"
+        result[lane] = rows
+    return result, "indexed_fts_ids"
 
 
 def _fts5_match_query(terms: Iterable[str], *, fields: tuple[str, ...]) -> str:

@@ -34,7 +34,7 @@ const KnowledgeFeature = lazy(async () => ({ default: (await import('@/features/
 const EvalLabFeature = lazy(async () => ({ default: (await import('@/features/eval-lab')).EvalLabFeature }));
 const MemoryFeature = lazy(async () => ({ default: (await import('@/features/memory')).MemoryFeature }));
 
-export type PawNativeAppId = Exclude<PawOsAppId, 'agent' | 'agent-capsule' | 'browser' | 'files' | 'terminal' | 'trace-agent' | 'schedules'>;
+export type PawNativeAppId = Exclude<PawOsAppId, 'agent-controller' | 'agent' | 'agent-capsule' | 'browser' | 'files' | 'terminal' | 'trace-agent' | 'schedules'>;
 type PawFeatureAppId = Exclude<PawNativeAppId, PawSystemAppId>;
 
 type NativePage = { id: string; label: string; icon: LucideIcon; route: string };
@@ -82,7 +82,8 @@ function PawFeatureApp({ appId, initialRoute }: { appId: PawFeatureAppId; initia
         <nav aria-label={`${app.label}页面`} {...sidebar.contentProps}>
           {pages.map((page) => {
             const Icon = page.icon;
-            return <button aria-current={page.id === pageId ? 'page' : undefined} aria-label={page.label} key={page.id} onClick={() => openPawOsRoute(desktop, page.route)} title={page.label} type="button"><Icon aria-hidden="true" size={15} /><span>{page.label}</span><ChevronRight aria-hidden="true" size={13} /></button>;
+            const nextRoute = appId === 'project-workbench' ? withPlanningDate(page.route, planningDateFromRoute(route)) : page.route;
+            return <button aria-current={page.id === pageId ? 'page' : undefined} aria-label={page.label} key={page.id} onClick={() => openPawOsRoute(desktop, nextRoute)} title={page.label} type="button"><Icon aria-hidden="true" size={15} /><span>{page.label}</span><ChevronRight aria-hidden="true" size={13} /></button>;
           })}
         </nav>
       </aside>}
@@ -137,7 +138,23 @@ function ProjectSurface({ pageId, route }: { pageId: string; route: string }) {
 
 function ProjectWorkbenchSurface({ pageId, route }: { pageId: PawWorkbenchPageId; route: string }) {
   const desktop = usePawOsDesktop();
-  const [planningDate, setPlanningDate] = useState(() => localDate(new Date()));
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [planningDate, setPlanningDateState] = useState(() => planningDateFromRoute(route) ?? localDate(new Date()));
+  const routedDate = planningDateFromRoute(`${location.pathname}${location.search}${location.hash}`);
+  useEffect(() => { if (routedDate) setPlanningDateState(routedDate); }, [routedDate]);
+  function setPlanningDate(date: string) {
+    setPlanningDateState(date);
+    if (validPlanningDate(date)) {
+      // The desktop already persists window routes. Keep the user's date in
+      // that owner instead of resetting it from the clock after every reopen.
+      navigate(withPlanningDate(`${location.pathname}${location.search}${location.hash}`, date), { replace: true });
+    }
+  }
+  function openProjectRoute(nextRoute: string): void {
+    const date = validPlanningDate(planningDate) ? planningDate : routedDate;
+    openPawOsRoute(desktop, withPlanningDate(nextRoute, date));
+  }
   const overview = useNativeResource('overview.get');
   const planning = useNativeResource('planning.dashboard', { query: { date: planningDate } });
   const [documentScope, setDocumentScope] = useState<WorkDocumentScope>('active');
@@ -176,7 +193,7 @@ function ProjectWorkbenchSurface({ pageId, route }: { pageId: PawWorkbenchPageId
   function openDocument(document: Record<string, unknown>): void {
     const documentId = text(document.documentId) || text(document.id);
     if (!documentId) return;
-    openPawOsRoute(desktop, `/work-documents?document=${encodeURIComponent(documentId)}`);
+    openProjectRoute(`/work-documents?document=${encodeURIComponent(documentId)}`);
   }
 
   function openDocumentWindow(document: Record<string, unknown>): void {
@@ -194,7 +211,7 @@ function ProjectWorkbenchSurface({ pageId, route }: { pageId: PawWorkbenchPageId
   }
 
   const primaryAction = pageId === 'overview'
-    ? { label: '查看任务', onClick: () => openPawOsRoute(desktop, '/planning') }
+    ? { label: '查看任务', onClick: () => openProjectRoute('/planning') }
     : pageId === 'planning'
       ? { label: '添加任务', onClick: () => setTaskDialogOpen(true) }
       : { label: '登记工作文档', onClick: () => setRegisterDialogOpen(true) };
@@ -215,7 +232,7 @@ function ProjectWorkbenchSurface({ pageId, route }: { pageId: PawWorkbenchPageId
             void workDocuments.detail.refetch();
           }}
           onErased={() => {
-            openPawOsRoute(desktop, '/work-documents');
+            openProjectRoute('/work-documents');
             void workDocuments.active.refetch();
             void workDocuments.history.refetch();
           }}
@@ -223,7 +240,7 @@ function ProjectWorkbenchSurface({ pageId, route }: { pageId: PawWorkbenchPageId
         />
       ) : undefined}
       documentScope={documentScope}
-      onCloseDocument={() => openPawOsRoute(desktop, '/work-documents')}
+      onCloseDocument={() => openProjectRoute('/work-documents')}
       onCreateGoal={() => {
         setSelectedGoal(null);
         setGoalDialogOpen(true);
@@ -231,7 +248,7 @@ function ProjectWorkbenchSurface({ pageId, route }: { pageId: PawWorkbenchPageId
       onDocumentHistoryQueryChange={setDocumentHistoryQuery}
       onDocumentScopeChange={(scope) => {
         setDocumentScope(scope);
-        if (requestedDocumentId) openPawOsRoute(desktop, '/work-documents');
+        if (requestedDocumentId) openProjectRoute('/work-documents');
       }}
       onEditGoal={(goal) => {
         setSelectedGoal(goal);
@@ -244,7 +261,7 @@ function ProjectWorkbenchSurface({ pageId, route }: { pageId: PawWorkbenchPageId
       onOpenDocument={openDocument}
       onOpenDocumentWindow={openDocumentWindow}
       onOpenTask={openTask}
-      onNavigate={(nextPage) => openPawOsRoute(desktop, nextPage === 'planning' ? '/planning' : nextPage === 'documents' ? '/work-documents' : '/overview')}
+      onNavigate={(nextPage) => openProjectRoute(nextPage === 'planning' ? '/planning' : nextPage === 'documents' ? '/work-documents' : '/overview')}
       onRefresh={(resource) => {
         if (resource === 'overview') overview.reload();
         else if (resource === 'planning') planning.reload();
@@ -385,6 +402,21 @@ function localDate(value: Date): string {
   const month = String(value.getMonth() + 1).padStart(2, '0');
   const day = String(value.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+function validPlanningDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith('0000-')) return false;
+  const date = new Date(`${value}T12:00:00Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+function planningDateFromRoute(route: string): string | undefined {
+  const date = new URL(route || '/', 'http://paw.local').searchParams.get('date');
+  return date && validPlanningDate(date) ? date : undefined;
+}
+function withPlanningDate(route: string, date?: string): string {
+  if (!date) return route;
+  const url = new URL(route, 'http://paw.local');
+  url.searchParams.set('date', date);
+  return `${url.pathname}${url.search}${url.hash}`;
 }
 function errorText(error: unknown): string {
   if (error === null || error === undefined || error === '') return '';

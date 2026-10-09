@@ -2032,12 +2032,6 @@ def _recent_input_history_evidence(
     return tuple(result[-200:])
 
 
-def _recent_context_overlap(recent: str, foreground: str) -> int:
-    maximum = min(len(recent), len(foreground), 120)
-    for width in range(maximum, 7, -1):
-        if recent.endswith(foreground[:width]):
-            return width
-    return 0
 
 
 def _merge_evidence(

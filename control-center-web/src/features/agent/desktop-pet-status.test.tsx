@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MotionProvider, useMotionPreference } from '@/design/motion';
+import { ChatPresentationProvider } from '@/features/conversation-ui/reading/chat-presentation';
 import { PetStatusSignal } from './desktop-pet-status';
 import type { PetConversationState } from './desktop-pet-snapshot';
 import petCss from './desktop-pet.css?inline';
@@ -72,5 +73,32 @@ describe('planet task status shapes', () => {
       document.dispatchEvent(new Event('visibilitychange'));
     });
     expect(view.container.querySelector('svg')).toHaveAttribute('data-motion-active', 'false');
+  });
+});
+
+const states: PetConversationState[] = ['running', 'attention', 'error', 'paused', 'idle', 'terminal', 'unknown'];
+describe('directory signal display palette', () => {
+  it('retains all seven shapes and state identifiers, with colorful v2 opt-in and an actual classic rollback', () => {
+    const tree = (version: 'v1' | 'v2') => <ChatPresentationProvider key={version} ownerKey="builtin:desktop-pet" defaultVersion={version}>
+      {states.map(state => <PetStatusSignal key={state} state={state}/>)}
+    </ChatPresentationProvider>;
+    const view = render(tree('v2'));
+    const before = Array.from(view.container.querySelectorAll('svg'));
+    expect(before.map(svg => svg.dataset.state)).toEqual(states);
+    const paths = before.map(svg => svg.innerHTML);
+    expect(before.every(svg => svg.dataset.palette === 'planet')).toBe(true);
+    expect(before[0].style.color).not.toBe(before[1].style.color);
+    expect(before[6].dataset.state).toBe('unknown');
+    expect(before[6].querySelector('[stroke-dasharray]')).toBeTruthy();
+    expect(before[5].querySelector('rect')).toBeTruthy();
+    view.rerender(tree('v1'));
+    const after = Array.from(view.container.querySelectorAll('svg'));
+    expect(after.map(svg => svg.innerHTML)).toEqual(paths);
+    expect(after.every(svg => !svg.hasAttribute('data-palette') && !svg.hasAttribute('style'))).toBe(true);
+  });
+  it('does not color other App v2 contexts or infer a new connection state', () => {
+    const view = render(<ChatPresentationProvider ownerKey="builtin:agent" defaultVersion="v2"><PetStatusSignal state="unknown"/></ChatPresentationProvider>);
+    expect(view.container.querySelector('svg')).not.toHaveAttribute('data-palette');
+    expect(view.container.querySelector('svg')).toHaveAttribute('data-state', 'unknown');
   });
 });

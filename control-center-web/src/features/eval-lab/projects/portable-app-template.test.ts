@@ -17,6 +17,55 @@ function mount() {
 }
 
 describe('portable App interaction starter', () => {
+  it('blocks the original unconfirmed submission but permits an explicit new draft without replay', async () => {
+    const {dom,element,question}=mount();
+    try {
+      const requestId='11111111-1111-4111-8111-111111111111';
+      const invoke=vi.fn().mockRejectedValueOnce(Object.assign(new Error('Connection lost'),{state:'unconfirmed',requestId})).mockResolvedValueOnce({text:'New task answer'});
+      const reconcile=vi.fn(async()=>({state:'completed',result:{text:'Original owner answer'}}));
+      Object.assign(dom.window,{pawApp:{invoke,reconcile,history:async()=>[]}});
+      element('answer-button').click();await vi.waitFor(()=>expect(question.readOnly).toBe(false));
+      expect((element('answer-button') as HTMLButtonElement).disabled).toBe(true);
+      question.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
+      expect(invoke).toHaveBeenCalledTimes(1);
+      // Same text can be a new task: ownership follows explicit input, not string equality.
+      question.dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+      expect((element('answer-button') as HTMLButtonElement).disabled).toBe(false);
+      element('answer-button').click();await vi.waitFor(()=>expect(invoke).toHaveBeenCalledTimes(2));
+      expect(reconcile).not.toHaveBeenCalled();
+      expect(dom.window.document.querySelectorAll('.turn')).toHaveLength(2);
+    }finally{dom.window.close()}
+  });
+  it('reconciles an unknown original request without sending another invocation', async () => {
+    const {dom,element,question}=mount();
+    try {
+      const requestId='11111111-1111-4111-8111-111111111111';
+      const invoke=vi.fn(async()=>{throw Object.assign(new Error('Connection lost'),{state:'unconfirmed',requestId})});
+      const reconcile=vi.fn(async()=>({state:'completed',result:{text:'Original owner answer'}}));
+      Object.assign(dom.window,{pawApp:{invoke,reconcile,history:async()=>[]}});
+      element('answer-button').click();await vi.waitFor(()=>expect(question.readOnly).toBe(false));
+      expect((element('answer-button') as HTMLButtonElement).disabled).toBe(true);
+      const controls=(dom.window as unknown as {agentTestControls:{onCheck:()=>Promise<void>}}).agentTestControls;
+      await controls.onCheck();
+      expect(reconcile).toHaveBeenCalledWith(requestId);expect(invoke).toHaveBeenCalledTimes(1);
+      expect(element('answer').textContent).toBe('Original owner answer');expect((element('answer-button') as HTMLButtonElement).disabled).toBe(false);
+    }finally{dom.window.close()}
+  });
+  it('uses an exact failed reconciliation receipt over stale answering progress', async () => {
+    const {dom,element,question}=mount();
+    try {
+      const invoke=vi.fn(async()=>{throw Object.assign(new Error('Connection lost'),{state:'unconfirmed',requestId:'original-request'})});
+      const reconcile=vi.fn(async()=>({state:'failed',progress:{stage:'answering',text:'Saved partial answer'},message:'Owner failure receipt'}));
+      Object.assign(dom.window,{pawApp:{invoke,reconcile,history:async()=>[]}});
+      element('answer-button').click();await vi.waitFor(()=>expect(question.readOnly).toBe(false));
+      await (dom.window as unknown as {agentTestControls:{onCheck:()=>Promise<void>}}).agentTestControls.onCheck();
+      expect(element('process').dataset.state).toBe('failed');
+      expect(element('process').dataset.running).toBe('false');
+      expect(element('status').textContent).toBe('本次未完成');
+      expect((element('answer-button') as HTMLButtonElement).disabled).toBe(false);
+      expect(invoke).toHaveBeenCalledTimes(1);expect(reconcile).toHaveBeenCalledWith('original-request');
+    }finally{dom.window.close()}
+  });
   it('draws only observed processing stages and safely visualizes structured answers', async () => {
     const { dom, element, question } = mount();
     try {

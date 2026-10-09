@@ -846,6 +846,11 @@ const PawWindow = memo(function PawWindow({ collaborationFocusGroup, flowState, 
   const node = usePawDesktopStore((state) => state.windows[windowId]);
   const zIndex = usePawDesktopStore((state) => state.stack.indexOf(windowId) + 10);
   const active = usePawDesktopStore((state) => state.activeWindowId === windowId);
+  const subscribeExitCancellation = useCallback((cancel: () => void) => api.subscribe((state, previous) => {
+    if (!state.windows[windowId] || state.windows[windowId].minimized
+      || (state.foregroundWindowRequest !== previous.foregroundWindowRequest
+        && state.foregroundWindowRequest?.windowId === windowId)) cancel();
+  }), [api, windowId]);
   const openLinkedRoute = useCallback((event: ReactMouseEvent<HTMLElement>) => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     const anchor = (event.target as HTMLElement).closest<HTMLAnchorElement>('a[href]');
@@ -898,6 +903,7 @@ const PawWindow = memo(function PawWindow({ collaborationFocusGroup, flowState, 
   return (
     <PawWindowFrame
       active={active}
+      subscribeExitCancellation={subscribeExitCancellation}
       bounds={node.bounds}
       collaborationRole={collaborationRole}
       deferPointerInteractionUntilFocused={!collaborationFocusGroup && Boolean(satelliteGroup(node.target))}
@@ -1015,7 +1021,7 @@ export function openDesktopRoute(api: ReturnType<typeof usePawDesktopApi>, route
   }
 }
 
-export function PawWindowFrame({ active, appId, bounds, children, collaborationRole, deferPointerInteractionUntilFocused = false, flowState, focusFrame, focusLocked = false, frameMode = 'window', onBoundsCommit, onClose, onDetach, onFocus, onMinimize, onOpenFromOverview, onSnap, onToggleMaximize, overview = false, overviewFrame, placement, subtitle, targetKind, title, windowChrome, windowId, zIndex }: {
+export function PawWindowFrame({ active, appId, bounds, children, collaborationRole, deferPointerInteractionUntilFocused = false, flowState, focusFrame, focusLocked = false, frameMode = 'window', onBoundsCommit, onClose, onDetach, onFocus, onMinimize, onOpenFromOverview, onSnap, onToggleMaximize, overview = false, overviewFrame, placement, subtitle, subscribeExitCancellation, targetKind, title, windowChrome, windowId, zIndex }: {
   active: boolean;
   appId: PawAppId;
   bounds: PawWindowBounds;
@@ -1038,6 +1044,7 @@ export function PawWindowFrame({ active, appId, bounds, children, collaborationR
   overviewFrame?: OverviewFrame;
   placement?: PawWindowPlacement;
   subtitle?: string;
+  subscribeExitCancellation?: (cancel: () => void) => () => void;
   targetKind?: PawOsWindowRequest['target']['kind'];
   title: string;
   windowChrome?: string;
@@ -1058,7 +1065,7 @@ export function PawWindowFrame({ active, appId, bounds, children, collaborationR
    * answers to the shared desktop area. */
   const containToDesktop = !focusFrame;
   const drag = useWindowDrag(shellRef, interactionBounds, onBoundsCommit, onFocus, focusFrame ? undefined : onSnap, active, deferPointerInteractionUntilFocused, containToDesktop);
-  const exit = useWindowExit(shellRef, appId);
+  const exit = useWindowExit(shellRef, appId, subscribeExitCancellation);
   /* Windows arrive the way a real OS opens them: a short scale-up fade on the
    * inner surface (the shell's transform belongs to drag, snap and overview).
    * The same mount path covers restore-from-minimize, so a restored window
@@ -1343,8 +1350,26 @@ function useWindowPlacementFlip(
   }, [next.bounds.height, next.bounds.width, next.bounds.x, next.bounds.y, next.enabled, next.placement, ref]);
 }
 
-function useWindowExit(ref: RefObject<HTMLElement | null>, appId: PawAppId) {
+function useWindowExit(
+  ref: RefObject<HTMLElement | null>,
+  appId: PawAppId,
+  subscribeCancellation?: (cancel: () => void) => () => void,
+) {
+  const pendingRef = useRef<{ animation: Animation; surface: HTMLElement } | null>(null);
+  const cancel = useCallback(() => {
+    const pending = pendingRef.current;
+    if (!pending) return;
+    // Invalidate before cancel(): its finished promise rejects asynchronously.
+    pendingRef.current = null;
+    delete pending.surface.dataset.exiting;
+    pending.animation.cancel();
+  }, []);
+  useLayoutEffect(() => {
+    const unsubscribe = subscribeCancellation?.(cancel);
+    return () => { unsubscribe?.(); cancel(); };
+  }, [cancel, subscribeCancellation]);
   return useCallback((kind: 'close' | 'minimize', finish: () => void) => {
+    if (pendingRef.current) return;
     const surface = ref.current?.querySelector<HTMLElement>('.paw-window');
     if (!surface || typeof surface.animate !== 'function' || pawWindowReducedMotion()) {
       finish();
@@ -1378,8 +1403,15 @@ function useWindowExit(ref: RefObject<HTMLElement | null>, appId: PawAppId) {
       easing,
       fill: 'forwards',
     });
-    void animation.finished.then(finish, finish);
-  }, [ref, appId]);
+    const pending = { animation, surface };
+    pendingRef.current = pending;
+    const complete = () => {
+      if (pendingRef.current !== pending) return;
+      cancel(); // Drop fill-forwards and the exiting marker before committing.
+      finish();
+    };
+    void animation.finished.then(complete, complete);
+  }, [ref, appId, cancel]);
 }
 
 /* The one genie geometry, shared by both directions of the minimize round

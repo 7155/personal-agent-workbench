@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { BookOpen, Check, ChevronDown, Clipboard, ClipboardList, Code2, FilePenLine, FolderOpen, Globe, Network, Search, Sparkles, SquareTerminal, UsersRound, Wrench } from 'lucide-react';
 import { writeClipboardText } from '@/platform/clipboard';
 import { usePresentationMotion } from '../reading/reading-preferences';
+import { useChatPresentation } from '../reading/chat-presentation';
 import type { ToolCallBlock } from '../model/types';
 import { codeModeOutputText, codeModeSourceFromInput, isCodeModeTool, type CodeModeCall, type CodeModeDetails } from '../model/codemode';
 import { ToolStatusMark } from './ToolStatusMark';
@@ -57,6 +58,8 @@ export function PiToolReceiptView({ block, action, detail, receipt, detailId, op
   detailId: string; open: boolean; panel: Panel; motion: boolean; copyState: CopyState;
   onToggle: () => void; onPanel: (panel: Panel) => void; onCopy: () => void;
 }) {
+  const presentation = useChatPresentation();
+  const [interaction, setInteraction] = useState<'pointer' | 'keyboard'>('keyboard');
   const codeMode = isCodeModeTool(block) ? block.codeMode : undefined;
   const codeModeSource = isCodeModeTool(block) ? codeModeSourceFromInput(block.input) : '';
   const codeModeOutput = isCodeModeTool(block) ? codeModeOutputText(block.output) : '';
@@ -64,8 +67,13 @@ export function PiToolReceiptView({ block, action, detail, receipt, detailId, op
   const displayName = actionLabels[block.name] ?? block.name;
   const copyable = panel === 'input' ? Boolean(block.input) : !detail && Boolean(block.output);
   const resultLabel = receipt.status === 'running' && block.output ? '实时片段' : '返回内容';
-  const summary = codeMode ? codeModeSummary(codeMode, receipt.status) : receipt.summary;
-  return <section data-design="pi-receipt" data-motion={motion} data-expanded={open && hasDetail} data-code-mode={codeMode ? 'true' : undefined} className={`ccui-tool-card status-${receipt.status}`} data-tool-block={block.id} data-execution-outcome={block.executionOutcome}>
+  const rawSummary = codeMode ? codeModeSummary(codeMode, receipt.status) : receipt.summary;
+  const redundantSummary = [displayName, block.name].some(name =>
+    rawSummary?.replace(/\s+/g, '') === `${name}${receipt.label}`.replace(/\s+/g, ''));
+  const summary = presentation?.version === 'v2' && redundantSummary ? '' : rawSummary;
+  return <section data-design="pi-receipt" data-motion={motion} data-expanded={open && hasDetail} data-code-mode={codeMode ? 'true' : undefined} className={`ccui-tool-card status-${receipt.status}`} data-tool-block={block.id} data-execution-outcome={block.executionOutcome}
+    data-feedback={presentation?.version === 'v2' ? 'current' : undefined} data-interaction={interaction}
+    onPointerDownCapture={() => setInteraction('pointer')} onKeyDownCapture={() => setInteraction('keyboard')}>
     <button type="button" className="ccui-tool-head" aria-expanded={hasDetail ? open : undefined} aria-controls={hasDetail ? detailId : undefined} disabled={!hasDetail} onClick={onToggle}>
       <Glyph className="ccui-tool-kind" size={17} strokeWidth={1.7} aria-hidden />
       <span className="ccui-tool-main"><strong title={displayName !== block.name ? block.name : undefined}>{displayName}</strong>{summary ? <span title={summary}>{summary}</span> : null}</span>

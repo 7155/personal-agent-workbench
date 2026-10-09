@@ -682,25 +682,27 @@ function TaskDetail({
     <aside className="paw-wb-detail" data-expanded={detailsExpanded || undefined}>
       <header><StatusMark lane={taskLane(task)} /><div><h2 title={taskTitle(task)}>{taskTitle(task)}</h2><p>{taskMeta(task)}</p></div></header>
       <div className="paw-wb-detail__actions">
-        {onEditTask ? <button onClick={() => onEditTask(task)} type="button"><PencilLine aria-hidden size={14} />编辑任务</button> : null}
+        {onEditTask ? <button aria-label="编辑任务" onClick={() => onEditTask(task)} type="button"><PencilLine aria-hidden size={14} /><span className="paw-wb-detail__action-label">编辑任务</span><span className="paw-wb-detail__short-label" aria-hidden>编辑</span></button> : null}
         <button
+          aria-label={detailsExpanded ? '收起任务详情' : '展开任务详情'}
           aria-expanded={detailsExpanded}
           className="paw-wb-detail__compact-toggle"
           onClick={() => setDetailsExpanded((expanded) => !expanded)}
           type="button"
         >
           <ChevronDown aria-hidden size={14} />
-          {detailsExpanded ? '收起任务详情' : '展开任务详情'}
+          <span className="paw-wb-detail__action-label">{detailsExpanded ? '收起任务详情' : '展开任务详情'}</span>
+          <span className="paw-wb-detail__short-label" aria-hidden>{detailsExpanded ? '收起' : '详情'}</span>
         </button>
-        <button onClick={() => onOpenTask(task)} type="button"><PanelsTopLeft aria-hidden size={14} />打开任务窗口</button>
+        <button aria-label="打开任务窗口" onClick={() => onOpenTask(task)} type="button"><PanelsTopLeft aria-hidden size={14} /><span className="paw-wb-detail__action-label">打开任务窗口</span><span className="paw-wb-detail__short-label" aria-hidden>任务窗口</span></button>
       </div>
       <div className="paw-wb-detail__body">
         {detail ? <p className="paw-wb-detail__description">{detail}</p> : null}
         {progress !== null ? <section><h3>进度 · 真实比例</h3><strong>{taskProgressLabel(task)}</strong><span className="paw-wb-task-progress"><i style={{ width: `${Math.round(progress * 100)}%` }} /></span></section> : null}
         <dl>
-          {text(task.owner) ? <Fact label="Owner" value={text(task.owner)} /> : null}
+          {text(task.owner) ? <Fact label="负责人" value={text(task.owner)} /> : null}
           {text(task.project) ? <Fact label="项目" value={text(task.project)} /> : null}
-          {text(task.source) ? <Fact label="来源" value={text(task.source)} /> : null}
+          {text(task.source) ? <Fact label="来源" value={taskSourceLabel(text(task.source))} /> : null}
           <Fact label="状态" value={taskStateLabel(task)} />
           {realTaskId ? <Fact label="任务 ID" value={realTaskId} mono wide /> : null}
         </dl>
@@ -981,7 +983,11 @@ function taskTitle(task: PawWorkbenchRecord): string {
 }
 
 function taskMeta(task: PawWorkbenchRecord): string {
-  return [text(task.owner), text(task.project), text(task.source)].filter(Boolean).join(' · ') || '当前项目';
+  return [text(task.owner), text(task.project), taskSourceLabel(text(task.source))].filter(Boolean).join(' · ') || '当前项目';
+}
+
+function taskSourceLabel(value: string): string {
+  return value === 'manual' ? '手动创建' : value;
 }
 
 function taskLane(task: PawWorkbenchRecord): TaskLane {
@@ -1064,7 +1070,7 @@ function stateLabel(value: string): string {
   return ({
     active: '进行中', in_progress: '进行中', running: '运行中', review: '待验收', verifying: '验证中',
     done: '已完成', complete: '已完成', completed: '已完成', accepted: '已接受', pending: '待办', queued: '排队中',
-    ready: '已就绪', idle: '空闲', blocked: '受阻', failed: '失败', error: '错误', cancelled: '已取消',
+    todo: '待开始', ready: '已就绪', idle: '空闲', blocked: '受阻', failed: '失败', error: '错误', cancelled: '已取消',
     archive_pending: '等待归档', archived: '已归档', reopen_pending: '等待重开',
   } as Record<string, string>)[value] ?? value;
 }

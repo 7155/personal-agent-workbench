@@ -6,6 +6,23 @@ import { PawWorkbench, type PawWorkbenchProps, type PawWorkbenchRecord } from '.
 afterEach(cleanup);
 
 describe('PawWorkbench', () => {
+  it('uses product labels for native task facts without changing original task identity or unknown values', async () => {
+    const task = { id: 'task-native-original', title: '原始工作', status: 'todo', source: 'manual', owner: '小组 A' };
+    const future = { id: 'task-future', title: '待核对工作', status: 'future_status', source: 'external_source' };
+    const onEditTask = vi.fn();
+    const { container } = renderWorkbench({ pageId: 'planning', planning: { tasks: [task, future] }, onEditTask });
+    await userEvent.click(screen.getByRole('button', { name: '在依赖图中选择：原始工作' }));
+    const facts = within(container.querySelector('.paw-wb-detail__body > dl') as HTMLElement);
+    expect(facts.getByText('手动创建')).toBeInTheDocument();
+    expect(facts.getByText('待开始')).toBeInTheDocument();
+    expect(facts.getByText('负责人')).toBeInTheDocument();
+    expect(facts.getByText('task-native-original')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: '编辑任务' }));
+    expect(onEditTask).toHaveBeenCalledWith(task);
+    await userEvent.click(screen.getByRole('button', { name: '在依赖图中选择：待核对工作' }));
+    expect(facts.getByText('future_status')).toBeInTheDocument();
+    expect(facts.getByText('external_source')).toBeInTheDocument();
+  });
   it('renders the project overview from the supplied route records without seed data', async () => {
     const task = { id: 'task-real', title: '统一 Agent 入口', status: 'in_progress', owner: '前端' };
     const onOpenTask = vi.fn();

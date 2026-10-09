@@ -18,7 +18,7 @@ from rag_ime.db.migration_runner import (
     migration_status,
 )
 
-TESTED_SCHEMA_HEAD = 220
+TESTED_SCHEMA_HEAD = 224
 POST_0126_MIGRATIONS = tuple(range(127, TESTED_SCHEMA_HEAD + 1))
 
 

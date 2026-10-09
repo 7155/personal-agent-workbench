@@ -255,6 +255,8 @@ export function PluginsFeature() {
   const hiddenCount = items.filter((item) => item.disclosure.state === 'hidden' && !capabilityNeedsRoomContext(item)).length;
   const roomContextCount = items.filter(capabilityNeedsRoomContext).length;
   const pendingSummary = asRecord(pendingChange.summary);
+  const pendingRollback = stringValue(pendingSummary.action) === 'rollback';
+  const pendingRollbackTarget = stringValue(pendingSummary.targetVersion).trim();
   const pendingResources = asRecord(pendingSummary.resources);
   const pendingResourceCount = packageResourceCount(pendingResources);
   const pendingSource = asRecord(pendingSummary.source);
@@ -843,7 +845,8 @@ export function PluginsFeature() {
       </header>
       <dl className="plugin-lifecycle__approval-facts">
         {pendingCanonicalEvidence ? <div><dt>标识</dt><dd>{pendingPluginId}</dd></div> : null}
-        {stringValue(pendingSummary.version) ? <div><dt>版本</dt><dd>v{stringValue(pendingSummary.version)}</dd></div> : null}
+        {stringValue(pendingSummary.version) ? <div><dt>{pendingRollback ? '当前版本' : '版本'}</dt><dd>v{stringValue(pendingSummary.version)}</dd></div> : null}
+        {pendingRollback ? <div><dt>回退目标</dt><dd>{pendingRollbackTarget ? `v${pendingRollbackTarget}` : '上一版本（具体版本未提供）'}</dd></div> : null}
         <div>
           <dt>需要的权限</dt>
           <dd>{stringArray(pendingSummary.permissions).length

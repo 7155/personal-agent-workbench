@@ -167,6 +167,9 @@ class SqliteDenseIndex:
 
     def _migrate(self) -> None:
         with self._connection() as connection:
+            # sqlite3 does not start a transaction for DDL. Acquire the writer
+            # before inspecting schema so concurrent constructors recheck it.
+            connection.execute("BEGIN IMMEDIATE")
             columns = connection.execute(
                 "PRAGMA table_info(knowledge_dense_chunks)"
             ).fetchall()
@@ -175,25 +178,61 @@ class SqliteDenseIndex:
                 for row in sorted(columns, key=lambda row: int(row["pk"]))
                 if int(row["pk"]) > 0
             ]
-            if columns and primary_key != ["chunk_id", "fingerprint"]:
-                connection.execute("DROP INDEX IF EXISTS idx_knowledge_dense_base")
-                connection.execute(
-                    "ALTER TABLE knowledge_dense_chunks "
-                    "RENAME TO knowledge_dense_chunks_legacy_v1"
-                )
-                self._create_projection_table(connection)
-                connection.execute(
-                    "INSERT OR REPLACE INTO knowledge_dense_chunks"
-                    "(chunk_id, document_id, base_id, fingerprint, vector_json) "
-                    "SELECT chunk_id, document_id, base_id, fingerprint, vector_json "
-                    "FROM knowledge_dense_chunks_legacy_v1"
-                )
-                connection.execute("DROP TABLE knowledge_dense_chunks_legacy_v1")
-            else:
-                self._create_projection_table(connection)
-            connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_knowledge_dense_base ON knowledge_dense_chunks(base_id, fingerprint)"
+            self._migrate_projection(
+                connection,
+                table="knowledge_dense_chunks",
+                column_names=("chunk_id", "document_id", "base_id", "fingerprint", "vector_json"),
+                current=not columns or primary_key == ["chunk_id", "fingerprint"],
+                index_name="idx_knowledge_dense_base",
+                create_table=self._create_projection_table,
             )
+
+    @staticmethod
+    def _migrate_projection(
+        connection: sqlite3.Connection,
+        *,
+        table: str,
+        column_names: tuple[str, ...],
+        current: bool,
+        index_name: str,
+        create_table: Callable[[sqlite3.Connection], None],
+        validate_legacy: Callable[[sqlite3.Connection, str], None] | None = None,
+    ) -> None:
+        # Names are internal constants, never request input. The caller owns an
+        # IMMEDIATE transaction covering schema, recovery, verification and DDL.
+        legacy = table + "_legacy_v1"
+        legacy_columns = connection.execute(f"PRAGMA table_info({legacy})").fetchall()
+        columns = connection.execute(f"PRAGMA table_info({table})").fetchall()
+        for available in (columns, legacy_columns):
+            if available and not set(column_names).issubset({str(row["name"]) for row in available}):
+                raise RuntimeError(f"{table} rebuild-required: incomplete projection schema; data preserved")
+        if not current and legacy_columns:
+            raise RuntimeError(f"{table} rebuild-required: two legacy projections; data preserved")
+        if validate_legacy is not None and (not current or legacy_columns):
+            validate_legacy(connection, legacy if legacy_columns else table)
+        if not current or legacy_columns:
+            connection.execute(f"DROP INDEX IF EXISTS {index_name}")
+        if not current:
+            connection.execute(f"ALTER TABLE {table} RENAME TO {legacy}")
+            legacy_columns = columns
+        create_table(connection)
+        if legacy_columns:
+            fields = ", ".join(column_names)
+            # An identical row may already have been copied before an older
+            # interrupted migration. Ignore it, then verify every original
+            # field: a key collision must never silently replace either row.
+            connection.execute(
+                f"INSERT OR IGNORE INTO {table} ({fields}) SELECT {fields} FROM {legacy}"
+            )
+            missing = connection.execute(
+                f"SELECT {fields} FROM {legacy} EXCEPT SELECT {fields} FROM {table} LIMIT 1"
+            ).fetchone()
+            if missing is not None:
+                raise RuntimeError(f"{table} rebuild-required: conflicting legacy rows; data preserved")
+            connection.execute(f"DROP TABLE {legacy}")
+        connection.execute(
+            f"CREATE INDEX IF NOT EXISTS {index_name} ON {table}(base_id, fingerprint)"
+        )
 
     @staticmethod
     def _create_projection_table(connection: sqlite3.Connection) -> None:
@@ -206,15 +245,42 @@ class SqliteDenseIndex:
 
     def replace_document(self, document_id: str, chunks: Sequence[dict[str, Any]]) -> None:
         records: list[tuple[str, str, str, str, str]] = []
-        texts = [str(chunk.get("content") or "") for chunk in chunks]
+        text_indexes = [index for index, chunk in enumerate(chunks) if not chunk.get("image_path") and not chunk.get("audio_path")]
+        image_indexes = [index for index, chunk in enumerate(chunks) if chunk.get("image_path")]
+        texts = [str(chunks[index].get("content") or "") for index in text_indexes]
         embed_many = getattr(self.provider, "embed_many", None)
-        vectors = (
+        text_vectors = (
             embed_many(texts, batch_size=self.batch_size)
             if callable(embed_many)
             else [self.provider.embed(text) for text in texts]
         )
-        if len(vectors) != len(chunks):
+        if len(text_vectors) != len(text_indexes):
             raise RuntimeError("embedding provider returned an unexpected batch size")
+        vectors = [[] for _ in chunks]
+        for index, vector in zip(text_indexes, text_vectors):
+            vectors[index] = vector
+        if image_indexes:
+            embed_images = getattr(self.provider, "embed_images", None)
+            if not getattr(self.provider, "supports_images", False) or not callable(embed_images):
+                raise RuntimeError("image projection requires a native image embedding provider")
+            image_vectors = embed_images([str(chunks[index]["image_path"]) for index in image_indexes], batch_size=1)
+            if len(image_vectors) != len(image_indexes):
+                raise RuntimeError("image encoder returned an unexpected batch size")
+            for index, vector in zip(image_indexes, image_vectors):
+                vectors[index] = vector
+        audio_indexes = [index for index, chunk in enumerate(chunks) if chunk.get("audio_path")]
+        if audio_indexes:
+            embed_audio = getattr(self.provider, "embed_audio", None)
+            if not getattr(self.provider, "supports_audio", False) or not callable(embed_audio):
+                raise RuntimeError("audio projection requires a native audio embedding provider")
+            audio_vectors = embed_audio([str(chunks[index]["audio_path"]) for index in audio_indexes], batch_size=1)
+            if len(audio_vectors) != len(audio_indexes) or any(not vector for vector in audio_vectors):
+                raise RuntimeError("audio encoder returned an unexpected batch size")
+            for index, vector in zip(audio_indexes, audio_vectors):
+                vectors[index] = vector
+        dimensions = {len(vector) for vector in vectors if vector}
+        if len(dimensions) > 1 or any(not all(math.isfinite(value) for value in vector) for vector in vectors):
+            raise RuntimeError("embedding provider returned incompatible or non-finite vectors")
         for chunk, vector in zip(chunks, vectors):
             if not vector:
                 continue
@@ -619,9 +685,20 @@ class USearchDenseIndex(SqliteDenseIndex):
 
     def _migrate_ann(self) -> None:
         with self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
             columns = connection.execute(
                 "PRAGMA table_info(knowledge_ann_keys)"
             ).fetchall()
+            # Preserve allocated identities, including keys whose rows were
+            # deleted before migration; copying live rows alone resets this.
+            sequence = None
+            if connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE name='sqlite_sequence'"
+            ).fetchone():
+                sequence = connection.execute(
+                    "SELECT MAX(seq) FROM sqlite_sequence WHERE name IN "
+                    "('knowledge_ann_keys', 'knowledge_ann_keys_legacy_v1')"
+                ).fetchone()[0]
             unique_columns = [
                 [
                     str(row["name"])
@@ -634,26 +711,38 @@ class USearchDenseIndex(SqliteDenseIndex):
                 ).fetchall()
                 if int(index["unique"]) == 1
             ]
-            if columns and ["chunk_id", "fingerprint"] not in unique_columns:
-                connection.execute("DROP INDEX IF EXISTS idx_knowledge_ann_base")
-                connection.execute(
-                    "ALTER TABLE knowledge_ann_keys "
-                    "RENAME TO knowledge_ann_keys_legacy_v1"
-                )
-                self._create_ann_projection_table(connection)
-                connection.execute(
-                    "INSERT OR REPLACE INTO knowledge_ann_keys"
-                    "(ann_key, chunk_id, document_id, base_id, fingerprint) "
-                    "SELECT ann_key, chunk_id, document_id, base_id, fingerprint "
-                    "FROM knowledge_ann_keys_legacy_v1"
-                )
-                connection.execute("DROP TABLE knowledge_ann_keys_legacy_v1")
-            else:
-                self._create_ann_projection_table(connection)
-            connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_knowledge_ann_base "
-                "ON knowledge_ann_keys(base_id, fingerprint)"
+            self._migrate_projection(
+                connection,
+                table="knowledge_ann_keys",
+                column_names=("ann_key", "chunk_id", "document_id", "base_id", "fingerprint"),
+                current=not columns or ["chunk_id", "fingerprint"] in unique_columns,
+                index_name="idx_knowledge_ann_base",
+                create_table=self._create_ann_projection_table,
+                validate_legacy=self._validate_ann_migration_source,
             )
+            if sequence is not None:
+                updated = connection.execute(
+                    "UPDATE sqlite_sequence SET seq=MAX(seq, ?) WHERE name='knowledge_ann_keys'",
+                    (sequence,),
+                )
+                if not updated.rowcount:
+                    connection.execute(
+                        "INSERT INTO sqlite_sequence(name, seq) VALUES ('knowledge_ann_keys', ?)",
+                        (sequence,),
+                    )
+
+    @staticmethod
+    def _validate_ann_migration_source(connection: sqlite3.Connection, table: str) -> None:
+        # Only old/migration sources are scanned. A normal current open keeps
+        # the existing synchronization owner and cost unchanged.
+        orphan = connection.execute(
+            f"SELECT 1 FROM {table} a WHERE NOT EXISTS ("
+            "SELECT 1 FROM knowledge_dense_chunks d WHERE d.chunk_id=a.chunk_id "
+            "AND d.document_id=a.document_id AND d.base_id=a.base_id "
+            "AND d.fingerprint=a.fingerprint) LIMIT 1"
+        ).fetchone()
+        if orphan is not None:
+            raise RuntimeError("knowledge_ann_keys rebuild-required: legacy dense identity mismatch; data preserved")
 
     @staticmethod
     def _create_ann_projection_table(connection: sqlite3.Connection) -> None:

@@ -602,7 +602,7 @@
 
 .paw-files-tree__row {
   position: relative;
-  min-height: 29px;
+  min-height: 32px;
   grid-template-columns: 13px 20px minmax(0, 1fr) auto;
   gap: 6px;
   padding: 3px 8px 3px calc(6px + var(--paw-files-depth, 1) * 11px);
@@ -943,7 +943,8 @@ i.paw-files-tree__disclosure {
 }
 
 .paw-files-crumbs__segment {
-  min-width: 0;
+  min-width: 32px;
+  min-height: 32px;
   flex: 0 1 auto;
   overflow: hidden;
   border: 0;
@@ -1290,7 +1291,6 @@ i.paw-files-tree__disclosure {
   border: 1px dashed color-mix(in srgb, var(--color-accent) 36%, transparent);
   border-radius: 50%;
   content: '';
-  animation: paw-files-lens-orbit 26s linear infinite;
 }
 
 .paw-files-preview__empty strong {
@@ -1618,10 +1618,6 @@ i.paw-files-tree__disclosure {
   to { background-position: 14px 0, 0 0; }
 }
 
-@keyframes paw-files-lens-orbit {
-  to { transform: rotate(360deg); }
-}
-
 /* -------------------------------------------------------------------------
    Reflow. Files reflows with its window (container queries), never the
    viewport, and each surface answers to the container that actually owns its
@@ -1927,3 +1923,154 @@ i.paw-files-tree__disclosure {
   .paw-window-titlebar[data-window-chrome='files-tools'] .paw-files-app__toolbar :is(input, select),
   .paw-files-app .paw-files-location input { font-size: 16px; }
 }
+
+@container paw-files (max-width: 620px) {
+  .paw-files-tree__row { min-height: 44px; }
+  .paw-files-crumbs__segment { min-width: 44px; min-height: 44px; }
+}
+
+/* Presentation activity never cancels a file read. Keep its static loading
+   identity while the owning window is hidden, inactive, or motion is reduced.
+   The toolbar also projects activity because it can live in window chrome. */
+.paw-files-app[data-motion-active='false'] .ui-spin,
+.paw-files-app__toolbar[data-motion-active='false'] .ui-spin,
+.paw-files-app[data-motion-active='false'] .paw-files-skeleton > i,
+.paw-files-app[data-motion-active='false'] .paw-files-preview__meter[data-busy] > i {
+  animation: none;
+}
+
+/* Read-only navigation retains its original disclosure. Editing tools live
+   in a nearby portal so keyboard navigation cannot scroll the editor away. */
+.paw-files-location-disclosure { flex: 0 0 auto; min-width: 0; }
+.paw-files-location-disclosure > summary { display: none; }
+.paw-files-preview__id > summary {
+  display: flex;
+  min-width: 0;
+  min-height: var(--paw-files-control-h);
+  align-items: center;
+  gap: 4px;
+  list-style: none;
+  cursor: pointer;
+}
+.paw-files-preview__id > summary::-webkit-details-marker { display: none; }
+.paw-files-preview__id > summary h2 { min-width: 0; flex: 1; }
+.paw-files-preview__id > summary svg { flex: none; }
+.paw-files-preview__id[open] > summary svg { transform: rotate(90deg); }
+.paw-files-app .paw-files-preview__id > summary:focus-visible {
+  outline: 2px solid var(--paw-files-focus-line);
+  outline-offset: 2px;
+}
+.paw-files-app[data-editing] .paw-files-preview > header { min-height: 0; padding-block: 4px; }
+/* A persistent native scrollbar uses part of the path row's height. Reserve
+   its track beside full-size targets in both disclosure states, so opening
+   details does not resize the live textarea or shift its reading position. */
+.paw-files-app[data-editing] .paw-files-preview__id {
+  --paw-files-identity-h: calc(max(44px, var(--paw-files-control-h)) + 12px);
+  row-gap: 0;
+}
+.paw-files-app[data-editing] .paw-files-preview__id > summary {
+  min-height: var(--paw-files-identity-h);
+}
+.paw-files-app[data-editing] .paw-files-editor:has(.paw-files-editor__input) {
+  padding-block: 6px;
+  gap: 6px;
+}
+
+/* Editing keeps the identity disclosure in one header row. Its full path and
+   attributes scroll horizontally instead of displacing the live editor; the
+   native summary remains the opener/closer and every crumb remains navigation. */
+.paw-files-app[data-editing] .paw-files-preview__id[open] {
+  grid-template-columns: minmax(120px, .8fr) minmax(88px, 1fr);
+  align-items: center;
+  column-gap: 8px;
+}
+.paw-files-app[data-editing] .paw-files-preview__id[open] > .paw-files-crumbs {
+  box-sizing: border-box;
+  height: var(--paw-files-identity-h);
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+/* Preserve a whole final target when flex geometry exceeds the scrollbar's
+   integer extent by a fraction of a CSS pixel. */
+.paw-files-app[data-editing] .paw-files-preview__id[open] > .paw-files-crumbs::after {
+  content: '';
+  flex: 0 0 1px;
+}
+.paw-files-app[data-editing] .paw-files-preview__id[open] .paw-files-crumbs__segment {
+  flex: 0 0 auto;
+  max-width: 100%;
+}
+/* Attributes must fit as a group, rather than becoming a wider unbreakable
+   scroll target. Keep the reserved identity row and the original text size;
+   use its width for the values instead of decorative separators. */
+.paw-files-app[data-editing] .paw-files-preview__id[open] .paw-files-crumbs__meta {
+  display: inline-flex;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: calc(100% - 1px);
+  flex-wrap: wrap;
+  gap: 2px 4px;
+  margin-left: 0;
+  padding-left: 0;
+  border-left: 0;
+  white-space: normal;
+}
+.paw-files-app[data-editing] .paw-files-preview__id[open] .paw-files-crumbs__meta > * + *::before {
+  content: none;
+}
+.paw-files-app[data-editing] .paw-files-preview__id[open] .paw-files-preview__actions {
+  margin-left: 8px;
+}
+.paw-files-app[data-editing] .paw-files-preview__id[open] .paw-files-preview__back {
+  display: inline-flex;
+  margin-left: 6px;
+}
+/* Whole attribute/button areas are readable stops for native keyboard
+   scrolling. Only the scroller itself enables snapping: focused descendants
+   retain their existing one-frame focus reveal without snap adjustment. */
+.paw-files-app[data-editing] .paw-files-preview__id[open] > .paw-files-crumbs:focus {
+  scroll-snap-type: x mandatory;
+}
+.paw-files-app[data-editing] .paw-files-preview__id[open] > .paw-files-crumbs > :is(.paw-files-crumbs__segment, .paw-files-crumbs__meta, .paw-files-preview__back),
+.paw-files-app[data-editing] .paw-files-preview__id[open] > .paw-files-crumbs > .paw-files-preview__actions > button {
+  scroll-snap-align: center;
+}
+.paw-files-app[data-editing] .paw-files-crumbs:focus-visible {
+  outline: 2px solid var(--paw-files-focus-line);
+  outline-offset: -2px;
+}
+/* Portal-local Files aliases reuse semantic tokens. Radix owns collisions. */
+.paw-files-tools-trigger { flex: 0 0 44px; width: 44px; min-height: 44px; }
+.paw-files-tools-popover {
+  --paw-files-control-h: 44px;
+  --paw-files-control-radius: var(--radius-2);
+  --paw-files-control-bg: var(--color-surface);
+  --paw-files-control-line: var(--color-border);
+  --paw-files-control-ink: var(--color-text);
+  --paw-files-control-muted: var(--color-text-secondary);
+  --paw-files-focus-line: var(--color-accent);
+  --paw-files-hairline: var(--color-border);
+  --paw-files-tint: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface));
+  --paw-files-ease: var(--ease-standard);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(360px, calc(100vw - 16px), var(--radix-popover-content-available-width, calc(100vw - 16px)));
+  min-width: 0;
+  max-height: min(480px, var(--radix-popover-content-available-height));
+  overflow: auto;
+}
+.paw-files-tools-popover__heading,
+.paw-files-tools-popover__copy { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.paw-files-tools-popover .paw-files-preview__action { min-width: 44px; min-height: 44px; }
+.paw-files-tools-popover .paw-files-location { margin: 0; flex: none; height: 44px; }
+.paw-files-tools-popover .paw-files-location button { min-width: 44px; min-height: 44px; }
+.paw-files-tools-popover .paw-files-location input { font-size: 16px; }
+.paw-files-tools-popover .paw-files-collaboration { flex: none; max-height: none; }
+.paw-files-tools-popover :is(.paw-files-preview__action, .paw-files-location input):focus-visible { outline: 2px solid var(--paw-files-focus-line); outline-offset: -2px; }
+.paw-files-tools-popover[data-motion-active='false'] .ui-spin { animation: none; }
+
+.paw-files-tools-popover[data-motion-active='false'] .paw-files-preview__action { transition-property: color, background-color, border-color, box-shadow; transform: none; }

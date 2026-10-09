@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import unittest
+from contextvars import ContextVar
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -14,6 +15,7 @@ class PromptToolSyncTests(unittest.TestCase):
     def setUp(self):
         self.runtime = object.__new__(PiRuntimeHostManager)
         self.runtime._lock = threading.RLock()
+        self.runtime._gateway_control_source = ContextVar("test_gateway_control_source", default=None)
         self.runtime._open_sessions = {"session"}
         self.runtime._states = {"session": _HostedSessionState()}
         self.runtime._retired_host_turns = set()

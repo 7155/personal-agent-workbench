@@ -10,6 +10,7 @@ from .agent_media import AgentMediaStore
 from .agent_events import AgentEventHub
 
 import sqlite3
+from dataclasses import dataclass
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
@@ -38,6 +39,15 @@ from .agent_workspace_roots import (
 )
 from .agent_memory_context_support import compaction_summary
 from .contracts.compaction_target import compaction_control_target
+
+
+@dataclass(frozen=True)
+class _PreparedSessionEngine:
+    """Internal capability proof; never decoded from a public payload."""
+
+    application: object
+    runtime: RuntimeSessionLifecycle
+    engine: str
 
 
 class AgentSessionApplicationService:
@@ -276,6 +286,7 @@ class AgentSessionApplicationService:
     def abort(
         self, session_id: str, *,
         capture_cancellation: Callable[[Mapping[str, object]], None] | None = None,
+        expected_identity: Mapping[str, str] | None = None,
     ) -> dict[str, object]:
         """Stop one Session and settle its pending approval state."""
 
@@ -295,8 +306,11 @@ class AgentSessionApplicationService:
                 ))
                 if capture_cancellation is not None:
                     capture_cancellation(identity)
-            raw_runtime_receipt = fenced_abort(session_id, before_abort)
+            raw_runtime_receipt = (fenced_abort(session_id, before_abort, expected_identity=expected_identity)
+                if expected_identity is not None else fenced_abort(session_id, before_abort))
         else:
+            if expected_identity is not None:
+                raise ValueError("exact-turn Stop is unavailable from this Runtime driver")
             # An older driver has no pre-RPC turn contract. Capture the exact
             # existing IDs instead of turning an empty ACK into a future scan.
             captured_ids = self.sessions.pending_approval_ids(session_id)
@@ -408,26 +422,44 @@ class AgentSessionApplicationService:
             raise ValueError("App Session creation requires an active transaction")
         return self._create_session_record(payload, connection=connection)
 
+    def _prepare_session_engine(self, engine: str) -> _PreparedSessionEngine:
+        """Perform possible Host negotiation before a caller acquires a writer."""
+        if engine not in {"classic", "durable"}:
+            raise ValueError("runtime engine must be classic or durable")
+        runtime = self.runtime
+        if engine == "durable":
+            require_engine = getattr(runtime, "require_session_engine", None)
+            if not callable(require_engine):
+                raise ValueError("Durable Runtime Host capability is unavailable")
+            require_engine(engine)
+        return _PreparedSessionEngine(self, runtime, engine)
+
     def _create_session_record(
         self,
         payload: Mapping[str, object],
         *,
         connection: sqlite3.Connection | None = None,
         inherited_model_selection: Mapping[str, object] | None = None,
+        _prepared_engine: _PreparedSessionEngine | None = None,
     ) -> dict[str, object]:
         runtime_engine = payload.get("runtimeEngine", "classic")
         if not isinstance(runtime_engine, str) or runtime_engine not in {"classic", "durable"}:
             raise ValueError("runtime engine must be classic or durable")
+        if _prepared_engine is not None and (
+            not isinstance(_prepared_engine, _PreparedSessionEngine)
+            or _prepared_engine.application is not self
+            or _prepared_engine.runtime is not self.runtime
+            or _prepared_engine.engine != runtime_engine
+        ):
+            raise ValueError("prepared Session engine belongs to a different application, runtime or engine")
         if runtime_engine == "durable":
             if (payload.get("surfaceKind", "agent") != "agent" or payload.get("ownerAppId")
                 or payload.get("surfaceKey") or payload.get("_modelRoute", "primary") != "primary"):
                 raise ValueError("Durable runtime requires a new standalone Session")
             if payload.get("piSkillsEnabled") or payload.get("codexSkillsEnabled"):
                 raise ValueError("Durable Sessions do not support Skills")
-            require_engine = getattr(self.runtime, "require_session_engine", None)
-            if not callable(require_engine):
-                raise ValueError("Durable Runtime Host capability is unavailable")
-            require_engine("durable")
+            if _prepared_engine is None:
+                self._prepare_session_engine("durable")
         title = str(payload.get("title") or "新对话")
         mode = str(payload.get("mode") or "assistant")
         configuration = self.configuration_store.snapshot()["configuration"]

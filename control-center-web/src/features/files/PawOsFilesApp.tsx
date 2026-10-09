@@ -21,9 +21,15 @@ import {
   ScanSearch,
   Search,
   TriangleAlert,
+  Wrench,
+  X,
 } from 'lucide-react';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type KeyboardEvent, type ReactNode } from 'react';
+import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '@/components/primitives';
 import { useControlTransport } from '@/app/control-transport';
+import type { ControlTransport } from '@/platform/transport';
+import { recoveryScope } from '@/features/semantic-workspace/workspace-recovery';
+import { useMotionActivity } from '@/design/motion';
 import { CodePreview } from '@/features/agent/file-preview/CodePreview';
 import { DiffPreview } from '@/features/agent/file-preview/DiffPreview';
 import { MarkdownPreview } from '@/features/agent/file-preview/MarkdownPreview';
@@ -102,13 +108,40 @@ const FILE_FAMILY: Record<string, string> = {
   diff: 'diff', patch: 'diff',
 };
 
+// Reveal the actual focused descendant, rather than its wider copy-action
+// wrapper. Keep all corrections local to the crumbs' horizontal client box.
+export function nextFileCrumbScrollLeft(owner: {
+  left: number; width: number; offsetWidth: number; clientLeft: number;
+  clientWidth: number; scrollWidth: number; scrollLeft: number;
+}, target: { left: number; right: number }): number {
+  const scale = owner.width / owner.offsetWidth;
+  if (!Object.values(owner).every(Number.isFinite) || !Number.isFinite(target.left) || !Number.isFinite(target.right)
+    || !(scale > 0) || !(owner.clientWidth > 0)) return owner.scrollLeft;
+  const left = owner.left + owner.clientLeft * scale;
+  const right = left + owner.clientWidth * scale;
+  const gap = target.right - target.left >= right - left
+    ? target.left - left
+    : target.left < left ? target.left - left : target.right > right ? target.right - right : 0;
+  // Chromium can quantize scrollLeft: round away from zero so fractional gaps
+  // cannot leave the focused button partially clipped after the correction.
+  const delta = gap < 0 ? Math.floor(gap / scale) : Math.ceil(gap / scale);
+  return Math.max(0, Math.min(owner.scrollWidth - owner.clientWidth, owner.scrollLeft + delta));
+}
+
 export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } = {}) {
   const transport = useControlTransport();
+  const motionActive = useMotionActivity();
   const sidebar = useAppSidebar('files');
   const [treeVisible, setTreeVisible] = useState(!sidebar.collapsed);
   const [treeRevealed, setTreeRevealed] = useState(false);
   const windowChromeTarget = usePawWindowChromeTarget();
-  const requested = useMemo(() => requestedWorkspaceFile(initialRoute), [initialRoute]);
+  const selectionIntent = useMemo(() => {
+    const caller = requestedWorkspaceFile(initialRoute);
+    if (caller.sessionId || caller.path) return { requested: caller, restored: false };
+    const rememberedRoute = readFilesSelectionRoute(transport);
+    return { requested: requestedWorkspaceFile(rememberedRoute), restored: Boolean(rememberedRoute) };
+  }, [initialRoute, transport]);
+  const requested = selectionIntent.requested;
   const requestedKey = JSON.stringify([requested.sessionId, requested.path]);
   const generationRef = useRef(0);
   const locationGenerationRef = useRef(0);
@@ -116,6 +149,8 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
   const [homePath, setHomePath] = useState('');
   const [location, setLocation] = useState<{ requestKey: string; path: string; selectedPath: string } | null>(null);
   const [locationInput, setLocationInput] = useState('');
+  const locationInputEditRef = useRef(0);
+  const locationInputSyncRef = useRef(0);
   const [locationLoading, setLocationLoading] = useState(false);
   const [locationError, setLocationError] = useState('');
   const directoryGenerationRef = useRef(0);
@@ -132,6 +167,12 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
   const [loadingPaths, setLoadingPaths] = useState<Set<string>>(new Set());
   const [pathErrors, setPathErrors] = useState<Record<string, string>>({});
   const [selectedFile, setSelectedFile] = useState<SelectedWorkspaceFile | null>(null);
+  const [expandedIdentityKey, setExpandedIdentityKey] = useState('');
+  const [openToolsKey, setOpenToolsKey] = useState('');
+  const toolsTriggerRef = useRef<HTMLButtonElement>(null);
+  const locationFieldRef = useRef<HTMLInputElement>(null);
+  const returnToolsFocusRef = useRef(true);
+  const currentIdentityRef = useRef('');
   const [preview, setPreview] = useState<WorkspacePreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState('');
@@ -145,11 +186,14 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
   const treeRef = useRef<HTMLElement | null>(null);
   const workspaceRef = useRef<HTMLDivElement | null>(null);
   const backButtonRef = useRef<HTMLButtonElement | null>(null);
+  const crumbFocusFrameRef = useRef<number | null>(null);
   // Whether this App currently holds keyboard focus. A focusout that names no
   // new target means the focused element was hidden, not that someone moved
   // away, so the flag survives exactly the case the layout swap creates.
   const holdsFocusRef = useRef(false);
   const pendingFocusPathRef = useRef('');
+  const pendingFocusIntentRef = useRef<Element | null>(null);
+  const locationFocusIntentRef = useRef<Element | null>(null);
   const typeaheadRef = useRef({ text: '', at: 0 });
   const selectedSession = sessions.find((session) => session.id === selectedSessionId) ?? null;
   const roots = useMemo(() => location?.requestKey === requestedKey ? [location.path]
@@ -208,6 +252,11 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
     previewReady && preview?.path === selectedFile?.path ? preview : null,
     onFileSaved,
   );
+  useEffect(() => {
+    if (!selectedFile || selectedFile.sessionId !== selectedSessionId
+      || selectedSessionId && !sessions.some(session => session.id === selectedSessionId)) return;
+    rememberFilesSelectionRoute(transport, selectedSessionId, selectedFile.path);
+  }, [selectedFile?.sessionId, selectedFile?.path, selectedSessionId, sessions, transport]);
   // Loaded-line readout: honest for exactly the bytes on screen, never a
   // whole-file claim while the read window is still partial. A complete editor
   // owns its current text independently of the earlier bounded preview.
@@ -226,8 +275,10 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
       ? { title: '文件夹暂时无法读取', detail: '检查路径后重试，或从主目录重新打开。' }
       : { title: '选择要检查的文件', detail: '从目录树打开文件，也可以在地址栏输入任意文件或文件夹路径。' };
 
-  const openLocation = useCallback(async (path: string, manual = true, association = '') => {
+  const openLocation = useCallback(async (path: string, manual = true, association = '', focusIntent: Element | null = document.activeElement) => {
     const generation = ++locationGenerationRef.current;
+    const inputEdit = locationInputEditRef.current;
+    const focusInputValue = focusIntent === locationFieldRef.current ? locationFieldRef.current?.value : undefined;
     if (manual) manualLocationRef.current = true;
     setLocationLoading(true); setLocationError('');
     try {
@@ -235,11 +286,15 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
       if (generation !== locationGenerationRef.current) return;
       if (!isRecord(response) || response.ok !== true || typeof response.path !== 'string' || !response.path.startsWith('/') || response.path.includes('\0')) throw new Error('目录服务返回了无法识别的数据。');
       workspaceListing(response);
+      locationInputSyncRef.current = inputEdit;
       if (typeof response.homePath === 'string') setHomePath(response.homePath);
       if (manual) {
+        locationFocusIntentRef.current = locationInputEditRef.current !== inputEdit || focusIntent === locationFieldRef.current && locationFieldRef.current?.value !== focusInputValue ? null : focusIntent;
         setSessionSelection({ requestKey: requestedKey, sessionId: association });
+        rememberFilesSelectionRoute(transport, association, typeof response.selectedPath === 'string' ? response.selectedPath || response.path : response.path);
         setLocation({ requestKey: requestedKey, path: response.path, selectedPath: typeof response.selectedPath === 'string' ? response.selectedPath : '' });
-        setLocationInput(response.path); setTreeRevealed(true); sidebar.setCollapsed(false);
+        if (locationInputEditRef.current === inputEdit) setLocationInput(response.path);
+        setTreeRevealed(true); sidebar.setCollapsed(false);
       } else setHomePath(response.path);
     } catch (error) {
       if (generation === locationGenerationRef.current) setLocationError(publicError(error, '文件夹读取失败。'));
@@ -251,16 +306,26 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transport]);
   useEffect(() => {
-    manualLocationRef.current = false;
-    if (requested.path.startsWith('/') || requested.path.startsWith('~/')) void openLocation(requested.path, true, requested.sessionId);
+    manualLocationRef.current = selectionIntent.restored && !requested.sessionId;
+    // A remembered Session/path is only an intent. Let the current catalog
+    // and authorized roots resolve it; never promote old state to a grant.
+    if ((!selectionIntent.restored || !requested.sessionId)
+      && (requested.path.startsWith('/') || requested.path.startsWith('~/'))) {
+      void openLocation(requested.path, true, requested.sessionId, null);
+    }
     return () => { locationGenerationRef.current += 1; };
     // Absolute deep links can be opened even when their Session is gone.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestedKey]);
-  useEffect(() => { if (roots[0]) setLocationInput(roots[0]); }, [roots.join('\0')]);
+  useEffect(() => {
+    // A canonical location may change the actual tree/Session while a newer
+    // address draft remains in the field. Both sync paths share this boundary.
+    if (roots[0] && locationInputEditRef.current === locationInputSyncRef.current) setLocationInput(roots[0]);
+  }, [roots.join('\0')]);
 
   const loadSessions = useCallback(async () => {
     const requestGeneration = ++sessionsGenerationRef.current;
+    const inputEdit = locationInputEditRef.current;
     setSessionsLoading(true);
     setSessionError('');
     try {
@@ -271,6 +336,7 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
       if (requestGeneration !== sessionsGenerationRef.current) return;
       const next = sessionItems(response, { includeAppOwned: true });
       setSessions(next);
+      if (!manualLocationRef.current) locationInputSyncRef.current = inputEdit;
       const activeId = isRecord(response) && typeof response.activeSessionId === 'string'
         ? response.activeSessionId
         : '';
@@ -371,7 +437,7 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
       setSelectedFile(null);
       setPreview(null);
       setPreviewError('');
-      pendingFocusPathRef.current = path;
+      queueTreeFocus(path, independent ? locationFocusIntentRef.current : null);
       return;
     }
     setSelectedFile({ path, name: pathName(path), kind: 'file', sessionId: selectedSessionId });
@@ -388,6 +454,32 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
     });
   }, [selectedFile, visibleTreeNodes]);
 
+  const cancelCrumbFocusReveal = useCallback(() => {
+    if (crumbFocusFrameRef.current !== null) cancelAnimationFrame(crumbFocusFrameRef.current);
+    crumbFocusFrameRef.current = null;
+  }, []);
+  const revealFocusedCrumb = useCallback((event: FocusEvent<HTMLElement>) => {
+    cancelCrumbFocusReveal();
+    const owner = event.currentTarget;
+    const target = event.target;
+    if (!(target instanceof HTMLElement) || target === owner) return;
+    const identity = currentIdentityRef.current;
+    // Measure once after native focus reveal, before the next paint. A newer
+    // focus/file intent wins; never promote focus or move any vertical reader.
+    crumbFocusFrameRef.current = requestAnimationFrame(() => {
+      crumbFocusFrameRef.current = null;
+      if (!owner.isConnected || !target.isConnected || !owner.contains(target)
+        || document.activeElement !== target || currentIdentityRef.current !== identity) return;
+      const rect = owner.getBoundingClientRect();
+      const next = nextFileCrumbScrollLeft({
+        left: rect.left, width: rect.width, offsetWidth: owner.offsetWidth, clientLeft: owner.clientLeft,
+        clientWidth: owner.clientWidth, scrollWidth: owner.scrollWidth, scrollLeft: owner.scrollLeft,
+      }, target.getBoundingClientRect());
+      if (next !== owner.scrollLeft) owner.scrollLeft = next;
+    });
+  }, [cancelCrumbFocusReveal]);
+  useEffect(() => cancelCrumbFocusReveal, [cancelCrumbFocusReveal]);
+
   // The App opens as rail + reader with the rail as the working object: once
   // the first listing lands, keyboard focus starts on the tree so ↑/↓/→/Enter
   // work immediately. One shot only, and never stolen from another window or
@@ -396,13 +488,9 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
   useEffect(() => {
     if (initialTreeFocusDone.current || !visibleTreeNodes.length) return;
     initialTreeFocusDone.current = true;
-    const active = document.activeElement;
-    if (active instanceof HTMLElement) {
-      const ownShell = treeRef.current?.closest('.paw-window-shell') ?? null;
-      const activeShell = active.closest('.paw-window-shell');
-      if (activeShell && activeShell !== ownShell) return;
-      if (active.matches('input, textarea, select, [contenteditable="true"]')) return;
-    }
+    // A queued explicit location owns its own handoff. Otherwise only promote
+    // neutral body/own-shell focus; menus and controls retain the user's intent.
+    if (pendingFocusPathRef.current || !canFocusTree()) return;
     const node = treeItemRefs.current.get(visibleTreeNodes[0]?.path ?? '');
     if (!node || window.getComputedStyle(node).display === 'none') return;
     setTreeFocusPath(visibleTreeNodes[0]?.path ?? '');
@@ -519,6 +607,24 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
     if (file) void loadPreview(file);
   }
 
+  function queueTreeFocus(path: string, intent: Element | null = document.activeElement): void {
+    pendingFocusPathRef.current = path;
+    pendingFocusIntentRef.current = intent;
+  }
+
+  function canFocusTree(intent: Element | null = null): boolean {
+    const active = document.activeElement;
+    const ownShell = treeRef.current?.closest('.paw-window-shell');
+    if (ownShell && !ownShell.hasAttribute('data-active')) return false;
+    if (active === document.body || active === document.documentElement || active === ownShell) return true;
+    // The exact original navigation control can hand off after a late listing.
+    // A newer menu, field, control or window selection must never be borrowed.
+    if (!intent || active !== intent) return false;
+    const ownApp = treeRef.current?.closest('.paw-files-app');
+    const ownTools = locationFieldRef.current?.closest('.paw-files-tools-popover');
+    return Boolean(ownApp?.contains(active) || ownTools?.contains(active));
+  }
+
   function focusTreeItem(path: string): void {
     setTreeFocusPath(path);
     treeItemRefs.current.get(path)?.focus();
@@ -532,7 +638,7 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
   function goBackToTree(): void {
     if (!selectedFile) return;
     sidebar.setCollapsed(false);
-    pendingFocusPathRef.current = selectedFile.path;
+    queueTreeFocus(selectedFile.path);
     setSelectedFile(null);
   }
 
@@ -559,7 +665,7 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
       return next;
     });
     void loadDirectory(path);
-    pendingFocusPathRef.current = path;
+    queueTreeFocus(path);
     if (treeHidden()) {
       sidebar.setCollapsed(false);
       setSelectedFile(null);
@@ -629,11 +735,15 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
     if (!path) return;
     if (selectedFile && treeHidden()) {
       pendingFocusPathRef.current = '';
+      pendingFocusIntentRef.current = null;
       return;
     }
     const node = treeItemRefs.current.get(path);
     if (!node) return;
     pendingFocusPathRef.current = '';
+    const intent = pendingFocusIntentRef.current;
+    pendingFocusIntentRef.current = null;
+    if (!canFocusTree(intent)) return;
     setTreeFocusPath(path);
     node.focus();
   });
@@ -744,17 +854,54 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
     );
   }
 
+  const identityKey = selectedFile ? JSON.stringify([selectedFile.sessionId, selectedFile.path]) : '';
+  useLayoutEffect(() => {
+    currentIdentityRef.current = identityKey;
+    setOpenToolsKey('');
+  }, [identityKey]);
+  const identityExpanded = editor.editing && expandedIdentityKey === identityKey && Boolean(identityKey);
+  const identityBackAction = <button aria-label="返回文件列表" className="paw-files-preview__back" onClick={goBackToTree} ref={backButtonRef} title="返回文件列表（Esc）" type="button"><ChevronLeft size={15} /><span>返回</span></button>;
+  const identityCopyActions = (
+    <span className="paw-files-preview__actions">
+    <button
+      aria-label={copiedAction === 'content' ? '已复制文件内容' : editor.editing ? '复制编辑内容' : '复制文件内容'}
+      className="paw-files-preview__action"
+      data-copied={copiedAction === 'content' || undefined}
+      disabled={editor.copyContent !== null ? !editor.copyContent : !copyableContent(preview, previewLoading, previewError)}
+      onClick={() => void copyPreviewText('content')}
+      title={editor.editing ? '复制当前编辑内容' : copyContentTitle(preview, previewLoading, previewError, copiedAction === 'content')}
+      type="button"
+    >
+      {copiedAction === 'content' ? <Check size={14} /> : <ClipboardCopy size={14} />}
+    </button>
+    <button
+      aria-label={copiedAction === 'path' ? '已复制文件路径' : '复制文件路径'}
+      className="paw-files-preview__action"
+      data-copied={copiedAction === 'path' || undefined}
+      onClick={() => void copyPreviewText('path')}
+      title={copiedAction === 'path' ? '已复制完整路径' : '复制完整路径'}
+      type="button"
+    >
+      {copiedAction === 'path' ? <Check size={14} /> : <Copy size={14} />}
+    </button>
+  </span>
+  );
+
+  const fileCollaboration = selectedFile?.sessionId ? <FileCollaborationPanel sessionId={selectedFile.sessionId} path={editor.resourcePath ?? selectedFile.path} fileName={selectedFile.name}>
+    <EvidenceEchoUsage appId="files" entityId={editor.resourcePath ?? selectedFile.path} entityLabel={selectedFile.name} />
+  </FileCollaborationPanel> : null;
+
   const locationTools = (
       <form className="paw-files-location" onSubmit={(event) => { event.preventDefault(); void openLocation(locationInput); }}>
         <button type="button" aria-label="打开主目录" onClick={() => void openLocation('')}><Home size={14} /></button>
         <button type="button" aria-label="上一级文件夹" disabled={!roots[0] || roots[0] === '/'} onClick={() => void openLocation(roots[0]?.replace(/\/[^/]+\/?$/, '') || '/')}><ArrowUp size={14} /></button>
-        <input aria-label="文件或文件夹路径" value={locationInput} onChange={(event) => setLocationInput(event.target.value)} placeholder="输入路径，如 ~/Documents 或 /Volumes" spellCheck={false} />
+        <input ref={locationFieldRef} aria-label="文件或文件夹路径" value={locationInput} onChange={(event) => { locationInputEditRef.current += 1; setLocationInput(event.target.value); }} placeholder="输入路径，如 ~/Documents 或 /Volumes" spellCheck={false} />
         <button type="submit" disabled={locationLoading} aria-label="打开路径">{locationLoading ? <LoaderCircle className="ui-spin" size={14} /> : <ChevronRight size={14} />}</button>
       </form>
   );
 
   const filesTools = (
-    <div className="paw-files-app__toolbar" data-window-chrome={windowChromeTarget ? true : undefined}>
+    <div className="paw-files-app__toolbar" data-motion-active={motionActive} data-window-chrome={windowChromeTarget ? true : undefined}>
       <AppSidebarToggle className="paw-files-tree-toggle" collapsed={sidebar.collapsed || !treeVisible} controlsId={sidebar.controlsId} label="文件目录" onToggle={toggleTree} toggleRef={sidebar.toggleRef} />
       <label className="paw-files-scope">
         <FolderTree aria-hidden="true" size={13} />
@@ -763,8 +910,10 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
           aria-label="选择文件所属 Session"
           onChange={(event) => {
             manualLocationRef.current = true; locationGenerationRef.current += 1;
+            locationInputSyncRef.current = locationInputEditRef.current;
             setLocationLoading(false); setLocationError(''); setLocation(null);
             setSessionSelection({ requestKey: requestedKey, sessionId: event.target.value });
+            rememberFilesSelectionRoute(transport, event.target.value, '');
             if (!event.target.value) void openLocation('');
           }}
           value={selectedSessionId}
@@ -803,6 +952,8 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
       {windowChromeTarget ? <PawWindowChromePortal>{filesTools}</PawWindowChromePortal> : null}
       <section
         className="paw-files-app"
+        data-motion-active={motionActive}
+        data-editing={editor.editing || undefined}
         onBlur={(event) => {
           if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) holdsFocusRef.current = false;
         }}
@@ -810,7 +961,10 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
       >
         <h1 className="paw-files-app__title">文件</h1>
         {windowChromeTarget ? null : filesTools}
-        {locationTools}
+        {!editor.editing ? <details className="paw-files-location-disclosure" open>
+          <summary>文件夹位置</summary>
+          {locationTools}
+        </details> : null}
         {locationError ? <div className="paw-native-app__error" role="alert"><TriangleAlert size={16} />{locationError}<button onClick={() => void openLocation(locationInput)} type="button">重试打开</button></div> : null}
         {sessionError ? <div className="paw-files-session-notice" role="status">Session 快捷入口暂时无法读取，本机文件仍可浏览。<button type="button" onClick={() => void loadSessions()}>重试 Session 列表</button></div> : null}
         <div className="paw-files-app__workspace" data-file-open={selectedFile ? true : undefined} data-sidebar-collapsed={sidebar.collapsed} data-tree-revealed={treeRevealed || undefined} ref={workspaceRef}>
@@ -929,15 +1083,26 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
           ) : (
             <>
               <header key={`header:${selectedFile.path}`}>
-                <button aria-label="返回文件列表" className="paw-files-preview__back" onClick={goBackToTree} ref={backButtonRef} title="返回文件列表（Esc）" type="button"><ChevronLeft size={15} /><span>返回</span></button>
+                {!identityExpanded ? identityBackAction : null}
                 <span aria-hidden="true" className="paw-files-preview__badge" data-family={entryFamily(selectedFile)}>
                   {fileExtension(selectedFile.name)
                     ? fileExtension(selectedFile.name).slice(0, 4).toUpperCase()
                     : selectedFile.kind === 'symlink' ? <FileSymlink size={15} /> : <File size={15} />}
                 </span>
-                <div className="paw-files-preview__id">
-                  <h2 title={pathName(selectedFile.path)}>{pathName(selectedFile.path)}</h2>
-                  <small className="paw-files-crumbs" title={selectedFile.path}>
+                <details
+                  className="paw-files-preview__id"
+                  open={!editor.editing || identityExpanded}
+                >
+                  <summary onClick={(event) => {
+                    if (!editor.editing) return;
+                    // Native Enter/Space activates this summary through click as
+                    // well. Reflow the controls and disclosure in one React commit.
+                    event.preventDefault();
+                    setExpandedIdentityKey(identityExpanded ? '' : identityKey);
+                  }}><h2 title={pathName(selectedFile.path)}>{pathName(selectedFile.path)}</h2><ChevronRight size={14} aria-hidden="true" /></summary>
+                  <small className="paw-files-crumbs" onFocus={identityExpanded ? revealFocusedCrumb : undefined} onBlur={(event) => {
+                    if (!event.currentTarget.contains(event.relatedTarget)) cancelCrumbFocusReveal();
+                  }} title={selectedFile.path} role="group" aria-label="文件路径与属性" tabIndex={editor.editing ? 0 : undefined}>
                     {selectedCrumbs.length ? selectedCrumbs.map((crumb) => (
                       <button
                         aria-label={`在目录树中定位 ${crumb.label}`}
@@ -960,31 +1125,52 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
                         ? <span>{!editor.editing && preview?.truncated ? `已载 ${previewLineCount} 行` : `${previewLineCount} 行`}</span>
                         : null}
                     </span>
+                    {identityExpanded ? <>{identityCopyActions}{identityBackAction}</> : null}
                   </small>
-                </div>
-                <div className="paw-files-preview__actions">
-                  <button
-                    aria-label={copiedAction === 'content' ? '已复制文件内容' : editor.editing ? '复制编辑内容' : '复制文件内容'}
-                    className="paw-files-preview__action"
-                    data-copied={copiedAction === 'content' || undefined}
-                    disabled={editor.copyContent !== null ? !editor.copyContent : !copyableContent(preview, previewLoading, previewError)}
-                    onClick={() => void copyPreviewText('content')}
-                    title={editor.editing ? '复制当前编辑内容' : copyContentTitle(preview, previewLoading, previewError, copiedAction === 'content')}
-                    type="button"
-                  >
-                    {copiedAction === 'content' ? <Check size={14} /> : <ClipboardCopy size={14} />}
-                  </button>
-                  <button
-                    aria-label={copiedAction === 'path' ? '已复制文件路径' : '复制文件路径'}
-                    className="paw-files-preview__action"
-                    data-copied={copiedAction === 'path' || undefined}
-                    onClick={() => void copyPreviewText('path')}
-                    title={copiedAction === 'path' ? '已复制完整路径' : '复制完整路径'}
-                    type="button"
-                  >
-                    {copiedAction === 'path' ? <Check size={14} /> : <Copy size={14} />}
-                  </button>
-                </div>
+                </details>
+                {!editor.editing && !identityExpanded ? identityCopyActions : null}
+                {editor.editing ? (
+                  <Popover key={identityKey} open={openToolsKey === identityKey} onOpenChange={(open) => {
+                    if (open) returnToolsFocusRef.current = true;
+                    setOpenToolsKey(open ? identityKey : '');
+                  }}>
+                    <PopoverTrigger asChild>
+                      <button aria-label="文件工具" title="位置、复制与协作" className="paw-files-preview__action paw-files-tools-trigger" ref={toolsTriggerRef} type="button"><Wrench size={16} /></button>
+                    </PopoverTrigger>
+                    <PopoverContent align="start" side="right" className="paw-files-tools-popover" aria-label="文件工具" data-motion-active={motionActive}
+                      onOpenAutoFocus={(event) => { event.preventDefault(); locationFieldRef.current?.focus(); }}
+                      onInteractOutside={(event) => {
+                        const target = event.target;
+                        // Explicit outside controls own their focus, including
+                        // Save/discard and another file or window selection.
+                        if (target instanceof Element) {
+                          const ownWindow = toolsTriggerRef.current?.closest('.paw-window-shell');
+                          const ownScope = ownWindow ?? toolsTriggerRef.current?.closest('.paw-files-app');
+                          const outsideWindow = target.closest('.paw-window-shell');
+                          // Whole-window/desktop tabIndex=-1 containers do not
+                          // turn neutral descendants into local controls.
+                          const outsideControl = target.closest('button, input, textarea, select, a[href], summary, [role="button"], [role="link"], [contenteditable="true"], [contenteditable=""], [tabindex]:not(.paw-window-shell)');
+                          const localControl = outsideControl && ownScope?.contains(outsideControl);
+                          // A direct explicit desktop control still owns its
+                          // click intent; never return focus from a dock/menu.
+                          const explicitControl = target.closest('button, input, textarea, select, a[href], summary, [role="button"], [role="link"], [contenteditable="true"], [contenteditable=""]');
+                          const externalControlIntent = explicitControl && !ownScope?.contains(target);
+                          if (localControl || externalControlIntent || outsideWindow && outsideWindow !== ownWindow) returnToolsFocusRef.current = false;
+                        }
+                      }}
+                      onCloseAutoFocus={(event) => {
+                        event.preventDefault();
+                        if (returnToolsFocusRef.current && currentIdentityRef.current === identityKey && toolsTriggerRef.current?.isConnected) toolsTriggerRef.current.focus();
+                      }}
+                      onKeyDown={(event) => { if (event.key === 'Escape') event.stopPropagation(); }}
+                    >
+                      <div className="paw-files-tools-popover__heading"><strong>位置与协作</strong><PopoverClose asChild><button className="paw-files-preview__action" aria-label="关闭文件工具" type="button"><X size={16} /></button></PopoverClose></div>
+                      {locationTools}
+                      {!identityExpanded ? <div className="paw-files-tools-popover__copy"><span>复制</span>{identityCopyActions}</div> : null}
+                      {fileCollaboration}
+                    </PopoverContent>
+                  </Popover>
+                ) : null}
               </header>
               {copyError ? (
                 <div className="paw-files-preview__copy-error" role="alert">
@@ -1035,9 +1221,7 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
                   )}
                 </footer>
               ) : null}
-              {selectedFile.sessionId ? <FileCollaborationPanel sessionId={selectedFile.sessionId} path={editor.resourcePath ?? selectedFile.path} fileName={selectedFile.name}>
-                <EvidenceEchoUsage appId="files" entityId={editor.resourcePath ?? selectedFile.path} entityLabel={selectedFile.name} />
-              </FileCollaborationPanel> : null}
+              {!editor.editing ? fileCollaboration : null}
             </>
           )}
         </section>
@@ -1046,7 +1230,7 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
           <span>已加载 {visibleEntryCount} 项</span>
           {filterActive ? <><i aria-hidden="true" /><span>匹配 {filterMatches.length} 项</span></> : null}
           {selectedFile ? <><i aria-hidden="true" /><span className="paw-files-statusbar__selection" title={`${selectedFile.path}${selectedFile.byteSize !== undefined ? ` · ${formatBytes(selectedFile.byteSize)}` : ''}`}>已选 {selectedFile.name}{selectedFile.byteSize !== undefined ? ` · ${formatBytes(selectedFile.byteSize)}` : ''}</span></> : null}
-          <span className="paw-files-statusbar__root" data-live={roots.length ? true : undefined} title={roots.join('\n') || undefined}>{roots.length ? authorizedRoots(selectedSession).some((root) => roots.includes(root)) ? 'Session 工作区快捷入口 · 本机读取' : '本机文件 · 无需 Session' : workspacePending ? '正在打开文件夹' : '输入路径以开始浏览'}</span>
+          <span className="paw-files-statusbar__root" data-live={roots.length ? true : undefined} title={roots.join('\n') || undefined}>{roots.length ? authorizedRoots(selectedSession).some((root) => roots.some((path) => path === root || path.startsWith(root === '/' ? '/' : `${root}/`))) ? 'Session 工作区快捷入口 · 本机读取' : '本机文件 · 无需 Session' : workspacePending ? '正在打开文件夹' : '输入路径以开始浏览'}</span>
         </footer>
       </section>
     </>
@@ -1103,6 +1287,34 @@ function highlightMatch(name: string, query: string): ReactNode {
       {name.slice(index + query.length)}
     </>
   );
+}
+
+// This preference keeps the existing Files route string, not file contents
+// or permissions. Anonymous surfaces do not share another backend's intent.
+function filesSelectionKey(transport: ControlTransport): string {
+  return recoveryScope(transport, `files-selection:${transport.kind}`);
+}
+function readFilesSelectionRoute(transport: ControlTransport): string {
+  const key = filesSelectionKey(transport);
+  if (!key) return '';
+  try {
+    const route = localStorage.getItem(key) ?? '';
+    if (!route.startsWith('/files?')) return '';
+    const query = new URLSearchParams(route.slice('/files?'.length));
+    const rawSession = query.get('session') ?? '';
+    const rawPath = query.get('path') ?? '';
+    const requested = requestedWorkspaceFile(route);
+    return rawSession === requested.sessionId && rawPath === requested.path
+      && !rawSession.includes('\0') && !rawPath.includes('\0')
+      && (!rawPath || rawPath.startsWith('/')) ? route : '';
+  } catch { return ''; }
+}
+function rememberFilesSelectionRoute(transport: ControlTransport, sessionId: string, path: string): void {
+  const key = filesSelectionKey(transport);
+  if (!key || sessionId.length > 200 || path.length > 1_000
+    || sessionId.includes('\0') || path.includes('\0') || path && !path.startsWith('/')) return;
+  try { localStorage.setItem(key, `/files?${new URLSearchParams({ session: sessionId, path })}`); }
+  catch { /* Keep the current selection usable if local preference storage fails. */ }
 }
 
 /** `/files?session=…&path=…` — 正向证据链把一个具体文件交给这扇窗。 */

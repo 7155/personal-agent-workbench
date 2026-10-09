@@ -1,3 +1,4 @@
+import { CollaborationReceiptGroup } from '../collaboration/CollaborationReceiptLinks';
 import { publicReasoningSummaryText } from './public-reasoning-summary';
 import { ToolStatusMark, toolReceiptStatus } from '@/features/conversation-ui/components/ToolStatusMark';
 import {
@@ -22,6 +23,7 @@ import {
   ListChecks,
   MessageSquareText,
   Search,
+  Square,
   ShieldAlert,
   ShieldCheck,
   Target,
@@ -161,6 +163,7 @@ export function ActivitySummary({
     )
   ));
   const failed = activities.some((activity) => activity.status === 'failed');
+  const stopped = activities.some(activityStopped);
   const terminalFailure = activities.some((activity) => (
     activity.kind === 'turn_failed' && activity.status === 'failed'
   ));
@@ -230,14 +233,14 @@ export function ActivitySummary({
           ? '查看'
           : failed
             ? '失败'
-            : '完成';
+            : stopped ? '已停止' : '完成';
   const liveActivities = running || waiting ? activities.slice(-3) : [];
   const liveActivityCount = liveActivities.length;
-  const state = terminalFailure ? 'failed' : waiting ? 'waiting' : running ? 'running' : failed ? 'mixed' : 'done';
+  const state = terminalFailure ? 'failed' : waiting ? 'waiting' : running ? 'running' : failed ? 'mixed' : stopped ? 'stopped' : 'done';
   const summaryContent = (
     <>
       <span className="agent-activity__status" aria-hidden="true">
-        {failed ? <TriangleAlert size={15} /> : waiting ? <ShieldAlert size={15} /> : running ? <CircleDashed size={15} /> : <CheckCircle2 size={15} />}
+        {failed ? <TriangleAlert size={15} /> : waiting ? <ShieldAlert size={15} /> : running ? <CircleDashed size={15} /> : stopped ? <Square size={15} /> : <CheckCircle2 size={15} />}
       </span>
       <span className="agent-activity__copy">
         <strong>{title}</strong>
@@ -246,6 +249,7 @@ export function ActivitySummary({
       <ChevronRight aria-hidden="true" size={16} />
     </>
   );
+  const collaborationLinks = <CollaborationReceiptGroup views={activities.filter(activity => activity.kind.startsWith('tool_')).map(publicToolResultView)} sourceSessionId={sessionId}/>;
   if (inline) {
     /* Only a live group trades its Tool identity icon for a planet: motion in
        the transcript has to mean the Runtime is still working, and a settled
@@ -286,7 +290,7 @@ export function ActivitySummary({
               : <InlineIcon aria-hidden="true" className="agent-activity__inline-icon" size={15} />}
             <strong>{inlineTitle}</strong>
             <span className="agent-activity__inline-tools">{inlineSummary}</span>
-            <span className="agent-activity__inline-status agent-fx-pill" data-status={state} data-tone={state === 'done' ? 'ok' : state === 'running' ? 'run' : state === 'waiting' ? 'wait' : state === 'failed' ? 'danger' : 'warn'}>
+            <span className="agent-activity__inline-status agent-fx-pill" data-status={state} data-tone={state === 'done' ? 'ok' : state === 'running' ? 'run' : state === 'waiting' || state === 'stopped' ? 'wait' : state === 'failed' ? 'danger' : 'warn'}>
               <ConversationPlanetMark
                 motionActive={false}
                 size="sm"
@@ -317,24 +321,26 @@ export function ActivitySummary({
                   sessionId={sessionId}
                   initiallyOpen={false}
                   onApprovalDecision={onApprovalDecision}
-                  onOpenApproval={(selected) => {
+                  onOpenApproval={onOpenApproval ? (selected) => {
                     setInlineOpen(false);
-                    onOpenApproval?.(selected);
-                  }}
-                  onRequestPermission={() => {
+                    onOpenApproval(selected);
+                  } : undefined}
+                  onRequestPermission={onRequestPermission ? () => {
                     setInlineOpen(false);
-                    onRequestPermission?.();
-                  }}
+                    onRequestPermission();
+                  } : undefined}
                 />
               ))}
             </div>
           </SmoothDisclosureReveal>
         </details>
+        {collaborationLinks}
       </div>
     );
   }
   return (
     <div className="agent-activity-group">
+      {collaborationLinks}
       <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
         <DialogTrigger asChild>
           <button
@@ -358,14 +364,14 @@ export function ActivitySummary({
                 activity={activity}
                 sessionId={sessionId}
                 onApprovalDecision={onApprovalDecision}
-                onOpenApproval={(selected) => {
+                onOpenApproval={onOpenApproval ? (selected) => {
                   setDetailsOpen(false);
-                  onOpenApproval?.(selected);
-                }}
-                onRequestPermission={() => {
+                  onOpenApproval(selected);
+                } : undefined}
+                onRequestPermission={onRequestPermission ? () => {
                   setDetailsOpen(false);
-                  onRequestPermission?.();
-                }}
+                  onRequestPermission();
+                } : undefined}
               />
             ))}
           </div>
@@ -484,7 +490,7 @@ const ActivityRow = memo(function ActivityRow({
         </span>
         <i data-status={activity.status}>
           {toolView?.sources.length ? `来源 ${toolView.sources.length} · ` : ''}
-          {activity.settledByTurnStatus === 'aborted' ? '已停止' : statusLabel(activity.status)}
+          {activityStopped(activity) ? '已停止' : statusLabel(activity.status)}
           {receiptMeta ? ` · ${receiptMeta}` : ''}
         </i>
       </summary>
@@ -1523,7 +1529,7 @@ function compactToolSummary(activities: AgentActivityProjection[]) {
   let latestError = '';
   for (const activity of activities) {
     if (!['tool_started', 'tool_progress', 'tool_finished'].includes(activity.kind)) continue;
-    calls.set(text(activity.payload.toolCallId) || activity.id, activity.status);
+    calls.set(text(activity.payload.toolCallId) || activity.id, activityStopped(activity) ? 'aborted' : activity.status);
     names.add(activityPresentation(activity).title);
     const view = publicToolResultView(activity);
     if (view.summary) latestResult = boundedInlineSummary(view.summary);
@@ -1534,11 +1540,13 @@ function compactToolSummary(activities: AgentActivityProjection[]) {
   const failed = statuses.filter((status) => status === 'failed').length;
   const waiting = statuses.filter((status) => status === 'waiting').length;
   const running = statuses.filter((status) => status === 'running').length;
+  const stopped = statuses.filter((status) => status === 'aborted').length;
   const outcome = [
     completed ? `${completed} 已完成` : '',
     failed ? `${failed} 失败` : '',
     waiting ? `${waiting} 待确认` : '',
     running ? `${running} 进行中` : '',
+    stopped ? `${stopped} 已停止` : '',
   ].filter(Boolean).join(' · ');
   return {
     count: calls.size,
@@ -1560,6 +1568,7 @@ function statusLabel(status: AgentActivityProjection['status']): string {
     case 'waiting': return '待确认';
     case 'failed': return '失败';
     case 'completed': return '完成';
+    case 'aborted': return '已停止';
   }
 }
 
@@ -1666,7 +1675,7 @@ export function FxActivityStack({
   if (!activities.length) return null;
   const waiting = activities.some((activity) => activity.status === 'waiting');
   const failedCount = activities.filter((activity) => activity.status === 'failed').length;
-  const stoppedCount = activities.filter((activity) => activity.settledByTurnStatus === 'aborted').length;
+  const stoppedCount = activities.filter(activityStopped).length;
   const compactStatus = [
     running ? '步骤进行中' : waiting ? '步骤等待确认' : failedCount || stoppedCount ? '步骤已结束' : '步骤已完成',
     failedCount ? `${failedCount} 项失败` : '',
@@ -1700,6 +1709,7 @@ export function FxActivityStack({
           <ChevronRight aria-hidden="true" size={13} />
         </button>
       </div>
+      <CollaborationReceiptGroup views={activities.filter(activity => activity.kind.startsWith('tool_')).map(publicToolResultView)} sourceSessionId={sessionId}/>
       <SmoothDisclosureReveal
         ariaLabel="工具与思考步骤列表"
         className="paw-activity-stack__reveal"
@@ -1776,7 +1786,7 @@ function FxActivityDisclosure({
   /* Subagent receipts land after background work; the violet tone separates
      "another Agent finished this for you" from the parent's own tool calls. */
   const subagent = isSubagentActivity(activity);
-  const stopped = activity.settledByTurnStatus === 'aborted';
+  const stopped = activityStopped(activity);
   const tone = failed ? 'danger' : waiting || stopped ? 'wait' : running ? 'run' : subagent ? 'vio' : 'ok';
   const statusText = stopped ? '已停止' : failed ? '失败' : waiting ? '等待确认' : running ? '进行中' : subagent ? '后台完成' : '完成';
   const nowMs = useActivityClock(running && motionActive);
@@ -1892,7 +1902,7 @@ const toolActionVerbs: Record<string, string> = {
 
 function fxActivityAction(activity: AgentActivityProjection, view: PublicToolResultView | null): string {
   if (!view) return '';
-  if (activity.settledByTurnStatus === 'aborted') return '已停止';
+  if (activityStopped(activity)) return '已停止';
   const verb = toolActionVerbs[view.toolId];
   if (!verb) return '';
   return activity.status === 'running' ? `正在${verb}`
@@ -1903,6 +1913,10 @@ function fxActivityAction(activity: AgentActivityProjection, view: PublicToolRes
 function isSubagentActivity(activity: AgentActivityProjection): boolean {
   return activity.kind.includes('subagent')
     || text(activity.payload.toolId ?? activity.payload.toolName).toLowerCase().includes('subagent');
+}
+
+function activityStopped(activity: AgentActivityProjection): boolean {
+  return activity.status === 'aborted' || activity.settledByTurnStatus === 'aborted';
 }
 
 /* A raw Runtime id such as `room_partner` is an implementation detail, not a
@@ -1990,7 +2004,14 @@ function activityReceiptMeta(
   nowMs: number,
   toolView: PublicToolResultView | null,
 ): string {
-  const duration = fxActivityMeta(activity) || activityDuration(activity, nowMs);
+  // Durable history may retain the Provider message timestamp without a Tool
+  // start receipt. It orders the row, but cannot measure Tool execution time.
+  const duration = fxActivityMeta(activity) || (
+    activity.payload.toolTimingAvailable === false
+      && ['tool_started', 'tool_progress', 'tool_finished'].includes(activity.kind)
+      ? ''
+      : activityDuration(activity, nowMs)
+  );
   const tokens = activityTokenReceipt(activity, toolView);
   return [duration, tokens].filter(Boolean).join(' · ');
 }

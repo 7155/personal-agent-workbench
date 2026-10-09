@@ -20,6 +20,53 @@ afterEach(() => {
 });
 
 describe('PAW Browser App', () => {
+  it('closes the trace pane with Escape and returns focus without sending a browser command', async () => {
+    const user = userEvent.setup(); const transport = new MockControlTransport({ routes: {
+      'browser.managed.start': { ok: true }, 'browser.tabs': { ok: true, items: [] }, 'browser.traces': { ok: true, items: [] },
+    } });
+    render(<ControlTransportProvider transport={transport}><PawBrowserApp /></ControlTransportProvider>);
+    const trigger = screen.getByRole('button', { name: '显示 Agent 浏览器轨迹' });
+    await user.click(trigger);
+    const pane = await screen.findByRole('complementary', { name: 'Agent 浏览器轨迹' });
+    await user.click(within(pane).getByRole('button', { name: '隐藏 Agent 浏览器轨迹' }));
+    await waitFor(() => expect(trigger).toHaveFocus());
+    await user.click(trigger);
+    const address = screen.getByRole('textbox', { name: '页面地址' });
+    await user.type(address, 'do-not-navigate');
+    await user.keyboard('{Escape}');
+    expect(screen.getByRole('complementary', { name: 'Agent 浏览器轨迹' })).toBeVisible();
+    expect(address).toHaveValue('');
+    trigger.focus();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('complementary', { name: 'Agent 浏览器轨迹' })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    expect(transport.requests.some(({ request }) => request.pathId === 'browser.command' || request.pathId === 'browser.stop')).toBe(false);
+  });
+
+  it('shows a failed browser startup on the blank surface and retries startup without a tab', async () => {
+    const user = userEvent.setup();
+    let available = false;
+    const transport = new MockControlTransport({ routes: {
+      'browser.managed.start': () => {
+        if (!available) throw new Error('PAW 同窗 Browser 宿主未安装');
+        return { ok: true };
+      },
+      'browser.tabs': { ok: true, items: [] },
+      'browser.traces': { ok: true, items: [] },
+    } });
+    render(<ControlTransportProvider transport={transport}><PawBrowserApp /></ControlTransportProvider>);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('浏览器没有启动');
+    expect(alert).toHaveTextContent('PAW 同窗 Browser 宿主未安装');
+    expect(screen.queryByLabelText('空白页面')).not.toBeInTheDocument();
+    available = true;
+    await user.click(within(alert).getByRole('button', { name: '重试' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(transport.requests.filter(({ request }) => request.pathId === 'browser.managed.start')).toHaveLength(2);
+    expect(transport.requests.some(({ request }) => request.pathId === 'browser.command')).toBe(false);
+  });
+
   it('does not poll Browser tabs while its owning window is inactive', async () => {
     const transport = browserTransport();
     render(

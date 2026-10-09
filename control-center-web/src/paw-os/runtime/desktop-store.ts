@@ -136,6 +136,8 @@ export type PawDesktopState = {
   windows: Record<string, PawWindowNode>;
   stack: string[];
   activeWindowId: string | null;
+  /** Ephemeral foreground intent, including a repeated request for the active window. */
+  foregroundWindowRequest: { windowId: string } | null;
   dockAppIds: PawAppId[];
   wayfinder: PawWayfinderState;
   collaborationFocusGroup: string | null;
@@ -202,6 +204,7 @@ export function createPawDesktopStore(initialAppId?: PawAppId | null, initialRou
     windows: initialWindows,
     stack: initialStack,
     activeWindowId: initialActiveWindowId,
+    foregroundWindowRequest: null,
     dockAppIds: initialDockAppIds,
     wayfinder: {
       layoutVersion: 3,
@@ -237,6 +240,7 @@ export function createPawDesktopStore(initialAppId?: PawAppId | null, initialRou
               }
             : state.windows,
           activeWindowId: options.background ? state.activeWindowId : windowId,
+          ...(!options.background ? { foregroundWindowRequest: { windowId } } : {}),
           stack: options.background
             ? backgroundStack(state.stack, windowId, state.activeWindowId)
             : [...state.stack.filter((id) => id !== windowId), windowId],
@@ -261,7 +265,7 @@ export function createPawDesktopStore(initialAppId?: PawAppId | null, initialRou
       const bounds = satelliteTarget
         ? roomParticipantWindowBounds(satelliteIndex)
         : initialWindowBounds(currentState.stack.length);
-      const startExpanded = appId === 'agent' && !options.entityId && !options.background && !satelliteTarget;
+      const startExpanded = (appId === 'agent' || appId === 'agent-controller') && !options.entityId && !options.background && !satelliteTarget;
       const node: PawWindowNode = {
         id: windowId,
         appId,
@@ -281,6 +285,7 @@ export function createPawDesktopStore(initialAppId?: PawAppId | null, initialRou
             ? backgroundStack(state.stack, windowId, state.activeWindowId)
             : [...state.stack, windowId],
           activeWindowId: options.background ? state.activeWindowId : windowId,
+          ...(!options.background ? { foregroundWindowRequest: { windowId } } : {}),
           launchpadOpen: false,
           overviewOpen: false,
           ...focusForOpenedWindow(state, options.target, options.background),
@@ -447,7 +452,10 @@ export function createPawDesktopStore(initialAppId?: PawAppId | null, initialRou
     },
     focusWindow(windowId) {
       const state = get();
-      if (state.activeWindowId === windowId) return;
+      if (state.activeWindowId === windowId) {
+        set({ foregroundWindowRequest: { windowId } });
+        return;
+      }
       const node = state.windows[windowId];
       if (!node) return;
       set({
@@ -456,6 +464,7 @@ export function createPawDesktopStore(initialAppId?: PawAppId | null, initialRou
           : state.windows,
         stack: [...state.stack.filter((id) => id !== windowId), windowId],
         activeWindowId: windowId,
+        foregroundWindowRequest: { windowId },
         overviewOpen: false,
       });
     },

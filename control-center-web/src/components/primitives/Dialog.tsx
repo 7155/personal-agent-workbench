@@ -10,6 +10,7 @@ import {
   type HTMLAttributes,
   type MutableRefObject,
 } from 'react';
+import { useMotionActivity } from '@/design/motion';
 import { IconButton } from './IconButton';
 import { cn } from './utils';
 
@@ -50,9 +51,11 @@ export const DialogContent = forwardRef<
   ref,
 ) {
   const openerRef = useContext(DialogOpenerContext);
+  const callerMotionActive = 'data-motion-active' in props ? props['data-motion-active'] : undefined;
+  const motionActive = useMotionActivity() && callerMotionActive !== false && callerMotionActive !== 'false';
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="ui-dialog__overlay" />
+      <DialogPrimitive.Overlay className="ui-dialog__overlay" data-motion-active={motionActive} />
       <DialogPrimitive.Content
         ref={ref}
         className={cn('ui-dialog', className)}
@@ -73,6 +76,7 @@ export const DialogContent = forwardRef<
           if (openerRef) openerRef.current = null;
         }}
         {...props}
+        data-motion-active={motionActive}
       >
         {children}
         {!hideClose ? (

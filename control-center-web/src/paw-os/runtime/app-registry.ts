@@ -55,7 +55,7 @@ export function currentPawApps(): readonly PawAppDefinition[] {
 const appById = new Map(pawApps.map((app) => [app.id, app]));
 
 export function pawApp(id: PawAppId): PawAppDefinition {
-  const app = appById.get(id);
+  const app = appById.get(id === 'agent-capsule' ? 'agent-controller' : id);
   if (!app && isPawExtensionAppId(id)) {
     const manifest = pawExtensionApp(id);
     return { id, label: manifest.label, shortLabel: manifest.shortLabel, tagline: manifest.tagline, route: manifest.route, kind: 'work' };

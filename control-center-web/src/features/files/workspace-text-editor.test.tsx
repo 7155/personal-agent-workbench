@@ -48,6 +48,24 @@ async function openEditor() {
 }
 
 describe('Files text editing', () => {
+  it('keeps low-frequency file details collapsed while the original editor draft and save remain available', async () => {
+    const transport = setup();
+    const { user, editor } = await openEditor();
+    fireEvent.change(editor, { target: { value: 'visible editing draft' } });
+    const identity = screen.getByRole('heading', { name: 'notes.md', level: 2 }).closest('details')!;
+    expect(screen.queryByRole('dialog', { name: '文件工具' })).not.toBeInTheDocument();
+    expect(identity).not.toHaveAttribute('open');
+    expect(screen.getByRole('button', { name: '保存文件' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: '文件工具' }));
+    expect(screen.getByRole('textbox', { name: '文件或文件夹路径' })).toBeVisible();
+    expect(screen.getByRole('textbox', { name: '编辑 notes.md' })).toBe(editor);
+    expect(editor).toHaveValue('visible editing draft');
+    await user.click(screen.getByRole('button', { name: '协作与访问' }));
+    expect(screen.getByRole('textbox', { name: '编辑 notes.md' })).toBe(editor);
+    expect(editor).toHaveValue('visible editing draft');
+    expect(transport.requests.filter(({ request }) => request.pathId === 'agent.session.workspace.save')).toHaveLength(0);
+  });
+
   it('renders the unsaved Markdown draft as a reading page and keeps it when editing resumes', async () => {
     const transport = setup(() => readResult('# 磁盘标题\n\n原文。'));
     const { user, editor } = await openEditor();
@@ -114,6 +132,7 @@ describe('Files text editing', () => {
     await user.click(screen.getByRole('button', { name: '保存文件' }));
     expect(await screen.findByText('已保存到文件。')).toBeInTheDocument();
     expect(transport.requests.find(({ request }) => request.pathId === 'agent.session.workspace.save')?.request.body).toEqual({ path: filePath, content: 'canonical update', resourceRevision: firstRevision });
+    await user.click(screen.getByRole('button', { name: '文件工具' }));
     await user.click(screen.getByRole('button', { name: '协作与访问' }));
     expect(await screen.findByText('真实目标文档')).toBeInTheDocument();
   });
@@ -163,7 +182,7 @@ describe('Files text editing', () => {
     fireEvent.change(editor, { target: { value: 'my edit' } });
     await user.click(screen.getByRole('button', { name: '保存文件' }));
     expect(editor).toHaveValue('my edit');
-    expect(screen.getByRole('button', { name: '正在保存' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '保存文件' })).toHaveAttribute('aria-busy', 'true');
     fireEvent.change(editor, { target: { value: 'newer typing' } });
     await act(async () => finish({ ok: true, saved: true, sessionId: 'session-a', path: filePath, resourceRevision: nextRevision }));
     expect(editor).toHaveValue('newer typing');
@@ -177,6 +196,33 @@ describe('Files text editing', () => {
     ]);
     expect(saves.every(({ request }) => request.params?.sessionId === 'session-a')).toBe(true);
     await act(async () => finish({ ok: true, saved: true, sessionId: 'session-a', path: filePath, resourceRevision: firstRevision }));
+  });
+
+  it('keeps the original clicked save action focused and named while one request is held', async () => {
+    let finish!: (value: unknown) => void;
+    const transport = setup(undefined, () => new Promise((resolve) => { finish = resolve; }));
+    const { user, editor } = await openEditor();
+    fireEvent.change(editor, { target: { value: 'held original draft' } });
+    const save = screen.getByRole('button', { name: '保存文件' });
+    await user.click(save);
+    expect(save).toBeEnabled();
+    expect(save).toHaveFocus();
+    expect(save).toHaveAccessibleName('保存文件');
+    expect(screen.getByRole('button', { name: '保存文件' })).toBe(save);
+    expect(save).toHaveAttribute('aria-disabled', 'true');
+    expect(save).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('status')).toHaveTextContent('正在保存…');
+    await user.click(save);
+    await user.keyboard('{Enter} ');
+    expect(save).toHaveFocus();
+    await user.click(editor);
+    await user.keyboard('{Meta>}s{/Meta}{Control>}s{/Control}');
+    expect(transport.requests.filter(({ request }) => request.pathId === 'agent.session.workspace.save')).toHaveLength(1);
+    await act(async () => finish({ ok: true, saved: true, sessionId: 'session-a', path: filePath, resourceRevision: nextRevision }));
+    expect(save).not.toHaveAttribute('aria-busy');
+    expect(save).not.toHaveAttribute('aria-disabled');
+    expect(save).toBeDisabled();
+    expect(editor).toHaveValue('held original draft');
   });
 
   it('retains a visible draft across file and Session switches even when the reread fails', async () => {
@@ -227,6 +273,11 @@ describe('Files text editing', () => {
     const { user, editor } = await openEditor();
     fireEvent.change(editor, { target: { value: 'actually written' } });
     await user.click(screen.getByRole('button', { name: '保存文件' }));
+    expect(editor).toHaveValue('actually written');
+    expect(screen.getByRole('button', { name: '保存文件' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: '保存文件' }));
+    fireEvent.keyDown(editor, { key: 's', metaKey: true });
+    expect(transport.requests.filter(({ request }) => request.pathId === 'agent.session.workspace.save')).toHaveLength(1);
     await user.click(await screen.findByRole('button', { name: '核对磁盘版本' }));
     expect(await screen.findByText('磁盘内容与上次提交一致。')).toBeInTheDocument();
     expect(editor).toHaveValue('actually written');

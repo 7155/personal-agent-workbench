@@ -1491,7 +1491,7 @@ describe('PAWOS Agent Session structural migration', () => {
       </ControlTransportProvider>,
     );
 
-    expect(await screen.findByText('真实评测记录，只读')).toBeInTheDocument();
+    expect(await screen.findByText('评测记录，只读')).toBeInTheDocument();
     await waitFor(() => expect(transport.requests.map((request) => request.pathId)).toEqual([
       'agent.session.snapshot',
     ]));

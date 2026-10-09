@@ -2,6 +2,7 @@ import { captureScreenRegion } from './screen-capture.mjs';
 import { assistantLaunchIntent } from './assistant-launch.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 const AGENT_CAPSULE_CAPTURE_PATH = '/agent-capsule';
 const AGENT_CAPSULE_CAPTURE_QUERY = '?frontend=paw-os&pawHost=electron&surface=capture';
@@ -48,12 +49,19 @@ export function installScreenAssistant({ app, BrowserWindow, ipcMain, dialog, sy
     await fs.writeFile(result.filePath, note.body, { encoding: 'utf8', mode: 0o600 });
     return { saved: true, name: path.basename(result.filePath) };
   });
-  ipcMain.handle('paw-screen:capture', (event) => {
+  ipcMain.handle('paw-screen:capture', (event, options) => {
+    if (event.senderFrame && event.senderFrame !== event.sender.mainFrame) throw new Error('Screen assistant frame rejected');
     if (event.sender !== getMainWindow()?.webContents) owned(event.sender);
-    return startCapture();
+    else if (new URL(event.sender.getURL()).origin !== origin) throw new Error('Screen assistant sender rejected');
+    if (options !== undefined && (!options || typeof options !== 'object' || Array.isArray(options)
+      || Object.keys(options).some((key) => key !== 'sourceSessionId'))) throw new Error('Invalid screen assistant options');
+    const sourceSessionId = options?.sourceSessionId;
+    if (sourceSessionId !== undefined && (typeof sourceSessionId !== 'string' || !sourceSessionId
+      || !assistantLaunchIntent([`--paw-session=${sourceSessionId}`]))) throw new Error('Invalid source Session identity');
+    return startCapture('', { sourceSessionId });
   });
 
-  async function startCapture(sourceAppBundleId = '') {
+  async function startCapture(sourceAppBundleId = '', { sourceSessionId } = {}) {
     if (capturing) return false;
     capturing = true;
     const controller = new AbortController();
@@ -70,11 +78,14 @@ export function installScreenAssistant({ app, BrowserWindow, ipcMain, dialog, sy
       if (!context || controller.signal.aborted) return false;
       const window = new BrowserWindow({
         width: 640, height: 760, minWidth: 400, minHeight: 500,
-        title: 'Agent Capsule · 选区对话', backgroundColor: '#f7f8fa', show: false,
+        title: '星伴 · 屏幕对话', backgroundColor: '#f7f8fa', show: false,
         alwaysOnTop: true, visibleOnAllWorkspaces: true, skipTaskbar: true,
         webPreferences: { contextIsolation: true, nodeIntegration: false, preload, sandbox: true },
       });
-      windows.set(window.webContents.id, { window, capture: context });
+      windows.set(window.webContents.id, { window, capture: {
+        ...context, ...(sourceSessionId ? { sourceSessionId } : {}),
+        creationRequestId: `screen-capture:${randomUUID()}`,
+      } });
       window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
       window.webContents.on('will-navigate', (event, url) => {
         const target = new URL(url);

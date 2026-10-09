@@ -682,6 +682,7 @@ class EvalLabEvidenceProjection:
             "transcriptBytes": 0,
             "missingTranscriptCount": 0,
             "reportOnlyRunCount": int(bool(location.report_path and location.report_path.is_file())),
+            "metrics": {},
             "tasks": [],
             "environment": {},
             "updatedAtMs": 0,

@@ -20,8 +20,9 @@
    they take no row at all.
 
    Cross-owner contracts pinned by tests (do not "clean up"):
-   - `--paw-terminal-bg: #101216` stays the literal console ground, and the
-     console keeps `minmax(0, 1fr)` / `minmax(0, 1fr) 30px` row templates.
+   - `--paw-terminal-bg: #101216` stays the literal console ground. One
+     `minmax(0, 1fr)` track keeps the output flexible; the status band uses
+     its own height token (34px, or 46px around narrow 44px controls).
    - `.paw-terminal-statusbar` stays a single overflow-hidden flex band at
      13px/1.4.
    - Narrow behaviour lives in `@container` queries, never `@media`, because
@@ -192,7 +193,7 @@
   max-width: 190px;
   flex: 0 1 148px;
   align-items: center;
-  height: 28px;
+  height: 32px;
   border-radius: 8px 8px 0 0;
   border: 0;
   background: transparent;
@@ -239,13 +240,13 @@
 .paw-terminal-tab[data-exit-failure] .paw-terminal-tab-exit { color: color-mix(in srgb, var(--paw-terminal-danger) 78%, #fff); }
 
 .paw-terminal-tab-main {
-  min-width: 0;
+  min-width: 32px;
   height: 100%;
   flex: 1;
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 0 24px 0 9px;
+  padding: 0 6px 0 9px;
   color: inherit;
   cursor: pointer;
   font: inherit;
@@ -321,10 +322,9 @@
 .paw-terminal-tab[data-selected] :is(.paw-terminal-tab-cwd, .paw-terminal-tab-exit) { color: var(--paw-terminal-muted); }
 
 .paw-tab-close {
-  position: absolute;
-  right: 4px;
-  width: 19px;
-  height: 19px;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
   display: grid;
   place-items: center;
   opacity: 0.5;
@@ -345,8 +345,8 @@
 }
 
 .paw-terminal-tab-new {
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
   display: grid;
   flex: 0 0 auto;
   place-items: center;
@@ -359,7 +359,7 @@
 }
 .paw-terminal-tab-new:active { transform: scale(.94); }
 .paw-terminal-tab-new:focus-visible { outline: 2px solid var(--paw-terminal-focus); outline-offset: -2px; }
-.paw-terminal-tab-new--cwd { width: 17px; }
+.paw-terminal-tab-new--cwd { width: 32px; }
 .paw-terminal-tab-new--cwd[aria-expanded='true'],
 .paw-terminal-tabs-overflow[aria-expanded='true'] {
   border-color: color-mix(in srgb, var(--paw-terminal-accent) 40%, transparent);
@@ -372,6 +372,8 @@
    the only flexible one and the only thing that scrolls.
    ------------------------------------------------------------------------- */
 .paw-terminal-console {
+  --paw-terminal-status-height: 34px;
+  --paw-terminal-search-height: 34px;
   position: relative;
   min-width: 0;
   min-height: 0;
@@ -381,18 +383,18 @@
   outline: none;
 }
 .paw-terminal-console[data-session] {
-  grid-template-rows: minmax(0, 1fr) 30px;
+  grid-template-rows: minmax(0, 1fr) var(--paw-terminal-status-height);
 }
 .paw-terminal-console[data-session][data-search] {
-  grid-template-rows: 32px minmax(0, 1fr) 30px;
+  grid-template-rows: var(--paw-terminal-search-height) minmax(0, 1fr) var(--paw-terminal-status-height);
 }
 /* An ended session keeps its backlog readable and adds one truthful notice
    band between the output and the status band. */
 .paw-terminal-console[data-session][data-ended] {
-  grid-template-rows: minmax(0, 1fr) auto 30px;
+  grid-template-rows: minmax(0, 1fr) auto var(--paw-terminal-status-height);
 }
 .paw-terminal-console[data-session][data-search][data-ended] {
-  grid-template-rows: 32px minmax(0, 1fr) auto 30px;
+  grid-template-rows: var(--paw-terminal-search-height) minmax(0, 1fr) auto var(--paw-terminal-status-height);
 }
 
 /* -------------------------------------------------------------------------
@@ -415,7 +417,7 @@
 .paw-terminal-search input {
   min-width: 0;
   flex: 1 1 auto;
-  height: 22px;
+  height: 32px;
   border: 0;
   background: transparent;
   color: var(--paw-terminal-text);
@@ -434,8 +436,8 @@
 }
 .paw-terminal-search button {
   display: grid;
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
   flex: 0 0 auto;
   place-items: center;
   border: 0;
@@ -599,7 +601,7 @@
   gap: 7px;
 }
 .paw-terminal-create__actions button {
-  min-height: 26px;
+  min-height: 32px;
   padding: 0 11px;
   border: 1px solid rgb(255 255 255 / 14%);
   border-radius: 7px;
@@ -612,11 +614,16 @@
   transition: background-color 120ms var(--paw-terminal-ease), border-color 120ms var(--paw-terminal-ease);
 }
 .paw-terminal-create__actions button[type='submit'] {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   border-color: color-mix(in srgb, var(--paw-terminal-accent) 45%, transparent);
   background: var(--paw-terminal-accent-strong);
   color: #fff;
   box-shadow: 0 4px 14px color-mix(in srgb, var(--paw-terminal-accent) 24%, transparent);
 }
+.paw-terminal-create__busy { flex: 0 0 14px; visibility: hidden; }
+.paw-terminal-create__actions button[aria-busy='true'] .paw-terminal-create__busy { visibility: visible; }
 .paw-terminal-create__actions button:disabled { cursor: not-allowed; opacity: .45; }
 .paw-terminal-create__actions button:focus-visible { outline: 2px solid var(--paw-terminal-focus); outline-offset: 1px; }
 
@@ -649,8 +656,8 @@
 }
 .paw-terminal-error button {
   display: grid;
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
   flex: 0 0 auto;
   place-items: center;
   border: 0;
@@ -823,7 +830,7 @@
   align-items: center;
   gap: 5px;
   max-width: min(42cqi, 360px);
-  height: 22px;
+  height: 32px;
   padding: 0 6px;
   overflow: hidden;
   border: 0;
@@ -847,8 +854,8 @@
 
 .paw-terminal-statusbar__search {
   display: grid;
-  width: 22px;
-  height: 22px;
+  width: 32px;
+  height: 32px;
   flex: 0 0 auto;
   place-items: center;
   margin-left: auto;
@@ -1013,11 +1020,11 @@
 @container paw-terminal-bar (max-width: 300px) {
   .paw-terminal-app__toolbar { gap: 5px; }
   .paw-terminal-tab {
-    min-width: 54px;
-    max-width: 54px;
+    min-width: 88px;
+    max-width: 88px;
     flex: 0 0 auto;
   }
-  .paw-terminal-tab-main { gap: 5px; padding: 0 22px 0 8px; }
+  .paw-terminal-tab-main { gap: 5px; padding: 0 6px; }
   .paw-terminal-tab-label,
   .paw-terminal-tab-cwd,
   .paw-terminal-tab-exit { display: none; }
@@ -1025,6 +1032,14 @@
 }
 
 @container paw-terminal (max-width: 560px) {
+  .paw-terminal-console { --paw-terminal-status-height: 46px; --paw-terminal-search-height: 46px; }
+  .paw-terminal-search input { height: 44px; font-size: 16px; }
+  .paw-terminal-search button,
+  .paw-terminal-statusbar__search { width: 44px; height: 44px; }
+  .paw-terminal-cwd { height: 44px; }
+  .paw-terminal-create input { min-height: 44px; font-size: 16px; }
+  .paw-terminal-create__actions button,
+  .paw-terminal-ended__actions button { min-height: 44px; }
   .paw-terminal-statusbar__facts { display: none; }
   .paw-terminal-cwd { max-width: none; }
   .paw-terminal-xterm { padding: 9px 8px 6px; }
@@ -1042,8 +1057,20 @@
 }
 
 @container paw-window (max-width: 480px) {
-  .paw-window-titlebar[data-window-chrome='terminal-tabs'] { grid-template-columns: var(--paw-titlebar-lead, max-content) 20px minmax(0, 1fr); gap: 6px; }
-  .paw-window-titlebar[data-window-chrome='terminal-tabs'] .paw-window-title strong { display: none; }
+  .paw-terminal-tab { height: 44px; min-width: 88px; }
+  .paw-terminal-tab-main { min-width: 44px; }
+  .paw-tab-close,
+  .paw-terminal-tab-new { width: 44px; height: 44px; }
+  /* Keep the primary action and original close target at 44px. Compact
+     secondary controls leave room for the complete 88px selected tab. */
+  .paw-terminal-tab-new--cwd,
+  .paw-terminal-tabs-overflow { width: 40px; }
+  .paw-terminal-app__toolbar:not([data-window-chrome]) { height: 48px; }
+  .paw-window-titlebar[data-window-chrome='terminal-tabs'] { grid-template-columns: var(--paw-titlebar-lead, max-content) minmax(0, 1fr); column-gap: 4px; padding-inline: 4px; }
+  .paw-window-titlebar[data-window-chrome='terminal-tabs'] .paw-window-title { display: none; }
+  .paw-window-titlebar[data-window-chrome='terminal-tabs'] .paw-window-chrome-slot { grid-column: 2; }
+  .paw-terminal-new-group { gap: 0; }
+  .paw-terminal-app__toolbar { gap: 1px; }
   .paw-terminal-app__toolbar { padding-inline: 6px; }
   .paw-terminal-app__toolbar[data-window-chrome] { padding-inline: 0; }
 }
@@ -1059,7 +1086,6 @@
   .paw-terminal-cwd:hover { background: rgb(255 255 255 / 7%); color: var(--paw-terminal-text); }
   .paw-terminal-create__actions button:hover:not(:disabled) { background: rgb(255 255 255 / 9%); }
   .paw-terminal-create__actions button[type='submit']:hover:not(:disabled) { background: color-mix(in srgb, var(--paw-terminal-accent-strong) 88%, #fff); }
-  .paw-terminal-tab:hover,
   .paw-terminal-tab-new:hover,
   .paw-terminal-console__empty button:hover { transform: translate3d(0, -1px, 0); }
   .paw-terminal-console__empty button:hover { box-shadow: 0 9px 28px color-mix(in srgb, var(--paw-terminal-accent) 30%, transparent); }
@@ -1132,4 +1158,9 @@
   .paw-terminal-empty-glyph > i { background: currentColor; forced-color-adjust: none; }
   .paw-terminal-tab[data-selected]::before { background: Highlight; }
   .paw-terminal-xterm:focus-within::before { border-top-color: Highlight; }
+}
+
+@container paw-terminal (max-width: 560px) {
+  .paw-terminal-error button,
+  .paw-terminal-console__empty button { min-width: 44px; min-height: 44px; }
 }

@@ -1,6 +1,7 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Check, ChevronRight } from 'lucide-react';
 import { forwardRef, type ComponentPropsWithoutRef, type ComponentRef } from 'react';
+import { useMotionActivity } from '@/design/motion';
 import { cn } from './utils';
 
 export const Menu = DropdownMenu.Root;
@@ -13,6 +14,8 @@ export const MenuContent = forwardRef<
   ComponentRef<typeof DropdownMenu.Content>,
   ComponentPropsWithoutRef<typeof DropdownMenu.Content>
 >(function MenuContent({ className, sideOffset = 6, ...props }, ref) {
+  const callerMotionActive = 'data-motion-active' in props ? props['data-motion-active'] : undefined;
+  const motionActive = useMotionActivity() && callerMotionActive !== false && callerMotionActive !== 'false';
   return (
     <DropdownMenu.Portal>
       <DropdownMenu.Content
@@ -21,6 +24,7 @@ export const MenuContent = forwardRef<
         sideOffset={sideOffset}
         collisionPadding={8}
         {...props}
+        data-motion-active={motionActive}
       />
     </DropdownMenu.Portal>
   );
@@ -101,5 +105,7 @@ export const MenuSubContent = forwardRef<
   ComponentRef<typeof DropdownMenu.SubContent>,
   ComponentPropsWithoutRef<typeof DropdownMenu.SubContent>
 >(function MenuSubContent({ className, ...props }, ref) {
-  return <DropdownMenu.SubContent ref={ref} className={cn('ui-menu', className)} {...props} />;
+  const callerMotionActive = 'data-motion-active' in props ? props['data-motion-active'] : undefined;
+  const motionActive = useMotionActivity() && callerMotionActive !== false && callerMotionActive !== 'false';
+  return <DropdownMenu.SubContent ref={ref} className={cn('ui-menu', className)} {...props} data-motion-active={motionActive} />;
 });

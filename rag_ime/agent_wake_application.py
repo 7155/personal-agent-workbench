@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+import json
 from typing import Any
 
-from .agent_runtime_driver import AgentRuntimeError
+from .agent_command_receipts import AgentCommandReceiptFailed
+from .agent_protocol import AgentEventEnvelope
+from .agent_wake_scheduler import AgentWakeDispatchUncertain
 
 
 class AgentWakeApplicationService:
@@ -22,6 +25,7 @@ class AgentWakeApplicationService:
         prompt: Callable[[str, Mapping[str, object]], Mapping[str, object]],
         guard_room_session_route: Callable[[str, str], None],
         context_source_token: object,
+        command_receipts: Any = None,
     ) -> None:
         self.schedules = schedules
         self.sessions = sessions
@@ -33,6 +37,7 @@ class AgentWakeApplicationService:
         self.prompt = prompt
         self.guard_room_session_route = guard_room_session_route
         self.context_source_token = context_source_token
+        self.command_receipts = command_receipts
         self.scheduler: Any = None
 
     def bind_scheduler(self, scheduler: Any) -> None:
@@ -96,7 +101,7 @@ class AgentWakeApplicationService:
             ),
             "ok": True,
             "schedulerActive": bool(
-                self.scheduler and self.scheduler.enabled
+                self.scheduler and self.scheduler.active
             ),
             "items": items,
         }
@@ -236,6 +241,8 @@ class AgentWakeApplicationService:
 
     def dispatch(self, claim: Mapping[str, object]) -> None:
         run_id = str(claim.get("runId") or "")
+        if self.schedules.dispatch_binding(run_id)["session_id"]:
+            return  # Never repeat a bound original admission or create another Role target.
         target_type = str(claim.get("targetType") or "")
         session = self._dispatch_target(
             target_type=target_type,
@@ -256,6 +263,7 @@ class AgentWakeApplicationService:
             title=title,
             claim=claim,
         )
+        self.schedules.bind_target(run_id, session_id=session_id)
         try:
             accepted = self.prompt(
                 session_id,
@@ -268,10 +276,11 @@ class AgentWakeApplicationService:
                     ),
                 },
             )
-        except AgentRuntimeError as exc:
+        except Exception as exc:
             if (
                 target_type == "session"
-                and "上一轮" in str(exc)
+                and isinstance(exc, AgentCommandReceiptFailed)
+                and exc.cause_code in {"SESSION_BUSY", "AGENT_TURN_CONFLICT"}
                 and self.sessions.get(session_id).get("status")
                 == "busy"
             ):
@@ -283,23 +292,91 @@ class AgentWakeApplicationService:
                     delay_ms=60_000,
                 )
                 return
-            raise
-        turn_id = str(accepted.get("turnId") or "")
-        self.schedules.accept(
-            run_id,
-            session_id=session_id,
-            turn_id=turn_id,
-        )
-        replayed, _gap = self.events.replay(session_id)
-        for event in replayed:
-            if (
-                event.turn_id == turn_id
-                and event.event_type
-                in {"turn_completed", "turn_failed"}
-            ):
+            if isinstance(exc, AgentCommandReceiptFailed) and exc.cause_code:
+                raise
+            # Prompt was invoked: local/untyped failure is not rejection proof.
+            raise AgentWakeDispatchUncertain(str(exc)) from exc
+        try:
+            if accepted.get("admissionCancelled") is True:
+                self.schedules.fail_dispatch(run_id, error="Original prompt admission was cancelled")
+                return
+            turn_id = str(accepted.get("turnId") or "")
+            self.schedules.accept(
+                run_id,
+                session_id=session_id,
+                turn_id=turn_id,
+            )
+            replayed, _gap = self.events.replay(session_id)
+            for event in replayed:
+                if (
+                    event.turn_id == turn_id
+                    and event.event_type
+                    in {"turn_completed", "turn_failed"}
+                ):
+                    if self.scheduler is not None:
+                        self.scheduler.observe_event(event)
+                    break
+        except Exception as exc:
+            raise AgentWakeDispatchUncertain(str(exc)) from exc
+
+    def reconcile_once(self, *, limit: int = 100) -> int:
+        """Project exact durable bindings without prompting or opening Pi."""
+        count = 0
+        for run in self.schedules.active_bound_runs(limit=limit):
+            metadata = json.loads(str(run["metadata_json"] or "{}"))
+            if metadata.get("kind") == "room_partner_completion":
+                continue  # Room retains its own admission identity.
+            run_id = str(run["run_id"])
+            session_id = str(run["session_id"])
+            turn_id = str(run["turn_id"] or "")
+            changed = False
+            try:
+                if run["state"] == "claimed":
+                    acceptance = None
+                    if self.command_receipts is not None:
+                        acceptance = self.command_receipts.acceptance_evidence_for_exact_command(
+                            command_scope="session_prompt", scope_id=session_id,
+                            client_message_id=run_id,
+                        )
+                    acceptance = acceptance or self.sessions.prompt_acceptance_evidence(session_id, run_id)
+                    if acceptance and str(acceptance.get("clientMessageId") or "") == run_id:
+                        turn_id = str(acceptance.get("turnId") or "")
+                        if not turn_id:
+                            continue
+                        self.schedules.accept(run_id, session_id=session_id, turn_id=turn_id)
+                        count += 1
+                        changed = True
+                    else:
+                        failure = self.command_receipts.failure_evidence_for_exact_command(
+                            command_scope="session_prompt", scope_id=session_id,
+                            client_message_id=run_id,
+                        ) if self.command_receipts is not None else None
+                        if failure and failure.get("causeCode"):
+                            self.schedules.fail_dispatch(run_id, error=str(failure.get("message") or "Original prompt rejected"))
+                            count += 1
+                        continue
+                terminal = self.sessions.runtime_turn_terminal_event(session_id, turn_id)
+                if not terminal or terminal.get("sessionId") != session_id or terminal.get("turnId") != turn_id:
+                    continue
+                event_type = str(terminal.get("eventType") or "")
+                if event_type not in {"turn_completed", "turn_failed"}:
+                    continue
+                event = AgentEventEnvelope(
+                    event_id=str(terminal["eventId"]), session_id=session_id, turn_id=turn_id,
+                    sequence=int(terminal["sequence"]), created_at_ms=int(terminal["createdAtMs"]),
+                    event_type=event_type, payload={"error": str(terminal.get("status") or "")},
+                    resume_token=str(terminal["sequence"]),
+                )
                 if self.scheduler is not None:
-                    self.scheduler.observe_event(event)
-                break
+                    finished = self.scheduler.observe_event(event)
+                else:
+                    finished = self.schedules.finish_event(event)
+                if finished and not changed:
+                    count += 1
+            except ValueError:
+                # Transactions fence concurrent cancellation or incompatible binding.
+                continue
+        return count
 
     def _dispatch_target(
         self,
@@ -325,6 +402,8 @@ class AgentWakeApplicationService:
                 raise ValueError(
                     "scheduled Agent thread is archived"
                 )
+            if session.get("evaluationSnapshot") is True:
+                raise ValueError("evaluation snapshot is read-only")
             return session
         if target_type == "role":
             created = self.create_session(

@@ -1,5 +1,5 @@
 const PET_PATH = '/desktop-pet';
-const SIZE = { width: 160, height: 190 };
+const SIZE = { width: 160, height: 240 };
 const READY_TIMEOUT_MS = 10_000;
 
 export function clampPetPosition(position, area, size = SIZE) {
@@ -10,7 +10,7 @@ export function clampPetPosition(position, area, size = SIZE) {
 }
 
 // An optional launcher, not a second assistant runtime. No capture or model calls.
-export function installDesktopPet({ app, BrowserWindow, ipcMain, screen, origin, preload, openAssistant, getSource = () => null, onVisibilityChanged = () => {} }) {
+export function installDesktopPet({ app, BrowserWindow, ipcMain, screen, origin, preload, openAssistant, openVoiceSettings, getSource = () => null, onVisibilityChanged = () => {} }) {
   let window = null;
   let presentationEpoch = 0;
   let loading = null;
@@ -122,6 +122,17 @@ export function installDesktopPet({ app, BrowserWindow, ipcMain, screen, origin,
   });
   ipcMain.handle('paw-pet:hide', (event) => { owned(event); hide(); });
   ipcMain.handle('paw-pet:open-assistant', (event) => { owned(event); openAssistant(); });
+  ipcMain.handle('paw-pet:voice-settings', (event) => {
+    owned(event);
+    if (!openVoiceSettings) throw new Error('Voice settings unavailable');
+    openVoiceSettings();
+  });
+  const workbenchOwned = (event) => {
+    if (event.sender !== getSource() || (event.senderFrame && event.senderFrame !== event.sender.mainFrame)
+      || new URL(event.sender.getURL()).origin !== origin) throw new Error('Desktop companion sender rejected');
+  };
+  ipcMain.handle('paw-pet:show-from-workbench', (event) => { workbenchOwned(event); return show(); });
+  ipcMain.handle('paw-pet:hide-from-workbench', (event) => { workbenchOwned(event); hide(); });
   ipcMain.handle('paw-pet:open-conversation', (event, target) => {
     owned(event);
     if (!state.canOpenConversation(target)) throw new Error('Desktop pet conversation rejected');
@@ -133,7 +144,7 @@ export function installDesktopPet({ app, BrowserWindow, ipcMain, screen, origin,
     drag = null;
     const [x, y] = target.getPosition();
     const display = screen.getDisplayNearestPoint({ x, y });
-    const size = expanded ? { width: 320, height: 400 } : SIZE;
+    const size = expanded ? { width: 320, height: 440 } : SIZE;
     target.setSize(Math.min(size.width, display.workArea.width), Math.min(size.height, display.workArea.height));
     place(target, { x, y });
   });

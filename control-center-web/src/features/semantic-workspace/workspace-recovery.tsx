@@ -103,6 +103,17 @@ function updateOwner<T extends object>(owner: RecoveryOwner<T>, update: (input: 
   persist(target);
   target.listeners.forEach(listener => listener());
 }
+/** Seed an explicitly created conversation through the same draft owner.
+ * Mounted drafts are appended, never replaced; no message is dispatched. */
+export function appendWorkspaceRecoveryDraft(transport: Pick<ControlTransport, 'kind' | 'connectionIdentity'>, spaceKey: string, incoming: string): boolean {
+  if (!incoming.trim()) return true;
+  const key = recoveryScope(transport, spaceKey);
+  if (!key) return false;
+  const owner = createOwner<object>(key, '', [], 'append');
+  updateOwner(owner, current => ({ ...current, draft: appendWorkspaceDraft(current.draft, incoming) }));
+  return !owner.snapshot.warning;
+}
+
 export function useWorkspaceRecovery<T extends object>(spaceKey: string, initialDraft = '', initialAttachments: T[] = [], initialDraftPolicy: 'replace' | 'append' = 'replace') {
   const transport = useControlTransport();
   const key = recoveryScope(transport, spaceKey);

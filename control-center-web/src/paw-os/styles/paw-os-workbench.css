@@ -3,6 +3,7 @@
    Light remains the default; blue belongs to selection and actions. */
 .paw-workbench,
 .paw-wb-operation-dialog,
+.paw-wb-planning-popover,
 .paw-wb-document-lifecycle__erase-dialog {
   --paw-wb-bg: var(--color-canvas, #f4f5f7);
   --paw-wb-surface: var(--color-surface, #ffffff);
@@ -42,6 +43,8 @@
   font-size: 13px;
   line-height: 1.45;
   isolation: isolate;
+  container-name: paw-workbench;
+  container-type: size;
 }
 
 .paw-workbench *,
@@ -518,6 +521,35 @@
 .paw-workbench .paw-wb-planning-tools__actions { overflow-x: auto; scrollbar-width: none; }
 .paw-workbench .paw-wb-planning-tools__actions::-webkit-scrollbar { display: none; }
 
+.paw-wb-planning-popover {
+  width: min(300px, calc(100vw - 24px));
+  max-height: var(--radix-popover-content-available-height);
+  overflow: auto;
+  background: var(--paw-wb-surface);
+  color: var(--paw-wb-ink);
+}
+.paw-wb-planning-popover__days { display: flex; justify-content: space-between; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--paw-wb-line); }
+.paw-wb-planning-popover .paw-wb-planning-tools__actions { display: grid; gap: 2px; padding-top: 8px; }
+.paw-wb-planning-popover button {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+}
+.paw-wb-planning-popover button:hover { background: var(--paw-wb-fill); }
+.paw-wb-planning-popover button:focus-visible { outline: 2px solid var(--paw-wb-accent); outline-offset: -2px; }
+.paw-wb-planning-popover button:disabled { opacity: .45; cursor: default; }
+
 .paw-workbench .paw-wb-orchestration {
   min-width: 0;
   min-height: 0;
@@ -527,6 +559,7 @@
 }
 
 .paw-workbench .paw-wb-detail {
+  min-width: 0;
   min-height: 0;
   overflow: auto;
   background: var(--paw-wb-surface);
@@ -680,6 +713,8 @@
 .paw-workbench .paw-wb-graph > header span { color: var(--paw-wb-muted); font-size: 13px; line-height: 1.4; font-variant-numeric: tabular-nums; }
 
 .paw-workbench .paw-wb-graph__viewport {
+  /* The resource notice may be absent; the viewport still owns the flex row. */
+  grid-row: 3;
   min-width: 0;
   min-height: 0;
   overflow: auto;
@@ -765,17 +800,38 @@
   display: grid;
   align-content: center;
   gap: 7px;
-  padding: 10px 12px 10px 15px;
+  padding: 11px 13px 11px 16px;
+  /* Keep the semantic target rectangular; only the rounded face has a border.
+     A transparent semantic border gains a square color in forced colors. */
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--paw-wb-ink);
+  text-align: left;
+  isolation: isolate;
+  cursor: pointer;
+  transform: translate(var(--paw-wb-node-x), var(--paw-wb-node-y));
+  transition: translate 140ms var(--paw-wb-ease-out);
+  animation: paw-wb-node-enter 460ms var(--paw-wb-ease-out) backwards;
+}
+
+.paw-workbench .paw-wb-task-node::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
   border: 1px solid var(--paw-wb-line);
   border-radius: 13px;
   background: var(--paw-wb-surface);
-  color: var(--paw-wb-ink);
-  text-align: left;
   box-shadow: var(--paw-wb-shadow);
-  cursor: pointer;
-  transform: translate(var(--paw-wb-node-x), var(--paw-wb-node-y));
-  transition: border-color 140ms ease-out, box-shadow 170ms ease-out, translate 140ms var(--paw-wb-ease-out);
-  animation: paw-wb-node-enter 460ms var(--paw-wb-ease-out) backwards;
+  transition: border-color 140ms ease-out, box-shadow 170ms ease-out;
+}
+
+.paw-workbench .paw-wb-task-node:focus-visible { outline: none; }
+.paw-workbench .paw-wb-task-node:focus-visible::before {
+  outline: 3px solid rgb(49 94 172 / 30%);
+  outline-offset: 2px;
 }
 
 /* Arrival stagger reads as the plan assembling itself; reduced motion
@@ -786,9 +842,10 @@
 .paw-workbench .paw-wb-task-node:nth-of-type(5) { animation-delay: 180ms; }
 .paw-workbench .paw-wb-task-node:nth-of-type(n + 6) { animation-delay: 220ms; }
 
-.paw-workbench .paw-wb-task-node:hover { translate: 0 -2px; box-shadow: 0 8px 22px rgb(23 31 43 / 12%); }
-.paw-workbench .paw-wb-task-node[aria-pressed='true'] { border-color: var(--paw-wb-accent); box-shadow: 0 0 0 3px rgb(49 94 172 / 20%), 0 8px 22px rgb(23 31 43 / 11%); }
-.paw-workbench .paw-wb-task-node[data-gate='true'] { border-color: rgb(164 82 0 / 58%); }
+.paw-workbench .paw-wb-task-node:hover { translate: 0 -2px; }
+.paw-workbench .paw-wb-task-node:hover::before { box-shadow: 0 8px 22px rgb(23 31 43 / 12%); }
+.paw-workbench .paw-wb-task-node[aria-pressed='true']::before { border-color: var(--paw-wb-accent); box-shadow: 0 0 0 3px rgb(49 94 172 / 20%), 0 8px 22px rgb(23 31 43 / 11%); }
+.paw-workbench .paw-wb-task-node[data-gate='true']::before { border-color: rgb(164 82 0 / 58%); }
 .paw-workbench .paw-wb-task-node__title { min-width: 0; display: grid; grid-template-columns: 8px minmax(0, 1fr); align-items: center; gap: 8px; }
 .paw-workbench .paw-wb-task-node__title strong { overflow: hidden; font-size: 14px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
 .paw-workbench .paw-wb-task-node__meta { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -817,7 +874,7 @@
 .paw-workbench .paw-wb-detail > header p { margin-top: 3px; color: var(--paw-wb-muted); font-size: 14px; line-height: 1.45; }
 .paw-workbench .paw-wb-detail__actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
 .paw-workbench .paw-wb-detail__actions button {
-  min-height: 31px;
+  min-height: var(--paw-wb-control-size);
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -828,10 +885,13 @@
   color: var(--paw-wb-muted);
   font-size: 13px;
   line-height: 1.4;
+  white-space: nowrap;
+  scroll-margin-block: 16px;
   cursor: pointer;
 }
 .paw-workbench .paw-wb-detail__actions button:first-child { color: var(--paw-wb-accent); }
 .paw-workbench .paw-wb-detail__actions button:hover { background: var(--paw-wb-fill); color: var(--paw-wb-ink); }
+.paw-workbench .paw-wb-detail__short-label { display: none; }
 .paw-workbench .paw-wb-detail__compact-toggle { display: none; }
 .paw-workbench .paw-wb-detail__compact-toggle svg { transition: transform 220ms var(--paw-wb-ease-out); }
 .paw-workbench .paw-wb-detail__compact-toggle[aria-expanded='true'] svg { transform: rotate(180deg); }
@@ -840,8 +900,9 @@
 .paw-workbench .paw-wb-detail__body > section { display: grid; gap: 8px; margin-top: 18px; }
 .paw-workbench .paw-wb-detail h3 { color: var(--paw-wb-faint); font-size: 13px; line-height: 1.4; font-weight: 650; letter-spacing: .04em; }
 .paw-workbench .paw-wb-detail__body > section > strong { font-size: 13px; font-variant-numeric: tabular-nums; }
-.paw-workbench .paw-wb-detail__body > dl { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin-top: 18px; overflow: hidden; border-radius: 11px; background: var(--paw-wb-line); }
-.paw-workbench .paw-wb-detail__body > dl > div { min-width: 0; padding: 10px; background: var(--paw-wb-surface-soft); }
+.paw-workbench .paw-wb-detail__body > dl { display: grid; gap: 12px; margin-top: 18px; }
+.paw-workbench .paw-wb-detail__body > dl > div { min-width: 0; display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: baseline; gap: 8px; }
+.paw-workbench .paw-wb-detail__body > dl > div > dd { margin: 0; }
 .paw-workbench .paw-wb-detail__body > dl > div[data-wide='true'] { grid-column: 1 / -1; }
 .paw-workbench .paw-wb-dependencies { display: grid; gap: 5px; }
 .paw-workbench .paw-wb-dependencies li { min-width: 0; }
@@ -1116,6 +1177,8 @@
   box-shadow: 0 28px 72px rgb(20 25 34 / 24%);
 }
 
+.paw-wb-operation-dialog--task { scrollbar-gutter: stable; }
+
 .paw-wb-document-lifecycle__erase-dialog {
   width: min(520px, calc(100vw - 28px));
   max-height: min(720px, calc(100dvh - 28px));
@@ -1164,8 +1227,48 @@
 .paw-wb-operation-dialog__context > div { min-width: 0; padding: 10px 11px; background: var(--paw-wb-surface); }
 .paw-wb-operation-dialog__context dt { color: var(--paw-wb-faint); font-size: 13px; line-height: 1.4; }
 .paw-wb-operation-dialog__context dd { margin: 4px 0 0; overflow-wrap: anywhere; font-size: 14px; line-height: 1.45; }
+.paw-wb-task-context { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0; font-size: 13px; line-height: 1.45; }
+.paw-wb-task-context > div { display: flex; align-items: baseline; gap: 6px; min-width: 0; max-width: 100%; }
+.paw-wb-task-context dt { flex-shrink: 0; color: var(--paw-wb-faint); }
+.paw-wb-task-context dd { min-width: 0; margin: 0; overflow-wrap: anywhere; color: var(--paw-wb-muted); }
 .paw-wb-operation-dialog .mgmt-workflow { padding: 14px; border: 1px solid var(--paw-wb-line); border-radius: 12px; background: var(--paw-wb-surface); }
 .paw-wb-operation-dialog .mgmt-workflow[data-confirmation='direct'] { border-block: 1px solid var(--paw-wb-line); }
+
+/* Task forms end in one action row; each transaction keeps its own feedback. */
+.paw-wb-task-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--paw-wb-line);
+}
+.paw-wb-operation-dialog--task .paw-wb-task-actions > .mgmt-workflow {
+  flex: 1 1 168px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.paw-wb-operation-dialog--task .paw-wb-task-actions > .mgmt-workflow:has(.mgmt-workflow__panel, .mgmt-workflow__feedback, .mgmt-workflow__receipt) {
+  flex-basis: 100%;
+}
+.paw-wb-operation-dialog--task .paw-wb-task-actions .mgmt-workflow[data-stage='idle'] .mgmt-workflow__heading {
+  display: grid;
+  gap: var(--space-2);
+}
+.paw-wb-operation-dialog--task .paw-wb-task-actions .mgmt-workflow[data-stage='idle'] .mgmt-workflow__heading > .ui-button {
+  width: 100%;
+}
+.paw-wb-task-actions__hint {
+  flex: 1 0 100%;
+  margin: 0;
+  color: var(--paw-wb-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
 
 /* Three motions, all bounded, all retired by the reduced-motion block below:
    the plan assembling itself (node arrival), real dependency flow (edge march
@@ -1191,8 +1294,16 @@
 
 @container paw-native-stage (max-width: 1050px) {
   .paw-workbench .paw-wb-overview__workspace { grid-template-columns: minmax(0, 1.1fr) minmax(252px, .9fr); }
-  .paw-workbench .paw-wb-orchestration { grid-template-columns: 190px minmax(360px, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
-  .paw-workbench .paw-wb-orchestration > .paw-wb-detail { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 11px 14px; overflow: hidden; border-top: 1px solid var(--paw-wb-line); border-left: 0; transition: box-shadow 180ms ease-out; }
+  /* Detail content must not consume the graph's last usable row. Short
+     windows scroll this band, with room inside the resize pointer boundary. */
+  .paw-workbench .paw-wb-orchestration {
+    grid-template-columns: 190px minmax(360px, 1fr);
+    grid-template-rows: minmax(240px, 1fr) auto;
+    overflow-y: auto;
+    padding-bottom: 16px;
+    scroll-padding-block: 16px;
+  }
+  .paw-workbench .paw-wb-orchestration > .paw-wb-detail { grid-column: 1 / -1; min-height: auto; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 11px 14px; overflow: hidden; border-top: 1px solid var(--paw-wb-line); border-left: 0; transition: box-shadow 180ms ease-out; }
   .paw-workbench .paw-wb-detail > header { position: static; min-width: 0; padding: 0; border-bottom: 0; background: none; }
   .paw-workbench .paw-wb-detail__actions { margin: 0; }
   .paw-workbench .paw-wb-detail__compact-toggle { display: inline-flex; }
@@ -1216,11 +1327,11 @@
   .paw-workbench .paw-wb-chrome__purpose h1 { white-space: nowrap; }
   .paw-workbench .paw-wb-chrome__purpose p { display: none; }
   .paw-workbench .paw-wb-planning-tools {
-    min-height: 82px;
+    min-height: 52px;
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 6px;
-    padding: 6px 10px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 4px 10px;
   }
   .paw-workbench .paw-wb-planning-tools__date,
   .paw-workbench .paw-wb-planning-tools__actions {
@@ -1244,7 +1355,16 @@
   .paw-workbench .paw-wb-overview__side:has(> [data-pane='goals']) { grid-template-rows: none; grid-auto-rows: auto; }
   .paw-workbench .paw-wb-pane > :is(.paw-wb-pane__list, .paw-wb-pane__rows, .paw-wb-pane__goals) { max-height: 318px; }
   .paw-workbench .paw-wb-ledger { position: sticky; bottom: 0; }
-  .paw-workbench .paw-wb-orchestration { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; }
+  .paw-workbench .paw-wb-orchestration { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(240px, 1fr) auto; }
+  /* The App container can stay narrow after the desktop viewport widens.
+     Identity and verbs each use the full detail width, and its expanded facts
+     join the same planning scroll instead of shrinking the graph behind it. */
+  .paw-workbench .paw-wb-orchestration > .paw-wb-detail { grid-template-columns: minmax(0, 1fr); align-items: start; overflow: visible; }
+  .paw-workbench .paw-wb-detail[data-expanded='true'] { max-height: none; overflow: visible; }
+  .paw-workbench .paw-wb-detail__actions { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+  .paw-workbench .paw-wb-detail__actions button { justify-content: center; padding-inline: 6px; }
+  .paw-workbench .paw-wb-detail__action-label { display: none; }
+  .paw-workbench .paw-wb-detail__short-label { display: inline; }
   .paw-workbench .paw-wb-outline { max-height: 190px; border-right: 0; border-bottom: 1px solid var(--paw-wb-line); }
   .paw-workbench .paw-wb-outline > ol:not(.paw-wb-outline__tasks) { display: none; }
   .paw-workbench .paw-wb-outline__tasks { grid-auto-flow: column; grid-auto-columns: minmax(180px, 1fr); overflow-x: auto; }
@@ -1260,27 +1380,11 @@
   .paw-workbench .paw-wb-chrome__identity small { display: none; }
   .paw-workbench .paw-wb-chrome__identity { display: none; }
   .paw-workbench .paw-wb-primary { flex: 0 0 auto; min-height: var(--paw-wb-control-size); padding: 0 9px; justify-content: center; }
-  .paw-workbench .paw-wb-planning-tools {
-    min-height: 82px;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 6px;
-    padding: 6px 8px;
-  }
-  .paw-workbench .paw-wb-planning-tools__date,
-  .paw-workbench .paw-wb-planning-tools__actions {
-    width: 100%;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-  .paw-workbench .paw-wb-planning-tools__date::-webkit-scrollbar,
-  .paw-workbench .paw-wb-planning-tools__actions::-webkit-scrollbar { display: none; }
+  .paw-workbench .paw-wb-planning-tools { padding-inline: 8px; }
   .paw-workbench .paw-wb-graph > header { min-height: 38px; gap: 8px; padding: 6px 12px; }
   .paw-workbench .paw-wb-graph .paw-wb-empty { min-height: 0; padding: 16px; }
-  /* The lane name folds onto the pill's title; the ring and the truthful count
-     keep the column readable without widening the field. */
+  /* Narrow lanes retain the state name beside their shape and actual count. */
   .paw-workbench .paw-wb-graph__lane { width: auto; }
-  .paw-workbench .paw-wb-graph__lane b { display: none; }
   .paw-workbench .paw-wb-graph__lane em { margin-left: 0; }
   .paw-workbench .paw-wb-now { margin-inline: 10px; padding: 12px; }
   .paw-workbench .paw-wb-now__pulse { gap: 8px 16px; }
@@ -1347,7 +1451,7 @@
 @media (forced-colors: active) {
   .paw-workbench :is(.paw-wb-status-mark, .paw-wb-task-progress > i, .paw-wb-flow-packet) { background: currentColor; fill: currentColor; forced-color-adjust: none; }
   .paw-workbench .paw-wb-status-mark { box-shadow: none; }
-  .paw-workbench .paw-wb-task-node[aria-pressed='true'] { outline: 2px solid Highlight; }
+  .paw-workbench .paw-wb-task-node[aria-pressed='true']::before { outline: 2px solid Highlight; }
   .paw-workbench .paw-wb-now { border: 1px solid CanvasText; }
 }
 
@@ -1372,4 +1476,25 @@
   .paw-wb-operation-dialog,
   .paw-wb-document-lifecycle__erase-dialog { --paw-wb-control-size: 44px; }
   :is(.paw-wb-operation-dialog, .paw-wb-document-lifecycle__erase-dialog) :is(.ui-input, .ui-textarea, .ui-select__trigger) { font-size: 16px; }
+}
+
+@container paw-native-stage (max-width: 520px) {
+  .paw-workbench .paw-wb-planning-tools__date input { font-size: 16px; }
+  .paw-workbench .paw-wb-planning-tools__date > svg { display: none; }
+}
+
+/* In a short, narrow window the two-row toolbar cannot leave a usable graph
+   scrollport underneath it. Let the toolbar and plan scroll together while
+   the Workbench's primary chrome stays fixed. Every plan section stays in
+   the existing DOM; no control, draft or selection changes owner. */
+@container paw-workbench (max-width: 760px) and (max-height: 300px) {
+  .paw-workbench .paw-wb-planning {
+    display: block;
+    overflow: auto;
+    overscroll-behavior: contain;
+    scroll-padding-block: 16px;
+  }
+  .paw-workbench .paw-wb-orchestration {
+    overflow: visible;
+  }
 }

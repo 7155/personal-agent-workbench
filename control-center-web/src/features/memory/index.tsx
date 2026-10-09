@@ -35,6 +35,7 @@ import {
   TabsTrigger,
   TextArea,
 } from '@/components/primitives';
+import { MotionActivityBoundary } from '@/design/motion';
 import { useControlTransport } from '@/app/control-transport';
 import { EvidenceEchoUsage } from '@/features/evidence-echo/EvidenceEchoUsage';
 import { useProductIdentity } from '@/features/identity/product-identity';
@@ -468,7 +469,7 @@ export function MemoryFeature() {
             />
           </TabsContent>
           {(view === 'preferences' || preferencesVisited) ? <TabsContent value="preferences" forceMount hidden={view !== 'preferences'}>
-            <MemoryPreferences />
+            <MotionActivityBoundary active={view === 'preferences'}><MemoryPreferences /></MotionActivityBoundary>
           </TabsContent> : null}
         </ViewTabs>
         <MemoryEditDialog
@@ -1481,7 +1482,7 @@ function memoryStatusOptions(kind: MemoryKind) {
     { value: 'approved', label: '已确认' },
     { value: 'archived', label: '已归档' },
     { value: 'hidden', label: '历史保留' },
-    { value: 'superseded', label: '已合并' },
+    { value: 'superseded', label: '历史版本' },
     { value: 'conflict', label: '有冲突' },
     { value: 'source_archive', label: '来源归档' },
     { value: 'disabled', label: '已暂停' },
@@ -1496,7 +1497,7 @@ function statusLabel(status: string): string {
     approved: '已确认',
     archived: '已归档',
     hidden: '历史保留',
-    superseded: '已合并',
+    superseded: '历史版本',
     source_archive: '来源归档',
     disabled: '已暂停',
     suppressed: '已抑制',

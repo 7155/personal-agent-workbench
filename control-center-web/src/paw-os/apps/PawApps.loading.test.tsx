@@ -66,21 +66,30 @@ describe('workspace launch intent', () => {
   });
 
   it('allows a later first render to recover after a failed prefetch', async () => {
-    const state = pendingRuntime();
-    vi.doMock('./PawRoomWorkspace', () => { throw new Error('prefetch connection failed'); });
-    try {
-      const loader = await import('./agent-workspace-loader');
-      loader.warmAgentWorkspace('room');
-      const failed = loader.loadRoomWorkspace();
-      await expect(failed).rejects.toMatchObject({ cause: { message: 'prefetch connection failed' } });
-      vi.doMock('./PawRoomWorkspace', () => ({ PawRoomWorkspace: () => <main>Recovered Room workspace</main> }));
-      const retry = loader.loadRoomWorkspace();
-      expect(retry).not.toBe(failed);
-      expect((await retry).default).toBeTypeOf('function');
-      const Room = lazy(loader.loadRoomWorkspace);
-      render(<Suspense fallback={<div>Loading retry</div>}><Room personas={[]} recordId="room-retry" onRoomUpdated={vi.fn()} /></Suspense>);
-      expect(await screen.findByText('Recovered Room workspace')).toBeInTheDocument();
-    } finally { state.release(); }
+    vi.resetModules();
+    // This case needs only the workspace boundary. pendingRuntime would queue
+    // a successful mock for the same path before this failure; Vitest resolves
+    // consecutive mock registrations in parallel, so their completion order
+    // must not decide whether prefetch really fails.
+    const failedImport = vi.fn(() => { throw new Error('prefetch connection failed'); });
+    vi.doMock('./PawRoomWorkspace', failedImport);
+    const loader = await import('./agent-workspace-loader');
+    loader.warmAgentWorkspace('room');
+    const failed = loader.loadRoomWorkspace();
+    await expect(failed).rejects.toMatchObject({ cause: { message: 'prefetch connection failed' } });
+    expect(failedImport).toHaveBeenCalledTimes(1);
+    const recoveredImport = vi.fn(() => ({ PawRoomWorkspace: () => <main>Recovered Room workspace</main> }));
+    vi.doMock('./PawRoomWorkspace', recoveredImport);
+    const firstRenderLoad = vi.fn(loader.loadRoomWorkspace);
+    const Room = lazy(firstRenderLoad);
+    render(<Suspense fallback={<div>Loading retry</div>}><Room personas={[]} recordId="room-retry" onRoomUpdated={vi.fn()} /></Suspense>);
+    expect(firstRenderLoad).toHaveBeenCalledTimes(1);
+    const retry = firstRenderLoad.mock.results[0].value;
+    expect(retry).not.toBe(failed);
+    expect(loader.loadRoomWorkspace()).toBe(retry);
+    expect((await retry).default).toBeTypeOf('function');
+    expect(await screen.findByText('Recovered Room workspace')).toBeInTheDocument();
+    expect(recoveredImport).toHaveBeenCalledTimes(1);
   });
 
   it.each([

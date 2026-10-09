@@ -918,12 +918,6 @@ def _rag_evidence_hints_from_grounding(
     ]
 
 
-def _rag_evidence_hints(evidence: Sequence[ActiveRagEvidence]) -> list[dict[str, object]]:
-    """Compatibility wrapper for callers/tests that used the old private helper."""
-
-    return _rag_evidence_hints_from_grounding(
-        _structured_grounding_evidence(evidence, limit=6)
-    )
 
 
 def _canonical_evidence_text(

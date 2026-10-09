@@ -15,8 +15,9 @@ from threading import RLock
 from typing import Callable, Iterable, Mapping, cast
 from urllib.parse import quote
 
-from .agent_model_defaults import DEFAULT_AGENT_MODEL_PROFILE
 from .agent_approval_model import pending_model_arbitration
+from .agent_command_receipts import AgentCommandReceiptStore
+from .agent_model_defaults import DEFAULT_AGENT_MODEL_PROFILE
 from .agent_role_identity import (
     canonical_agent_role_id,
     canonical_role_book_revision_id,
@@ -287,8 +288,8 @@ class AgentSessionStore:
         elif unrestricted_profile:
             roots = list(system_wide_workspace_roots(roots))
             project_context_enabled = True
-            pi_skills_enabled = True
-            codex_skills_enabled = True
+            pi_skills_enabled = runtime_engine == "classic"
+            codex_skills_enabled = runtime_engine == "classic"
         if normalized_tool_profile not in SUPPORTED_AGENT_TOOL_PROFILES:
             raise ValueError("unsupported Agent tool profile")
         read_only_subagent = (
@@ -714,6 +715,71 @@ class AgentSessionStore:
         array-shaped API for internal callers; this page-shaped method is the
         listing seam used by the HTTP application service.
         """
+        page = self._list_page_rows(
+            include_archived=include_archived, include_internal=include_internal,
+            limit=limit, before_updated_at_ms=before_updated_at_ms, before_id=before_id,
+            surface_kind=surface_kind, owner_app_id=owner_app_id, surface_key=surface_key,
+            projection_only=projection_only,
+        )
+        rows = cast(list[sqlite3.Row], page["items"])
+        page["items"] = (
+            [_session_directory_payload(row) for row in rows]
+            if projection_only
+            else [_session_payload(row, _joined_runtime_binding(row)) for row in rows]
+        )
+        return page
+
+    def list_evaluation_page(
+        self,
+        *,
+        include_archived: bool = False,
+        include_internal: bool = False,
+        limit: int = 100,
+        before_updated_at_ms: int | None = None,
+        before_id: str | None = None,
+        surface_kind: str | None = None,
+        owner_app_id: str = "",
+        surface_key: str = "",
+    ) -> dict[str, object]:
+        """Page evaluation Sessions before LIMIT, with only their joined snapshot.
+
+        This internal Lab reader shares the ordinary directory's filters and
+        cursor. Raw runtime-binding metadata is never a public Session field.
+        """
+        page = self._list_page_rows(
+            include_archived=include_archived, include_internal=include_internal,
+            limit=limit, before_updated_at_ms=before_updated_at_ms, before_id=before_id,
+            surface_kind=surface_kind, owner_app_id=owner_app_id, surface_key=surface_key,
+            evaluation_only=True,
+        )
+        records: list[dict[str, object]] = []
+        for row in cast(list[sqlite3.Row], page["items"]):
+            try:
+                metadata = json.loads(str(row["runtime_binding_metadata_json"] or "{}"))
+            except (ValueError, TypeError):
+                metadata = {}
+            snapshot = metadata.get("evaluationSnapshot") if isinstance(metadata, Mapping) else None
+            records.append({
+                "session": _session_payload(row, _joined_runtime_binding(row)),
+                "snapshot": dict(snapshot) if isinstance(snapshot, Mapping) else None,
+            })
+        page["items"] = records
+        return page
+
+    def _list_page_rows(
+        self,
+        *,
+        include_archived: bool = False,
+        include_internal: bool = False,
+        limit: int = 100,
+        before_updated_at_ms: int | None = None,
+        before_id: str | None = None,
+        surface_kind: str | None = None,
+        owner_app_id: str = "",
+        surface_key: str = "",
+        projection_only: bool = False,
+        evaluation_only: bool = False,
+    ) -> dict[str, object]:
         bounded_limit = max(1, min(int(limit), 500))
         if surface_kind is None or not str(surface_kind).strip():
             if str(owner_app_id or "").strip() or str(surface_key or "").strip():
@@ -731,6 +797,8 @@ class AgentSessionStore:
                 )
             )
         clauses = [] if include_archived else ["s.status <> 'archived'"]
+        if evaluation_only:
+            clauses.append("s.evaluation_snapshot = 1")
         if not include_internal:
             clauses.extend(
                 [
@@ -768,14 +836,6 @@ class AgentSessionStore:
             ).fetchall()
         has_more = len(rows) > bounded_limit
         page_rows = rows[:bounded_limit]
-        items = (
-            [_session_directory_payload(row) for row in page_rows]
-            if projection_only
-            else [
-                _session_payload(row, _joined_runtime_binding(row))
-                for row in page_rows
-            ]
-        )
         next_updated_at_ms = (
             int(page_rows[-1]["updated_at_ms"])
             if has_more and page_rows
@@ -791,7 +851,7 @@ class AgentSessionStore:
             else None
         )
         return {
-            "items": items,
+            "items": page_rows,
             "hasMore": has_more,
             "nextBeforeUpdatedAtMs": next_updated_at_ms,
             "nextBeforeId": next_id,
@@ -1707,8 +1767,8 @@ class AgentSessionStore:
         elif unrestricted_profile:
             roots = list(system_wide_workspace_roots(roots))
             project_context_enabled = True
-            pi_skills_enabled = True
-            codex_skills_enabled = True
+            pi_skills_enabled = current.get("runtimeEngine") == "classic"
+            codex_skills_enabled = current.get("runtimeEngine") == "classic"
         read_only_subagent = (
             str(current.get("sessionKind") or "conversation") == "subagent_runtime"
             and normalized_mode == "assistant"
@@ -2032,6 +2092,7 @@ class AgentSessionStore:
         message_count: int | None = None,
         last_message_preview: str | None = None,
         updated_at_ms: int | None = None,
+        _preserve_archived: bool = False,
     ) -> dict[str, object]:
         if status not in {"idle", "active", "busy", "faulted", "archived"}:
             raise ValueError(f"unsupported agent session status: {status}")
@@ -2043,7 +2104,13 @@ class AgentSessionStore:
         if last_message_preview is not None:
             assignments.append("last_message_preview = ?")
             values.append(" ".join(last_message_preview.split())[:240])
-        self._update(session_id, ", ".join(assignments), tuple(values))
+        if _preserve_archived:
+            # Internal resident-notice projections must not undo a lifecycle
+            # archive that committed after native admission. Default unchanged.
+            with self._connect() as conn:
+                conn.execute(f"UPDATE agent_sessions SET {', '.join(assignments)} WHERE id=? AND status<>'archived'", (*values, session_id))
+        else:
+            self._update(session_id, ", ".join(assignments), tuple(values))
         return self.get(session_id)
 
     def max_event_sequence(self, session_id: str) -> int:
@@ -2053,6 +2120,51 @@ class AgentSessionStore:
                 (session_id,),
             ).fetchone()
         return int(row[0] if row else 0)
+
+    def runtime_tool_timing_pairs(
+        self, session_id: str, identities: Sequence[tuple[str, str, str]],
+    ) -> dict[tuple[str, str, str], tuple[int, int]]:
+        """Read exact, unambiguous Gateway-observed Tool spans, never model time.
+
+        Uses the existing bounded event journal and opaque Tool identity only.
+        Retention, incomplete or repeated calls yield unavailable evidence.
+        """
+        wanted = set(list(dict.fromkeys(identities))[-512:])
+        if not wanted:
+            return {}
+        turns = sorted({turn for turn, call, name in wanted if turn and call and name})
+        if not turns:
+            return {}
+        with self._read_connect() as conn:
+            rows = conn.execute(
+                "SELECT turn_id, sequence, event_type, created_at_ms, metrics_json "
+                "FROM agent_runtime_events WHERE session_id=? AND event_type IN "
+                "('tool_started','tool_finished') AND turn_id IN ("
+                + ",".join("?" for _ in turns) + ") ORDER BY sequence LIMIT 2049",
+                (session_id, *turns),
+            ).fetchall()
+        if len(rows) > 2048:
+            return {}
+        grouped: dict[tuple[str, str, str], list[tuple[str, int, int]]] = {}
+        for row in rows:
+            try:
+                metrics = json.loads(str(row["metrics_json"] or "{}"))
+            except (TypeError, ValueError):
+                continue
+            identity = metrics.get("toolIdentity") if isinstance(metrics, Mapping) else None
+            if not isinstance(identity, Mapping):
+                continue
+            key = (str(row["turn_id"]), str(identity.get("toolCallId") or ""),
+                   str(identity.get("toolName") or ""))
+            if key in wanted:
+                grouped.setdefault(key, []).append((str(row["event_type"]),
+                    int(row["sequence"]), int(row["created_at_ms"])))
+        result = {}
+        for key, pair in grouped.items():
+            if (len(pair) == 2 and pair[0][0] == "tool_started" and pair[1][0] == "tool_finished"
+                    and pair[0][1] < pair[1][1] and 0 < pair[0][2] <= pair[1][2]):
+                result[key] = (pair[0][2], pair[1][2])
+        return result
 
     def runtime_turn_terminal_event(
         self,
@@ -2077,8 +2189,19 @@ class AgentSessionStore:
                 """,
                 (session_id, normalized_turn_id),
             ).fetchone()
-        if row is None:
-            return None
+            if row is None:
+                candidates = []
+                for attempt in self._coordinator_attempt_rows(conn, session_id, turn_id=normalized_turn_id):
+                    if _coordinator_acceptance(attempt) is None:
+                        continue
+                    try:
+                        refs = json.loads(str(attempt["terminal_refs_json"] or "[]"))
+                    except (TypeError, ValueError):
+                        continue
+                    for reference in refs if isinstance(refs, list) else []:
+                        if _coordinator_terminal_reference(reference, session_id, normalized_turn_id):
+                            candidates.append(reference)
+                return max(candidates, key=lambda value: value["sequence"]) if candidates else None
         return {
             "eventId": str(row["event_id"]),
             "sessionId": str(session_id),
@@ -2324,6 +2447,7 @@ class AgentSessionStore:
         self,
         session_id: str,
         client_message_id: str,
+        *, _connection: sqlite3.Connection | None = None,
     ) -> dict[str, object] | None:
         """Return durable, content-free proof that Pi accepted one prompt."""
 
@@ -2332,7 +2456,7 @@ class AgentSessionStore:
         ).strip()
         if not normalized_client_message_id:
             return None
-        with self._connect() as conn:
+        with nullcontext(_connection) if _connection is not None else self._connect() as conn:
             rows = conn.execute(
                 """
                 SELECT event_id, turn_id, created_at_ms, metrics_json
@@ -2392,6 +2516,14 @@ class AgentSessionStore:
                         row["created_at_ms"] or 0
                     ),
                 }
+            # A coordinator's original acceptance may outlive this recent
+            # window. It is captured only from this owner or command receipts
+            # before pruning its original event in the same transaction.
+            attempts = self._coordinator_attempt_rows(conn, session_id, client_message_id=normalized_client_message_id)
+            for attempt in attempts:
+                proof = _coordinator_acceptance(attempt)
+                if proof is not None:
+                    return proof
         return None
 
     def agent_todo(self, session_id: str) -> dict[str, object]:
@@ -3222,6 +3354,14 @@ class AgentSessionStore:
             ).fetchall()
             if not stale_rows:
                 return
+            # Save only traced coordinator original-turn references before
+            # the bounded event window drops them. No message or execution
+            # state is copied; the attempt's existing reference field owns it.
+            for stale_row in stale_rows:
+                if stale_row["event_type"] in {"turn_completed", "turn_failed"}:
+                    self._retain_coordinator_terminal(conn, session_id, stale_row)
+                elif stale_row["event_type"] == "message_completed":
+                    self._retain_coordinator_acceptance(conn, session_id, stale_row)
             pending_client_message_ids = {
                 str(row[0])
                 for row in conn.execute(
@@ -3293,6 +3433,70 @@ class AgentSessionStore:
                     for stale_event_id in deletable_event_ids
                 ),
             )
+
+    def _coordinator_attempt_rows(
+        self, conn: sqlite3.Connection, session_id: str, *,
+        turn_id: str = "", client_message_id: str = "",
+    ) -> list[sqlite3.Row]:
+        # Causal creation link remains a tombstone after retirement. A new
+        # Source cannot fabricate or inherit this original attempt relation.
+        return list(conn.execute(
+            "SELECT a.* FROM agent_coordinator_work_attempts a "
+            "JOIN agent_coordinator_work w ON w.work_id=a.work_id AND w.target_session_id=a.target_session_id "
+            "JOIN agent_coordinator_objects o ON o.target_id=a.target_session_id AND o.target_kind='session' "
+            "AND o.coordinator_id=w.coordinator_id AND o.source_session_id=w.source_session_id "
+            "WHERE a.target_session_id=? AND (?='' OR a.turn_id=?) AND (?='' OR a.client_message_id=?)",
+            (session_id, turn_id, turn_id, client_message_id, client_message_id),
+        ))
+
+    def _retain_coordinator_acceptance(self, conn: sqlite3.Connection, session_id: str, event: sqlite3.Row) -> None:
+        try:
+            metrics = json.loads(str(event["metrics_json"] or "{}"))
+        except (TypeError, ValueError):
+            return
+        identity = metrics.get("promptAcceptance") if isinstance(metrics, dict) else None
+        client = str(identity.get("clientMessageId") or "") if isinstance(identity, dict) else ""
+        if not client:
+            return
+        proof = self.prompt_acceptance_evidence(session_id, client, _connection=conn)
+        if not proof or proof.get("turnId") != event["turn_id"]:
+            return
+        for attempt in self._coordinator_attempt_rows(conn, session_id, client_message_id=client):
+            if attempt["turn_id"] and attempt["turn_id"] != proof["turnId"]:
+                continue
+            conn.execute("UPDATE agent_coordinator_work_attempts SET turn_id=?, acceptance_json=? WHERE attempt_id=?",
+                         (proof["turnId"], json.dumps(proof, ensure_ascii=False, sort_keys=True), attempt["attempt_id"]))
+
+    def _retain_coordinator_terminal(self, conn: sqlite3.Connection, session_id: str, event: sqlite3.Row) -> None:
+        turn_id = str(event["turn_id"] or "")
+        if not turn_id:
+            return
+        receipts = AgentCommandReceiptStore(self.db_path)
+        for attempt in self._coordinator_attempt_rows(conn, session_id):
+            if attempt["turn_id"] and attempt["turn_id"] != turn_id:
+                continue
+            client = str(attempt["client_message_id"])
+            acceptance = receipts.acceptance_evidence_for_exact_command(
+                command_scope="session_prompt", scope_id=session_id, client_message_id=client, _connection=conn)
+            if not acceptance:
+                acceptance = self.prompt_acceptance_evidence(session_id, client, _connection=conn)
+            if not acceptance or acceptance.get("turnId") != turn_id or acceptance.get("clientMessageId") != client:
+                continue
+            reference = {"eventId": str(event["event_id"]), "sessionId": session_id, "turnId": turn_id,
+                         "sequence": int(event["sequence"]), "eventType": str(event["event_type"]),
+                         "createdAtMs": int(event["created_at_ms"]), "status": str(event["redacted_summary"] or "")}
+            try:
+                previous = json.loads(str(attempt["terminal_refs_json"] or "[]"))
+            except (TypeError, ValueError):
+                previous = []
+            if not isinstance(previous, list):
+                previous = []
+            if any(_coordinator_terminal_reference(value, session_id, turn_id)
+                   and value["sequence"] > reference["sequence"] for value in previous):
+                continue
+            conn.execute("UPDATE agent_coordinator_work_attempts SET turn_id=?, acceptance_json=?, terminal_refs_json=? WHERE attempt_id=?",
+                         (turn_id, json.dumps(acceptance, ensure_ascii=False, sort_keys=True),
+                          json.dumps([reference], ensure_ascii=False, sort_keys=True), attempt["attempt_id"]))
 
     def _claim_terminal_projection(
         self,
@@ -6276,3 +6480,28 @@ def _timestamp(value: int | None) -> int:
 
 def _valid_sha256(value: str) -> bool:
     return len(value) == 64 and all(character in "0123456789abcdef" for character in value)
+
+
+def _coordinator_acceptance(attempt: sqlite3.Row) -> dict[str, object] | None:
+    try:
+        proof = json.loads(str(attempt["acceptance_json"] or "{}"))
+    except (TypeError, ValueError):
+        return None
+    if (not isinstance(proof, dict) or not attempt["turn_id"]
+        or proof.get("turnId") != attempt["turn_id"] or proof.get("clientMessageId") != attempt["client_message_id"]):
+        return None
+    command_proof = (proof.get("schemaVersion") == "rag-ime.agent-command-acceptance-evidence.v1"
+                     and proof.get("accepted") is True)
+    user_event_proof = (isinstance(proof.get("eventId"), str) and bool(proof["eventId"])
+                        and isinstance(proof.get("createdAtMs"), int) and not isinstance(proof["createdAtMs"], bool))
+    return proof if command_proof or user_event_proof else None
+
+
+def _coordinator_terminal_reference(value: object, session_id: str, turn_id: str) -> bool:
+    return (isinstance(value, dict) and value.get("sessionId") == session_id and value.get("turnId") == turn_id
+            and isinstance(value.get("eventType"), str)
+            and value["eventType"] in {"turn_completed", "turn_failed"}
+            and isinstance(value.get("eventId"), str) and bool(value["eventId"])
+            and isinstance(value.get("sequence"), int) and not isinstance(value["sequence"], bool)
+            and isinstance(value.get("createdAtMs"), int) and not isinstance(value["createdAtMs"], bool)
+            and isinstance(value.get("status"), str))

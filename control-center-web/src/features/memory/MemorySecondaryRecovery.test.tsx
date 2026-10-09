@@ -9,6 +9,7 @@ import { TooltipProvider } from '@/components/primitives';
 import { previewPersonas } from '@/features/agent/preview-data';
 import { MockControlTransport, type MockRouteHandler } from '@/test/mock-transport';
 import { MemoryPreferences } from './MemoryPreferences';
+import { MotionActivityBoundary } from '@/design/motion';
 import { RoleBookLayer } from './RoleBookLayer';
 
 afterEach(cleanup);
@@ -164,3 +165,29 @@ function renderWithTransport(transport: MockControlTransport, child: ReactNode) 
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   return { ...render(<MemoryRouter><TooltipProvider><ControlTransportProvider transport={transport}><QueryClientProvider client={client}>{child}</QueryClientProvider></ControlTransportProvider></TooltipProvider></MemoryRouter>), client };
 }
+
+describe('preference feedback follows request ownership', () => {
+  it('keeps an unsaved draft quiet and tracks a real reread through inactivity and failure', async () => {
+    let rejectRead: ((reason: Error) => void) | undefined;
+    let reading = false;
+    const transport = preferenceTransport(() => reading ? new Promise((_, reject) => { rejectRead = reject; }) : settings(365));
+    const user = userEvent.setup();
+    const surface = (active: boolean) => <MotionActivityBoundary active={active}><MemoryPreferences /></MotionActivityBoundary>;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    const tree = (active: boolean) => <MemoryRouter><TooltipProvider><ControlTransportProvider transport={transport}><QueryClientProvider client={client}>{surface(active)}</QueryClientProvider></ControlTransportProvider></TooltipProvider></MemoryRouter>;
+    const view = render(tree(true));
+    await choosePriority(user);
+    const status = () => view.container.querySelector('.memory-preferences__persistence')!;
+    expect(status()).toHaveTextContent('等待保存');expect(status()).toHaveAttribute('data-busy', 'false');
+    reading = true;await user.click(screen.getByRole('button', { name: '重新读取' }));
+    await waitFor(() => expect(status()).toHaveAttribute('data-busy', 'true'));
+    view.rerender(tree(false));expect(status()).toHaveAttribute('data-motion-active', 'false');
+    expect(screen.getByRole('combobox', { name: '稳定偏好' })).toHaveTextContent('优先记住');
+    await act(async () => rejectRead?.(new Error('read unavailable')));
+    await screen.findByText('暂时无法更新记忆偏好');
+    expect(status()).toHaveAttribute('data-busy', 'false');expect(status()).toHaveTextContent('等待读取最新设置');
+    view.rerender(tree(true));expect(status()).toHaveAttribute('data-busy', 'false');
+    expect(screen.getByRole('combobox', { name: '稳定偏好' })).toHaveTextContent('优先记住');
+    expect(transport.requests.some(({ request }) => request.pathId === 'configuration.settings.apply')).toBe(false);
+  });
+});

@@ -932,7 +932,7 @@ class ControlToolGatewayTests(unittest.TestCase):
 
         self.assertEqual(
             by_operation["correct_preview"]["required"],
-            ["op", "targetId", "text"],
+            ["op", "targetId", "text", "reason"],
         )
         self.assertEqual(
             by_operation["forget_preview"]["required"],

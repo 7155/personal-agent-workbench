@@ -19,6 +19,7 @@ from rag_ime.agent_protocol import AgentEventEnvelope
 from rag_ime.pi.public import (
     pi_message_payload,
     inspectable_tool_result,
+    public_durable_tool_outcome,
     pi_message_id,
     pi_message_completes_public_turn,
     pi_message_continues_public_turn,
@@ -568,6 +569,7 @@ def durable_tool_history_events(
     maximum_tools: int | None = 256,
     maximum_public_chars: int | None = 48_000,
     evidence_turn_id: str = "",
+    runtime_session_id: str = "",
 ) -> list[dict[str, object]]:
     """Rebuild the public tool timeline from Pi's durable transcript.
 
@@ -591,6 +593,8 @@ def durable_tool_history_events(
         if entry.get("type") == "message" and entry.get("id")
     }
     current_turn_id = ""
+    current_client_message_id = ""
+    tool_lineage: dict[str, tuple[str, str, str, str]] = {}
     activity_order: list[str] = []
     tool_names: dict[str, str] = {}
     tool_arguments: dict[str, Mapping[str, object]] = {}
@@ -605,6 +609,7 @@ def durable_tool_history_events(
                 current_turn_id = str(
                     raw.get(DURABLE_TURN_ID_KEY) or f"history:{message_id}"
                 )
+                current_client_message_id = str(raw.get("clientMessageId") or "")
             continue
         turn_id = current_turn_id or f"history:{message_id}"
         fingerprint = history_message_fingerprint(raw)
@@ -697,6 +702,9 @@ def durable_tool_history_events(
                     activity_order.append(tool_call_id)
                 tool_names[tool_call_id] = tool_name
                 tool_arguments[tool_call_id] = raw_args
+                if (raw.get(DURABLE_TURN_ID_KEY, turn_id) == turn_id
+                        and raw.get("clientMessageId", current_client_message_id) == current_client_message_id):
+                    tool_lineage[tool_call_id] = (turn_id, current_client_message_id, message_id, tool_name)
             continue
         if role not in {"toolresult", "tool_result"}:
             continue
@@ -789,6 +797,19 @@ def durable_tool_history_events(
                 reported_is_error=bool(raw.get("isError") or raw.get("is_error")),
             ),
         }
+        original = tool_lineage.get(tool_call_id)
+        if (original is not None and original[:2] == (turn_id, current_client_message_id)
+                and original[3] == tool_name
+                and raw.get(DURABLE_TURN_ID_KEY, turn_id) == turn_id
+                and raw.get("clientMessageId", current_client_message_id) == current_client_message_id):
+            outcome = public_durable_tool_outcome(
+                raw.get("durableToolOutcome"), session_id=session_id,
+                runtime_session_id=runtime_session_id, turn_id=turn_id,
+                client_message_id=current_client_message_id, tool_call_id=tool_call_id,
+                tool_name=tool_name, assistant_message_id=original[2], result_message_id=message_id,
+            )
+            if outcome is not None:
+                payload["durableToolOutcome"] = outcome
         if nested_calls:
             payload["nestedCalls"] = [{key: value for key, value in call.items()
                                        if key not in {"result", "resultSource", "resultUnavailable"}}

@@ -19,8 +19,8 @@ type PawNativeAppId = Extract<PawAppId,
   | 'eval-lab'
   | 'system-settings'>;
 
+const loadPawCoordinatorApp = () => import('./entries/PawCoordinatorAppEntry');
 const loadPawAgentApp = () => import('./entries/PawAgentAppEntry');
-const loadPawAgentCapsuleApp = () => import('./entries/PawAgentCapsuleAppEntry');
 const loadPawBrowserApp = () => import('./entries/PawBrowserAppEntry');
 const loadPawNativeApp = () => import('./entries/PawNativeAppEntry');
 const loadTraceAgentApp = () => import('./entries/PawTraceAgentAppEntry');
@@ -33,8 +33,8 @@ const loadTerminalApp = async () => ({
   default: (await import('@/features/terminal/PawOsTerminalApp')).PawOsTerminalApp,
 });
 
+const PawCoordinatorApp = lazy(loadPawCoordinatorApp);
 const PawAgentApp = lazy(loadPawAgentApp);
-const PawAgentCapsuleApp = lazy(loadPawAgentCapsuleApp);
 const PawBrowserApp = lazy(loadPawBrowserApp);
 const PawNativeApp = lazy(loadPawNativeApp);
 const TraceAgentApp = lazy(loadTraceAgentApp);
@@ -45,10 +45,10 @@ const TerminalApp = lazy(loadTerminalApp);
 const SchedulesApp = lazy(async () => ({ default: (await import('@/features/schedules/SchedulesApp')).SchedulesApp }));
 
 export function warmPawAppBody(appId: PawAppId): void {
-  const load = appId === 'agent'
+  const load = appId === 'agent-controller' ? loadPawCoordinatorApp : appId === 'agent'
     ? loadPawAgentApp
     : appId === 'agent-capsule'
-    ? loadPawAgentCapsuleApp
+    ? loadPawCoordinatorApp
     : appId === 'browser'
     ? loadPawBrowserApp
     : appId === 'files'
@@ -109,10 +109,12 @@ function renderApp(appId: PawAppId, entityId?: string, initialRoute?: string, ta
   switch (appId) {
     case 'schedules':
       return <SchedulesApp initialRoute={initialRoute} />;
+    case 'agent-controller':
+      return <PawCoordinatorApp />;
     case 'agent':
       return <PawAgentApp initialRoute={initialRoute} target={target ?? (entityId ? { kind: 'session', id: entityId, title: entityId } : undefined)} />;
     case 'agent-capsule':
-      return <PawAgentCapsuleApp />;
+      return <PawCoordinatorApp />;
     case 'browser':
       return <PawBrowserApp target={target?.kind === 'browser-target' ? target : undefined} />;
     case 'files':

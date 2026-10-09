@@ -1,15 +1,30 @@
+import { useChatPresentation } from '@/features/conversation-ui/reading/chat-presentation';
+import { PLANET_SIGNAL_PALETTE } from '@/features/rooms/sphere-avatar/sphere-avatar-protocol';
 import { useMotionActivity } from '@/design/motion';
 import type { PetConversationState } from './desktop-pet-snapshot';
 
 /** Always accompanied by visible status text. Row signals stay still; only the
  * aggregate running arc loops. No task state changes the character's mood. */
-export function PetStatusSignal({ state, animate = false, className = '' }: {
-  state: PetConversationState; animate?: boolean; className?: string;
+export function PetStatusSignal({ state, animate = false, className = '', palette }: {
+  state: PetConversationState; animate?: boolean; className?: string; palette?: 'classic' | 'planet';
 }) {
   const motionActive = useMotionActivity();
+  const presentation = useChatPresentation();
+  const colored = palette === 'planet' || (palette === undefined && presentation?.ownerKey === 'builtin:desktop-pet' && presentation.version === 'v2');
+  // Seven directory states stay intact. Ended is blue/minus, not a success
+  // check; unknown remains slate/dashed, never a projected offline fact.
+  const color = {
+    running: PLANET_SIGNAL_PALETTE.working.base,
+    attention: PLANET_SIGNAL_PALETTE.waiting.base,
+    error: PLANET_SIGNAL_PALETTE.error.base,
+    paused: PLANET_SIGNAL_PALETTE.waiting.base,
+    idle: PLANET_SIGNAL_PALETTE.idle.base,
+    terminal: PLANET_SIGNAL_PALETTE.idle.base,
+    unknown: '#7f919d',
+  }[state];
   return <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"
     className={`desktop-pet-status ${className}`.trim()} data-state={state}
-    data-motion-active={animate && motionActive} fill="none" stroke="currentColor"
+    data-motion-active={animate && motionActive} data-palette={colored ? 'planet' : undefined} style={colored ? { color } : undefined} fill="none" stroke="currentColor"
     strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     {state === 'running' ? <>
       <circle className="desktop-pet-status__shape" cx="12" cy="12" r="9" stroke="none" />

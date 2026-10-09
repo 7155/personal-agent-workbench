@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@t
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
 import { MockControlTransport } from '@/test/mock-transport';
-import { recoveryScope, useWorkspaceRecovery, WorkspaceRecoveryNotice } from './workspace-recovery';
+import { appendWorkspaceRecoveryDraft, recoveryScope, useWorkspaceRecovery, WorkspaceRecoveryNotice } from './workspace-recovery';
 
 beforeEach(() => localStorage.clear());
 afterEach(cleanup);
@@ -284,4 +284,18 @@ it('keeps explicit initial input and anonymous owners isolated through StrictMod
   const b = renderHook(() => useWorkspaceRecovery('session:one'), { wrapper: recoveryWrapper(anonymous) });
   act(() => a.result.current.setDraft('匿名草稿'));
   expect(b.result.current.draft).toBe('');
+});
+
+it('hands an explicitly created fork draft to the existing owner without replacing mounted input or attachments', async () => {
+  const t=transport('explicit-fork-draft');
+  render(<ControlTransportProvider transport={t}><Harness owner="session:fork"/></ControlTransportProvider>);
+  fireEvent.change(screen.getByRole('textbox',{name:'草稿'}),{target:{value:'保留原草稿'}});
+  fireEvent.click(screen.getByRole('button',{name:'加入附件引用'}));
+  act(()=>expect(appendWorkspaceRecoveryDraft(t,'session:fork','分支选中文本')).toBe(true));
+  // The fixture uses a single-line input, which strips line breaks; stored
+  // draft below retains the multiline editor's exact appended value.
+  expect(screen.getByRole('textbox',{name:'草稿'})).toHaveValue('保留原草稿分支选中文本');
+  expect(JSON.parse(localStorage.getItem(recoveryScope(t,'session:fork'))!)).toMatchObject({draft:'保留原草稿\n\n分支选中文本',attachments:[{id:'media-one'}]});
+  expect(appendWorkspaceRecoveryDraft(t,'session:unmounted','尚未打开分支的文本')).toBe(true);
+  expect(JSON.parse(localStorage.getItem(recoveryScope(t,'session:unmounted'))!)).toMatchObject({draft:'尚未打开分支的文本'});
 });

@@ -92,6 +92,10 @@ class AgentPromptDeliveryService:
         ) = None,
         before_runtime: Callable[[], None] | None = None,
         room_id: str = "",
+        on_prepared: Callable[[Mapping[str, object]], None] | None = None,
+        resident_only: bool = False,
+        coordinator_result_item_id: str = "",
+        before_native_write: Callable[[], None] | None = None,
     ) -> tuple[dict[str, object], str, int]:
         trace_id = self.context_runtime.begin_trace(
             session_id,
@@ -150,6 +154,7 @@ class AgentPromptDeliveryService:
             session_id,
             delivery=delivery,
             delivery_id=delivery_id,
+            **({"coordinator_result_item_id": coordinator_result_item_id} if coordinator_result_item_id else {}),
         )
         memory_items, async_items = _partition_items(
             materialized["items"]
@@ -228,6 +233,10 @@ class AgentPromptDeliveryService:
                  if source_kind == "room" and room_id and self.room_admission_gate is not None
                  else nullcontext())
         with guard:
+            if on_prepared is not None:
+                on_prepared({"sessionId": session_id, "clientMessageId": client_message_id,
+                             "message": runtime_message, "images": images or [], "delivery": delivery,
+                             "contextItemIds": list(materialized["itemIds"]), "traceId": trace_id})
             if before_runtime is not None:
                 before_runtime()
             accepted, duration_ms = self._runtime_prompt(
@@ -238,6 +247,8 @@ class AgentPromptDeliveryService:
                 images=images,
                 client_message_id=client_message_id,
                 delivery=delivery,
+                resident_only=resident_only,
+                before_native_write=before_native_write,
             )
             if on_accepted is not None:
                 try:
@@ -285,6 +296,7 @@ class AgentPromptDeliveryService:
         *,
         delivery: str,
         delivery_id: str,
+        coordinator_result_item_id: str = "",
     ) -> dict[str, object]:
         if delivery != "prompt":
             return {
@@ -296,6 +308,7 @@ class AgentPromptDeliveryService:
         materialized = self.context_runtime.materialize_for_delivery(
             session_id,
             delivery_id=delivery_id,
+            **({"_coordinator_result_item_id": coordinator_result_item_id} if coordinator_result_item_id else {}),
         )
         memory_enabled = self._memory_enabled(session_id)
         if memory_enabled and not any(
@@ -456,7 +469,7 @@ class AgentPromptDeliveryService:
         return self.context_runtime.add_trace_node(
             trace_id,
             stage="memory_recall",
-            label="新 Session 个人记忆召回",
+            label="本轮记忆召回",
             source_kind="memory_bootstrap",
             parents=[session_node],
             disposition=(
@@ -470,10 +483,11 @@ class AgentPromptDeliveryService:
                 if recall_status == "disabled"
                 else "沿用当前会话已有记忆，没有重复查询"
                 if recall_status == "reused"
-                else "已加入首问与最近完整输入召回的角色可见 "
-                "Timeline/Topic Book/Atom 记忆包"
-                if memory_items
-                else "本 Session 尚无可投递的首问记忆包"
+                else f"已加入{'首问' if trigger == 'first_user_prompt' else '本轮'}查询召回的记忆包"
+                if recall_status == "included"
+                else f"{'首问' if trigger == 'first_user_prompt' else '本轮'}记忆召回完成，未命中可用来源"
+                if recall_status == "empty"
+                else "本轮尚无可投递的记忆包"
             ),
             char_count=(
                 char_count
@@ -529,6 +543,8 @@ class AgentPromptDeliveryService:
         images: list[Mapping[str, str]] | None,
         client_message_id: str,
         delivery: str,
+        resident_only: bool = False,
+        before_native_write: Callable[[], None] | None = None,
     ) -> tuple[Mapping[str, object], int]:
         started = time.perf_counter()
         try:
@@ -538,6 +554,8 @@ class AgentPromptDeliveryService:
                 images=images,
                 client_message_id=client_message_id,
                 delivery=delivery,
+                **({"_resident_only": True} if resident_only else {}),
+                **({"_before_native_write": before_native_write} if before_native_write is not None else {}),
             )
         except Exception as exc:
             duration_ms = _duration_ms(started)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Iterable, Mapping
+from typing import cast
 
 from .memory_ingest import normalize_text
 from .text_utils import compact_whitespace, now_ms, stable_text_hash
@@ -86,134 +87,118 @@ def authoritative_retrieval_doc(
     doc: Mapping[str, object],
 ) -> bool:
     """Fail closed unless a projection still matches its authoritative source."""
-
-    doc_type = compact_whitespace(str(doc.get("doc_type") or "")).lower()
-    source_id = compact_whitespace(str(doc.get("source_id") or ""))
-    if not doc_type or not source_id:
-        return False
-    try:
-        doc_revision = max(1, int(doc.get("source_revision") or 1))
-        projection_version = max(1, int(doc.get("projection_version") or 1))
-    except (TypeError, ValueError):
-        return False
-    if projection_version != ACTIVE_RETRIEVAL_PROJECTION_VERSION:
-        return False
-
-    if doc_type == "atom":
-        row = conn.execute(
-            """
-            SELECT status, claim_state, privacy_level
-            FROM memory_atoms
-            WHERE id = ?
-            """,
-            (source_id,),
-        ).fetchone()
-        if row is None or str(row[0]) not in AUTHORITATIVE_ATOM_STATUSES:
-            return False
-        if str(row[1]) != "current" or str(row[2]) == "sensitive":
-            return False
-    elif doc_type == "book":
-        row = conn.execute(
-            """
-            SELECT status, metadata_json, memory_atom_ids_json
-            FROM memory_books
-            WHERE book_id = ?
-            """,
-            (source_id,),
-        ).fetchone()
-        if row is None or str(row[0]) not in AUTHORITATIVE_BOOK_STATUSES:
-            return False
-        metadata = _json_object(row[1])
-        if metadata.get("retrievalStale") is True:
-            return False
-        atom_ids = _json_list(row[2])
-        if atom_ids and not _all_current_atoms(conn, atom_ids):
-            return False
-    elif doc_type in {"phrase", "item"}:
-        row = conn.execute(
-            """
-            SELECT kind, status, privacy_class
-            FROM memory_items
-            WHERE memory_id = ?
-            """,
-            (source_id,),
-        ).fetchone()
-        if row is None or str(row[1]) not in AUTHORITATIVE_ATOM_STATUSES:
-            return False
-        expected_kind = "phrase" if doc_type == "phrase" else str(row[0])
-        if str(row[0]) != expected_kind or str(row[2]) == "sensitive":
-            return False
-        if doc_type == "phrase" and not _phrase_has_current_atom_support(
-            conn,
-            phrase_id=source_id,
-        ):
-            return False
-    elif doc_type == "timeline":
-        row = conn.execute(
-            """
-            SELECT status, updated_at_ms
-            FROM daily_activity_timelines
-            WHERE timeline_id = ?
-            """,
-            (source_id,),
-        ).fetchone()
-        return bool(
-            row is not None
-            and str(row[0]) == "approved"
-            and doc_revision == max(1, int(row[1] or 0))
-        )
-    else:
-        return False
-
-    return doc_revision == source_revision(
-        conn,
-        source_type=source_type_for_doc(doc_type),
-        source_id=source_id,
-    )
+    return authoritative_retrieval_docs(conn, [doc])[0]
 
 
-def _phrase_has_current_atom_support(
+def authoritative_retrieval_docs(
     conn: sqlite3.Connection,
-    *,
-    phrase_id: str,
-) -> bool:
-    dependency_count = int(
-        conn.execute(
-            """
-            SELECT COUNT(*)
-            FROM memory_projection_dependencies
-            WHERE source_type = 'atom'
-              AND dependent_type = 'phrase'
-              AND dependent_id = ?
-            """,
-            (phrase_id,),
-        ).fetchone()[0]
-        or 0
-    )
-    if dependency_count == 0:
-        return True
-    return (
-        conn.execute(
-            """
-            SELECT 1
+    docs: Iterable[Mapping[str, object]],
+) -> list[bool]:
+    """Validate one candidate pack with narrow, set-based canonical reads.
+
+    Results retain input order, including duplicates. No authority is cached:
+    forget, supersession, generation and dependency changes are checked on the
+    caller's current connection on every pack. This does not discover or trim
+    candidates, nor begin/commit a transaction owned by the caller.
+    """
+    parsed: list[tuple[str, str, int] | None] = []
+    ids: dict[str, set[str]] = {}
+    for doc in docs:
+        kind = compact_whitespace(str(doc.get("doc_type") or "")).lower()
+        identity = compact_whitespace(str(doc.get("source_id") or ""))
+        try:
+            revision = max(1, int(cast(str | int | float, doc.get("source_revision") or 1)))
+            version = max(1, int(cast(str | int | float, doc.get("projection_version") or 1)))
+        except (TypeError, ValueError):
+            parsed.append(None)
+            continue
+        if not identity or kind not in {"atom", "book", "phrase", "item", "timeline"} or version != ACTIVE_RETRIEVAL_PROJECTION_VERSION:
+            parsed.append(None)
+            continue
+        parsed.append((kind, identity, revision))
+        ids.setdefault(kind, set()).add(identity)
+    atoms = _authority_rows(conn, "SELECT id, status, claim_state, privacy_level FROM memory_atoms", "id", ids.get("atom", set()))
+    books = _authority_rows(conn, "SELECT book_id, status, metadata_json, memory_atom_ids_json FROM memory_books", "book_id", ids.get("book", set()))
+    items = _authority_rows(conn, "SELECT memory_id, kind, status, privacy_class FROM memory_items", "memory_id", ids.get("phrase", set()) | ids.get("item", set()))
+    timelines = _authority_rows(conn, "SELECT timeline_id, status, updated_at_ms FROM daily_activity_timelines", "timeline_id", ids.get("timeline", set()))
+    book_atoms = {identity: _json_list(row[3]) for identity, row in books.items()}
+    dependency_ids = {atom_id for members in book_atoms.values() for atom_id in members}
+    missing_atoms = dependency_ids - atoms.keys()
+    atoms.update(_authority_rows(conn, "SELECT id, status, claim_state, privacy_level FROM memory_atoms", "id", missing_atoms))
+    current_atoms = {identity for identity, row in atoms.items() if str(row[1]) in AUTHORITATIVE_ATOM_STATUSES and str(row[2]) == "current" and str(row[3]) != "sensitive"}
+    keys = [(source_type_for_doc(kind), identity) for kind, members in ids.items() if kind != "timeline" for identity in sorted(members)]
+    generations = {
+        (str(row[0]), str(row[1])): row[2]
+        for row in conn.execute("""
+            SELECT source_type, source_id, generation
+            FROM memory_source_generations
+            WHERE (source_type, source_id) IN (
+                SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]')
+                FROM json_each(?)
+            )
+            """, (json.dumps(keys),)).fetchall()
+    } if keys else {}
+    phrase_support = {
+        str(row[0]): bool(row[1])
+        for row in conn.execute("""
+            SELECT dependency.dependent_id,
+                   MAX(CASE WHEN atom.status IN ('active', 'approved')
+                        AND atom.claim_state = 'current'
+                        AND atom.privacy_level != 'sensitive'
+                        AND generation.generation = dependency.source_revision
+                       THEN 1 ELSE 0 END)
             FROM memory_projection_dependencies AS dependency
-            JOIN memory_atoms AS atom ON atom.id = dependency.source_id
-            JOIN memory_source_generations AS generation
-              ON generation.source_type = 'atom'
-             AND generation.source_id = atom.id
-             AND generation.generation = dependency.source_revision
+            LEFT JOIN memory_atoms AS atom ON atom.id = dependency.source_id
+            LEFT JOIN memory_source_generations AS generation
+              ON generation.source_type = 'atom' AND generation.source_id = atom.id
             WHERE dependency.source_type = 'atom'
               AND dependency.dependent_type = 'phrase'
-              AND dependency.dependent_id = ?
-              AND atom.status IN ('active', 'approved')
-              AND atom.claim_state = 'current'
-              AND atom.privacy_level != 'sensitive'
-            LIMIT 1
-            """,
-            (phrase_id,),
-        ).fetchone()
-        is not None
-    )
+              AND dependency.dependent_id IN (SELECT value FROM json_each(?))
+            GROUP BY dependency.dependent_id
+            """, (json.dumps(sorted(ids.get("phrase", set()))),)).fetchall()
+    } if ids.get("phrase") else {}
+    result: list[bool] = []
+    for candidate in parsed:
+        if candidate is None:
+            result.append(False)
+            continue
+        kind, identity, revision = candidate
+        if kind == "timeline":
+            row = timelines.get(identity)
+            result.append(bool(row is not None and str(row[1]) == "approved" and revision == max(1, int(row[2] or 0))))
+            continue
+        if kind == "atom":
+            valid = identity in current_atoms
+        elif kind == "book":
+            row = books.get(identity)
+            valid = bool(row is not None and str(row[1]) in AUTHORITATIVE_BOOK_STATUSES
+                         and _json_object(row[2]).get("retrievalStale") is not True
+                         and set(book_atoms[identity]).issubset(current_atoms))
+        else:
+            row = items.get(identity)
+            valid = bool(row is not None and str(row[2]) in AUTHORITATIVE_ATOM_STATUSES
+                         and str(row[3]) != "sensitive"
+                         and (kind != "phrase" or str(row[1]) == "phrase")
+                         and (kind != "phrase" or phrase_support.get(identity, True)))
+        result.append(valid and revision == max(1, int(generations.get((source_type_for_doc(kind), identity)) or 1)))
+    return result
+
+
+def _authority_rows(
+    conn: sqlite3.Connection,
+    sql: str,
+    identity_column: str,
+    ids: Iterable[str],
+) -> dict[str, sqlite3.Row]:
+    identities = sorted(set(ids))
+    if not identities:
+        return {}
+    # JSON1 is already a Memory dependency. One bound pack avoids SQLite's
+    # variable limit without one query per document or dependency.
+    return {str(row[0]): row for row in conn.execute(
+        sql + f" WHERE {identity_column} IN (SELECT value FROM json_each(?))",
+        (json.dumps(identities),),
+    ).fetchall()}
 
 
 def sync_projection_dependencies(

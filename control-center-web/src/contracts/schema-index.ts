@@ -6688,6 +6688,9 @@ export const contractSchemas = {
           "compaction": {
             "type": "boolean"
           },
+          "compactionRecovery": {
+            "type": "boolean"
+          },
           "resume": {
             "type": "boolean"
           },
@@ -11173,6 +11176,7 @@ export const contractSchemas = {
           "restore_preview",
           "restore_apply",
           "delegate",
+          "coordinator",
           "call",
           "artifact",
           "abort",
@@ -13905,6 +13909,34 @@ export const contractSchemas = {
       "experimentTotal": {
         "type": "integer",
         "minimum": 0
+      },
+      "truncation": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Display bounds after complete evaluation-only pagination and run grouping. total remains the full run count; aggregate run statistics include all eligible tasks.",
+        "required": [
+          "runLimit",
+          "taskLimit",
+          "omittedRunCount",
+          "omittedTaskCount"
+        ],
+        "properties": {
+          "runLimit": {
+            "const": 500
+          },
+          "taskLimit": {
+            "const": 500
+          },
+          "omittedRunCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "omittedTaskCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Task rows omitted only within returned runs; does not count tasks in omitted runs."
+          }
+        }
       },
       "pathSearches": {
         "type": "array",
@@ -21416,6 +21448,81 @@ export const contractSchemas = {
         }
       }
     ]
+  },
+  "pi-durable-tool-outcome.v1": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "pi-durable-tool-outcome.v1",
+    "title": "PiDurableToolOutcomeV1",
+    "description": "Exact Pi-owned logical ToolTask aborted outcome. This does not assert physical drain, Session idle, or parent acceptance. Native adapter verifies original ToolResult, ToolTask, assistant GenerationTask and request lineage before publication.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "schemaVersion",
+      "sessionId",
+      "runtimeSessionId",
+      "turnId",
+      "clientMessageId",
+      "toolCallId",
+      "toolName",
+      "entryId",
+      "taskId",
+      "assistantEntryId",
+      "generationTaskId",
+      "status"
+    ],
+    "properties": {
+      "schemaVersion": {
+        "const": "rag-ime.pi-durable-tool-outcome.v1"
+      },
+      "sessionId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      },
+      "runtimeSessionId": {
+        "type": "string",
+        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+      },
+      "turnId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      },
+      "clientMessageId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      },
+      "toolCallId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      },
+      "toolName": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      },
+      "entryId": {
+        "type": "string",
+        "pattern": "^durable:[1-9][0-9]{0,19}$"
+      },
+      "taskId": {
+        "type": "string",
+        "pattern": "^durable:task:[1-9][0-9]{0,19}$"
+      },
+      "assistantEntryId": {
+        "type": "string",
+        "pattern": "^durable:[1-9][0-9]{0,19}$"
+      },
+      "generationTaskId": {
+        "type": "string",
+        "pattern": "^durable:task:[1-9][0-9]{0,19}$"
+      },
+      "status": {
+        "const": "aborted"
+      }
+    }
   },
   "pi-runtime-manifest.v1": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",

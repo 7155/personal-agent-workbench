@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import json
 import sqlite3
 import time
@@ -9,7 +10,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
-from threading import Event, Lock, Thread
+from threading import Event, Lock, RLock, Thread
 from typing import Iterator
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -24,6 +25,10 @@ _RECURRENCE_DAYS = {
 }
 _MAX_HORIZON_MS = 366 * 24 * 60 * 60 * 1000
 _DEFAULT_LEASE_MS = 6 * 60 * 60 * 1000
+
+
+class AgentWakeDispatchUncertain(RuntimeError):
+    """The original Prompt may have crossed its owning delivery boundary."""
 
 
 class AgentWakeScheduleStore:
@@ -616,15 +621,58 @@ class AgentWakeScheduleStore:
         timestamp = _now_ms(now_ms)
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            self._active_run_locked(conn, run_id)
+            run = self._active_run_locked(conn, run_id)
+            target = _required_id(session_id)
+            turn = _required_id(turn_id)
+            if run["session_id"] and str(run["session_id"]) != target:
+                raise ValueError("wake run target cannot be rebound")
+            if run["state"] == "accepted":
+                if str(run["turn_id"]) != turn:
+                    raise ValueError("wake run turn cannot be rebound")
+                return
             conn.execute(
                 """
                 UPDATE agent_wake_runs
                 SET state = 'accepted', accepted_at_ms = ?, session_id = ?, turn_id = ?
                 WHERE run_id = ?
                 """,
-                (timestamp, _required_id(session_id), _required_id(turn_id), run_id),
+                (timestamp, target, turn, run_id),
             )
+
+    def bind_target(self, run_id: str, *, session_id: str) -> None:
+        """Retain the selected target before Prompt; this is not acceptance."""
+        target = _required_id(session_id)
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            run = self._active_run_locked(conn, run_id)
+            if run["session_id"] and str(run["session_id"]) != target:
+                raise ValueError("wake run target cannot be rebound")
+            conn.execute("UPDATE agent_wake_runs SET session_id = ? WHERE run_id = ?", (target, run_id))
+
+    def dispatch_binding(self, run_id: str) -> dict[str, object]:
+        with self._connect() as conn:
+            return dict(self._active_run_locked(conn, run_id))
+
+    def retain_uncertain(self, run_id: str, *, error: str) -> None:
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            run = self._active_run_locked(conn, run_id)
+            message = _text(error, maximum=500)
+            conn.execute("UPDATE agent_wake_runs SET error = ? WHERE run_id = ?", (message, run_id))
+            conn.execute("UPDATE agent_wake_schedules SET last_error = ? WHERE schedule_id = ? AND last_run_id = ? AND status = 'running'",
+                         (message, run["schedule_id"], run_id))
+
+    def active_bound_runs(self, *, limit: int = 100) -> builtins.list[dict[str, object]]:
+        """Read only explicit original bindings, never a Session title/latest turn."""
+        with self._connect() as conn:
+            rows = conn.execute("""
+                SELECT r.*, s.metadata_json FROM agent_wake_runs r
+                JOIN agent_wake_schedules s ON s.schedule_id = r.schedule_id
+                WHERE s.status = 'running' AND s.last_run_id = r.run_id
+                  AND r.state IN ('claimed', 'accepted') AND r.session_id <> ''
+                ORDER BY r.started_at_ms ASC LIMIT ?
+            """, (_integer(limit, default=100, minimum=1, maximum=500),)).fetchall()
+        return [dict(row) for row in rows]
 
     def fail_dispatch(
         self,
@@ -649,26 +697,30 @@ class AgentWakeScheduleStore:
             ).fetchone()
         if row is None:
             return False
-        self._finish(
-            str(row["run_id"]),
-            succeeded=event.event_type == "turn_completed",
-            error=str(event.payload.get("error") or ""),
-            result={
-                "terminalEvent": event.event_type,
-                "eventId": event.event_id,
-                **(
-                    {"failureKind": str(event.payload.get("failureKind"))}
-                    if event.payload.get("failureKind")
-                    else {}
-                ),
-                **(
-                    {"exitCode": event.payload.get("exitCode")}
-                    if "exitCode" in event.payload
-                    else {}
-                ),
-            },
-            now_ms=event.created_at_ms,
-        )
+        try:
+            self._finish(
+                str(row["run_id"]),
+                succeeded=event.event_type == "turn_completed",
+                error=str(event.payload.get("error") or ""),
+                result={
+                    "terminalEvent": event.event_type,
+                    "eventId": event.event_id,
+                    **(
+                        {"failureKind": str(event.payload.get("failureKind"))}
+                        if event.payload.get("failureKind")
+                        else {}
+                    ),
+                    **(
+                        {"exitCode": event.payload.get("exitCode")}
+                        if "exitCode" in event.payload
+                        else {}
+                    ),
+                },
+                now_ms=event.created_at_ms,
+            )
+        except ValueError:
+            # A concurrent cancellation/terminal transition owns the run now.
+            return False
         return True
 
     def _finish(
@@ -736,26 +788,23 @@ class AgentWakeScheduleStore:
             (timestamp,),
         ).fetchall()
         for row in rows:
-            next_at = _next_wake(row, timestamp)
+            message = "Wake lease expired; original delivery is still unresolved"
             conn.execute(
                 """
                 UPDATE agent_wake_runs
-                SET state = 'failed', finished_at_ms = ?, error = ?
+                SET error = ?
                 WHERE run_id = ?
                 """,
-                (timestamp, "Agent Gateway restarted before the scheduled turn settled", row["run_id"]),
+                (message, row["run_id"]),
             )
             conn.execute(
                 """
                 UPDATE agent_wake_schedules
-                SET status = ?, next_wake_at_ms = ?, last_error = ?,
-                    lease_token = '', lease_expires_at_ms = NULL, updated_at_ms = ?
+                SET last_error = ?, lease_expires_at_ms = NULL, updated_at_ms = ?
                 WHERE schedule_id = ?
                 """,
                 (
-                    "scheduled" if next_at is not None else "failed",
-                    next_at,
-                    "Agent Gateway restarted before the scheduled turn settled",
+                    message,
                     timestamp,
                     row["schedule_id"],
                 ),
@@ -827,6 +876,8 @@ class AgentWakeScheduler:
         self.max_parallel = max(1, min(int(max_parallel), 4))
         self._stop = Event()
         self._notify = Event()
+        self._closed = Event()
+        self._lifecycle_lock = RLock()
         self._terminal_observer: Callable[
             [AgentEventEnvelope, Mapping[str, object]], None
         ] | None = None
@@ -837,12 +888,30 @@ class AgentWakeScheduler:
         self._maintenance_lock = Lock()
         self._maintenance_future: Future[object] | None = None
         self._thread: Thread | None = None
-        if self.enabled:
+        self._started = False
+
+    @property
+    def active(self) -> bool:
+        with self._lifecycle_lock:
+            return bool(self._thread and self._thread.is_alive() and not self._stop.is_set())
+
+    def start(self) -> None:
+        """Start automatic admission only after the execution owner is ready."""
+        with self._lifecycle_lock:
+            if not self.enabled or self._started or self._stop.is_set():
+                return
+            self._started = True
             self._thread = Thread(target=self._run, name="agent-wake-scheduler", daemon=True)
-            self._thread.start()
+            try:
+                self._thread.start()
+            except BaseException:
+                if self._thread.ident is None:
+                    self._thread = None
+                    self._started = False
+                raise
 
     def wake(self) -> None:
-        if self.enabled:
+        if self.active:
             self._notify.set()
 
     def bind_terminal_observer(
@@ -861,26 +930,32 @@ class AgentWakeScheduler:
 
         self._terminal_observer = observer
 
-    def observe_event(self, event: AgentEventEnvelope) -> None:
+    def observe_event(self, event: AgentEventEnvelope) -> bool:
         if not self.store.finish_event(event):
-            return
+            return False
         schedule = self.store.schedule_for_terminal_event(event)
         try:
             if schedule is not None and self._terminal_observer is not None:
                 self._terminal_observer(event, schedule)
         finally:
             self.wake()
+        return True
 
     def run_due_once(self, *, now_ms: int | None = None) -> int:
-        claims = self.store.claim_due(
-            now_ms=now_ms,
-            limit=self.max_parallel,
-            max_active=self.max_parallel,
-        )
-        self._submit_maintenance(now_ms)
-        for claim in claims:
-            self._executor.submit(self._dispatch_safely, claim)
-        return len(claims)
+        with self._lifecycle_lock:
+            if self._stop.is_set() or (self.enabled and not self._started):
+                return 0
+            # Disabled pollers retain the explicit manual tick used by the
+            # owning Runtime and offline callers. Closing fences both paths.
+            claims = self.store.claim_due(
+                now_ms=now_ms,
+                limit=self.max_parallel,
+                max_active=self.max_parallel,
+            )
+            self._submit_maintenance(now_ms)
+            for claim in claims:
+                self._executor.submit(self._dispatch_safely, claim)
+            return len(claims)
 
     def _submit_maintenance(self, now_ms: int | None) -> None:
         callback = self.on_tick
@@ -895,11 +970,20 @@ class AgentWakeScheduler:
             self._maintenance_future = self._executor.submit(callback, now_ms)
 
     def close(self) -> None:
-        self._stop.set()
-        self._notify.set()
-        if self._thread is not None:
-            self._thread.join(timeout=3)
-        self._executor.shutdown(wait=True, cancel_futures=False)
+        with self._lifecycle_lock:
+            closing = self._stop.is_set()
+            self._stop.set()
+            self._notify.set()
+            thread = self._thread
+        if closing:
+            self._closed.wait()
+            return
+        try:
+            if thread is not None:
+                thread.join(timeout=3)
+            self._executor.shutdown(wait=True, cancel_futures=False)
+        finally:
+            self._closed.set()
 
     def _run(self) -> None:
         while not self._stop.is_set():
@@ -915,7 +999,23 @@ class AgentWakeScheduler:
 
     def _dispatch_safely(self, claim: Mapping[str, object]) -> None:
         try:
+            if self._stop.is_set():
+                # Only queued, not-yet-entered dispatch is deferred. Admitted
+                # callbacks drain with their dependencies still available;
+                # their unknown effects are never replayed here.
+                self.store.defer(
+                    str(claim.get("runId") or ""),
+                    reason="Gateway is closing before scheduled dispatch",
+                    delay_ms=5_000,
+                )
+                return
             self.dispatch(claim)
+        except AgentWakeDispatchUncertain as exc:
+            try:
+                self.store.retain_uncertain(str(claim.get("runId") or ""), error=_public_error(exc))
+            except Exception:
+                # Unknown delivery remains active even when its local note fails.
+                pass
         except Exception as exc:
             try:
                 self.store.fail_dispatch(

@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MotionProvider, useMotionPreference } from '@/design/motion';
@@ -37,6 +38,50 @@ function RestoreMotion() {
 }
 
 describe('semantic interaction motion', () => {
+  it('keeps opted-in loading focusable without allowing click, keyboard or form activation', async () => {
+    const onClick = vi.fn();
+    const onParentClick = vi.fn();
+    const onSubmit = vi.fn((event) => event.preventDefault());
+    const surface = (loading: boolean) => <form onClick={onParentClick} onSubmit={onSubmit}>
+      <Button loading={loading} onClick={onClick} preserveFocusWhileLoading type="submit">重新读取实验</Button>
+    </form>;
+    const view = render(surface(false));
+    const button = screen.getByRole('button', { name: '重新读取实验' });
+    const label = button.querySelector('.ui-button__label');
+    button.focus();
+    view.rerender(surface(true));
+    expect(screen.getByRole('button', { name: '重新读取实验' })).toBe(button);
+    expect(button.querySelector('.ui-button__label')).toBe(label);
+    expect(button).toHaveFocus();
+    expect(button).toBeEnabled();
+    expect(button).toHaveAttribute('aria-disabled', 'true');
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    expect(button.querySelector('.ui-button__progress')).toHaveAttribute('aria-hidden', 'true');
+    const user = userEvent.setup();
+    await user.click(button);
+    await user.keyboard('{Enter} ');
+    expect(onClick).not.toHaveBeenCalled();
+    expect(onParentClick).not.toHaveBeenCalled();
+    expect(onSubmit).not.toHaveBeenCalled();
+    view.rerender(surface(false));
+    expect(button).not.toHaveAttribute('aria-disabled');
+    expect(button).not.toHaveAttribute('aria-busy');
+    expect(button).toHaveFocus();
+    await user.keyboard('{Enter}');
+    expect(onClick).toHaveBeenCalledTimes(1);
+    expect(onParentClick).toHaveBeenCalledTimes(1);
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([false, true])('keeps explicit disabled native when loading-focus preservation is enabled (loading=%s)', async (loading) => {
+    const onClick = vi.fn();
+    render(<Button disabled loading={loading} onClick={onClick} preserveFocusWhileLoading>无法读取</Button>);
+    const button = screen.getByRole('button', { name: '无法读取' });
+    expect(button).toBeDisabled();
+    await userEvent.setup().click(button);
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
   it('moves only the selected surface while preserving button identity, focus and independent groups', () => {
     const view = render(<Controls />);
     const session = screen.getByRole('radio', { name: '对话' });
