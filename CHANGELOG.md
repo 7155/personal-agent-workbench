@@ -5,6 +5,10 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Keep the full-history action in the existing Session tools menu so its label
+  stays readable and reachable in narrow window captions, with keyboard return
+  and duplicate-load protection preserved.
+
 - Restore unsent Knowledge search drafts and reading selections after reload,
   separately for each App window and library. Keep results and active request
   state in memory; restoring local input does not repeat a search.

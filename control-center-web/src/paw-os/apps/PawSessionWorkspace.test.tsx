@@ -18,6 +18,7 @@ import { usePluginCatalog } from '@/features/plugins/api';
 import { StubControlTransport } from '@/test/stub-control-transport';
 import { ControlTransportHttpError, HttpControlTransport } from '@/platform/http-transport';
 import type { ControlEventObserver, ControlRequest } from '@/platform/transport';
+import { CONTROL_ROUTES } from '@/platform/routes';
 import { parseTraceAgentHandoff } from '@/features/trace-agent/handoff';
 import agentMigratedCss from '../styles/paw-os-agent.css?raw';
 import appsCss from './paw-apps.css?raw';
@@ -1633,7 +1634,9 @@ describe('PAWOS Agent Session structural migration', () => {
     expect(within(screen.getByRole('navigation', { name: '当前 Session 视图' })).getByRole('button', { name: 'Agent 轨迹' })).toBeInTheDocument();
     expect(within(screen.getByRole('navigation', { name: '当前 Session 视图' })).getByRole('button', { name: '星空' })).toBeInTheDocument();
     expect(within(titlebar).getByRole('button', { name: '对话工具' })).toBeInTheDocument();
-    expect(within(titlebar).getByRole('button', { name: '加载完整记录' })).toBeInTheDocument();
+    fireEvent.click(within(titlebar).getByRole('button', { name: '对话工具' }));
+    expect(screen.getByRole('menuitem', { name: '加载完整记录' })).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole('menuitem', { name: '加载完整记录' }), { key: 'Escape' });
     expect(within(titlebar).queryByRole('button', { name: '打开 Session 文件' })).not.toBeInTheDocument();
     expect(within(titlebar).queryByRole('button', { name: '打开子 Agent 工作台' })).not.toBeInTheDocument();
     expect(within(titlebar).queryByRole('button', { name: '打开 Session 任务中心' })).not.toBeInTheDocument();
@@ -1641,6 +1644,63 @@ describe('PAWOS Agent Session structural migration', () => {
     const conversationNav = window.querySelector('.agent-conversation-nav');
     expect(conversationNav).not.toBeNull();
     expect(conversationNav?.querySelectorAll('button')).toHaveLength(2);
+  });
+
+  it.each([375, 1400])('keeps full history out of a %ipx long-title caption and keyboard-accessible in the existing tools menu', async (width) => {
+    const sessionId = `long-caption-history-${width}`;
+    const title = '公开长标题 /nested/project/result-and-receipt'.repeat(8);
+    const full = deferred<unknown>();
+    const snapshot = (complete: boolean) => ({ messages: [], liveEvents: [], lastSequence: complete ? 2 : 1,
+      resumeToken: `${sessionId}:${complete ? 2 : 1}`, status: 'idle', partial: !complete, snapshotScope: complete ? 'full' : 'recent' });
+    const transport = new StubControlTransport('mock', { ...idleSessionRoutes(),
+      'agent.session.snapshot': (request: ControlRequest) => request.query?.view === 'recent' ? snapshot(false) : full.promise,
+    });
+    render(<ControlTransportProvider transport={transport}><TooltipProvider>
+      <PawWindowFrame active appId="agent" bounds={{ x: 0, y: 0, width, height: 720 }}
+        onBoundsCommit={() => undefined} onClose={() => undefined} onFocus={() => undefined}
+        onMinimize={() => undefined} onToggleMaximize={() => undefined} title={title}
+        windowChrome="agent-session" windowId={sessionId} zIndex={10}>
+        <PawSessionWorkspace record={{ ...liveSession(), id: sessionId, title }} recordId={sessionId}
+          initialDraft="保留原 Session 未发送草稿" onNewWork={vi.fn()} onSessionCreated={vi.fn()} onSessionUpdated={vi.fn()} />
+      </PawWindowFrame>
+    </TooltipProvider></ControlTransportProvider>);
+    const composer = await screen.findByRole('textbox', { name: '消息' });
+    const titlebar = document.querySelector('.paw-window-titlebar') as HTMLElement;
+    expect(within(titlebar).getByText(title)).toBeInTheDocument();
+    // The raw29px runtime-button grid must never host the six-character caption action.
+    expect(titlebar.querySelector('.paw-session-workspace__runtime .paw-session-history-load')).toBeNull();
+    const user = userEvent.setup();
+    const trigger = within(titlebar).getByRole('button', { name: '对话工具' });
+    trigger.focus();
+    await user.keyboard('{ArrowDown}');
+    const menu = screen.getByRole('menu', { name: '对话工具菜单' });
+    const load = within(menu).getByRole('menuitem', { name: '加载完整记录' });
+    await user.keyboard('{End}');
+    expect(load).toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(trigger).toHaveFocus();
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(transport.requests.filter(r => r.pathId === 'agent.session.snapshot' && r.query?.view === undefined)).toHaveLength(0);
+    await user.keyboard('{ArrowUp}{Enter}');
+    await waitFor(() => expect(transport.requests.filter(r => r.pathId === 'agent.session.snapshot' && r.query?.view === undefined)).toHaveLength(1));
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    expect(composer).toHaveValue('保留原 Session 未发送草稿');
+    await user.keyboard('{ArrowUp}');
+    expect(screen.getByRole('menuitem', { name: '加载完整记录' })).toBeDisabled();
+    await user.keyboard('{Enter}');
+    expect(transport.requests.filter(r => r.pathId === 'agent.session.snapshot' && r.query?.view === undefined)).toHaveLength(1);
+    // The disabled last item cannot take focus; Enter on the opener only
+    // closes the menu, never dispatches another load. Reopen after the ACK.
+    expect(trigger).toHaveFocus();
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    await act(async () => { full.resolve(snapshot(true)); });
+    await user.keyboard('{ArrowUp}');
+    await waitFor(() => expect(screen.getByRole('menuitem', { name: '加载完整记录' })).toBeEnabled());
+    await user.keyboard('{Escape}');
+    expect(trigger).toHaveFocus();
+    expect(composer).toHaveValue('保留原 Session 未发送草稿');
+    expect(transport.requests.some(r => CONTROL_ROUTES[r.pathId].method === 'POST')).toBe(false);
   });
 
   it('does not repeat workspace and permission context as a conversation header strip', async () => {

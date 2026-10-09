@@ -320,6 +320,12 @@
   white-space: nowrap;
 }
 
+/* History stays in the existing tools menu instead of the runtime's 29px
+   icon grid. Keep its original pointer target at the window's control scale. */
+.paw-desktop-root .paw-session-workspace__tools > nav > .paw-session-history-load {
+  min-height: max(34px, var(--paw-window-control-size, 32px));
+}
+
 .paw-desktop-root .paw-session-workspace__tools > nav > button:is(:hover, [data-active]) {
   color: var(--paw-chat-text);
   background: var(--paw-chat-surface-hover);
