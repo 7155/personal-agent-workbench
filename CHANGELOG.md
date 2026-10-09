@@ -5,6 +5,9 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Keep the v2 chat context meter aligned with its toolbar: use a 32px minimum
+  target on desktop and a 40px target in the narrow composer.
+
 - Give Full Session conversations more room around the floating editor. Remove
   its opaque outer band and reduce empty collapsed input height while preserving
   the editor card, controls, growing drafts and expanded editing.

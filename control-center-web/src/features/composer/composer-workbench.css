@@ -53,6 +53,9 @@
 .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] .agent-composer__picker-thinking { margin-inline-start: 0; font-size: inherit; font-weight: inherit; line-height: inherit; color: var(--wb-muted); }
 .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] .agent-composer__picker .caret { flex: none; }
 .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] .agent-composer__actions > button { flex: none; }
+.agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] .agent-context-usage__trigger {
+  min-width: 32px; min-height: 32px;
+}
 .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] .agent-composer__actions > .agent-composer__model-picker {
   flex: 0 1 auto; min-width: 0;
 }
@@ -122,6 +125,7 @@
 
 @container workbench-composer (max-width: 460px) {
   .paw-desktop-root .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] :is(.agent-composer__controls button, .agent-composer__editor > button) { min-width: 40px; min-height: 40px; }
+  .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] .agent-context-usage__trigger { min-width: 40px; min-height: 40px; }
   .paw-desktop-root .agent-composer[data-composer-design='workbench'][data-chat-presentation-version='v2'] .agent-composer__send { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
 }
 
