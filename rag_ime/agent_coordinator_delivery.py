@@ -76,31 +76,45 @@ class AgentCoordinatorDelivery:
     def _index_results(self) -> None:
         with self.sessions._connect() as conn:
             conn.execute('BEGIN IMMEDIATE')
-            rows = conn.execute("SELECT a.attempt_id, a.target_session_id, a.context_item_id, a.created_at_ms, w.coordinator_id, w.source_session_id, i.payload_json "
-                "FROM agent_coordinator_work_attempts a JOIN agent_coordinator_work w ON w.work_id=a.work_id "
-                "JOIN agent_context_items i ON i.item_id=a.context_item_id WHERE a.projected_at_ms IS NOT NULL AND a.retired_reason='' AND NOT EXISTS (SELECT 1 FROM agent_coordinator_result_deliveries d WHERE d.attempt_id=a.attempt_id) ORDER BY a.created_at_ms, a.attempt_id LIMIT 20 ").fetchall()
+            rows = conn.execute("SELECT a.attempt_id AS attempt_id,a.target_session_id,'' AS target_room_id,'session' AS target_kind,a.context_item_id,a.created_at_ms AS created_at_ms,w.coordinator_id,w.source_session_id,i.payload_json "
+                "FROM agent_coordinator_work_attempts a JOIN agent_coordinator_work w ON w.work_id=a.work_id JOIN agent_context_items i ON i.item_id=a.context_item_id "
+                "WHERE a.projected_at_ms IS NOT NULL AND a.retired_reason='' AND NOT EXISTS (SELECT 1 FROM agent_coordinator_result_deliveries d WHERE d.attempt_id=a.attempt_id) "
+                "UNION ALL SELECT a.attempt_id,'',a.target_room_id,'room',a.context_item_id,a.created_at_ms,a.coordinator_id,a.source_session_id,i.payload_json "
+                "FROM agent_coordinator_room_work_attempts a JOIN agent_context_items i ON i.item_id=a.context_item_id "
+                "WHERE a.projected_at_ms IS NOT NULL AND a.retired_reason='' AND NOT EXISTS (SELECT 1 FROM agent_coordinator_result_deliveries d WHERE d.attempt_id=a.attempt_id) "
+                "ORDER BY created_at_ms,attempt_id LIMIT 20").fetchall()
             for row in rows:
                 digest = _digest(_json(json.loads(str(row['payload_json']))))
                 occurrence = _digest(_json([row['coordinator_id'], row['source_session_id'], row['attempt_id'], row['context_item_id'], digest]))
-                conn.execute("INSERT OR IGNORE INTO agent_coordinator_result_deliveries(delivery_id,coordinator_id,source_session_id,target_session_id,attempt_id,context_item_id,result_sha256,source_client_message_id,phase,created_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                    (f'coordinator-delivery:{occurrence}', row['coordinator_id'], row['source_session_id'], row['target_session_id'], row['attempt_id'], row['context_item_id'], digest,
-                     f'coordinator-notice:{occurrence}', 'pending', row['created_at_ms']))
+                conn.execute("INSERT OR IGNORE INTO agent_coordinator_result_deliveries(delivery_id,coordinator_id,source_session_id,target_session_id,target_kind,target_room_id,attempt_id,context_item_id,result_sha256,source_client_message_id,phase,created_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (f'coordinator-delivery:{occurrence}', row['coordinator_id'], row['source_session_id'], row['target_session_id'], row['target_kind'], row['target_room_id'],
+                     row['attempt_id'], row['context_item_id'], digest, f'coordinator-notice:{occurrence}', 'pending', row['created_at_ms']))
 
     def _invalid_reason(self, conn: sqlite3.Connection, row: Mapping[str, Any]) -> str:
         if not AgentCoordinatorWork._active_link(conn, row):
             return 'ownership_retired'
-        original = conn.execute("SELECT a.context_item_id, a.target_session_id, w.work_id, w.source_session_id, w.coordinator_id FROM agent_coordinator_work_attempts a JOIN agent_coordinator_work w ON w.work_id=a.work_id WHERE a.attempt_id=?", (row['attempt_id'],)).fetchone()
+        room = row['target_kind'] == 'room'
+        original = conn.execute("SELECT * FROM agent_coordinator_room_work_attempts WHERE attempt_id=?" if room else
+            "SELECT a.context_item_id,a.target_session_id,w.work_id,w.source_session_id,w.coordinator_id FROM agent_coordinator_work_attempts a JOIN agent_coordinator_work w ON w.work_id=a.work_id WHERE a.attempt_id=?",
+            (row['attempt_id'],)).fetchone()
         item = conn.execute('SELECT * FROM agent_context_items WHERE item_id=?', (row['context_item_id'],)).fetchone()
         if original is None or item is None:
             return 'original_evidence_missing'
         payload = json.loads(str(item['payload_json']))
         binding = {'workId': original['work_id'], 'attemptId': row['attempt_id'], 'coordinatorId': row['coordinator_id'],
-                   'sourceSessionId': row['source_session_id'], 'targetSessionId': row['target_session_id']}
-        if (original['context_item_id'] != row['context_item_id'] or original['target_session_id'] != row['target_session_id']
+                   'sourceSessionId': row['source_session_id']}
+        if room:
+            binding.update(targetRoomId=row['target_room_id'], roomTurnId=original['root_id'])
+            wrong_target = original['target_room_id'] != row['target_room_id'] or bool(row['target_session_id'])
+        else:
+            binding['targetSessionId'] = row['target_session_id']
+            wrong_target = original['target_session_id'] != row['target_session_id'] or bool(row['target_room_id'])
+        schema = 'rag-ime.coordinator-room-work-result-context.v1' if room else 'rag-ime.coordinator-work-result-context.v1'
+        if (original['context_item_id'] != row['context_item_id'] or wrong_target
             or original['source_session_id'] != row['source_session_id'] or original['coordinator_id'] != row['coordinator_id']
             or item['session_id'] != row['source_session_id'] or item['source_kind'] != 'coordinator_result'
             or item['source_id'] != row['attempt_id'] or item['lifecycle'] != 'until_ack'
-            or not isinstance(payload, dict) or payload.get('schemaVersion') != 'rag-ime.coordinator-work-result-context.v1'
+            or not isinstance(payload, dict) or payload.get('schemaVersion') != schema
             or payload.get('authority') != 'evidence_only'
             or any(payload.get(key) != value for key, value in binding.items())):
             return 'foreign_result_binding'

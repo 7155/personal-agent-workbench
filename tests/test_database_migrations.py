@@ -18,11 +18,31 @@ from rag_ime.db.migration_runner import (
     migration_status,
 )
 
-TESTED_SCHEMA_HEAD = 224
-POST_0126_MIGRATIONS = tuple(range(127, TESTED_SCHEMA_HEAD + 1))
+TESTED_SCHEMA_HEAD = 226
+# 0225 is reserved for the separate Wake admission candidate, not shipped here.
+POST_0126_MIGRATIONS = (*range(127, 225), 226)
 
 
 class DatabaseMigrationTests(unittest.TestCase):
+    def test_room_journal_upgrade_preserves_original_session_delivery(self) -> None:
+        import shutil
+        import tempfile
+        from rag_ime.db.migration_runner import load_migrations
+        with tempfile.TemporaryDirectory(prefix="paw-room-migration-") as temporary, closing(sqlite3.connect(":memory:")) as conn:
+            folder = Path(temporary)
+            for migration in load_migrations():
+                if migration.version <= 224:
+                    shutil.copyfile(migration.path, folder / migration.path.name)
+            apply_database_migrations(conn, migrations_dir=folder)
+            conn.execute("INSERT INTO agent_coordinator_result_deliveries(delivery_id,coordinator_id,source_session_id,target_session_id,attempt_id,context_item_id,result_sha256,source_client_message_id,phase,created_at_ms) VALUES ('d','c','source','target','a','i','hash','client','pending',1)")
+            conn.commit()
+            upgraded = apply_database_migrations(conn)
+            self.assertEqual(upgraded.applied_versions, (226,))
+            self.assertEqual(conn.execute("SELECT target_session_id,target_kind,target_room_id,phase FROM agent_coordinator_result_deliveries WHERE delivery_id='d'").fetchone(), ("target", "session", "", "pending"))
+            self.assertEqual(apply_database_migrations(conn).applied_versions, ())
+            with self.assertRaises(sqlite3.IntegrityError):
+                conn.execute("UPDATE agent_coordinator_result_deliveries SET target_kind='room',target_room_id='room' WHERE delivery_id='d'")
+
     def test_empty_database_applies_all_migrations_idempotently(self) -> None:
         with closing(sqlite3.connect(":memory:")) as conn, conn:
             first = apply_database_migrations(conn, applied_at_ms=123)
@@ -1256,7 +1276,7 @@ class DatabaseMigrationTests(unittest.TestCase):
 
                 upgraded = apply_database_migrations(conn)
 
-                self.assertEqual(upgraded.applied_versions, tuple(range(153, TESTED_SCHEMA_HEAD + 1)))
+                self.assertEqual(upgraded.applied_versions, tuple(version for version in POST_0126_MIGRATIONS if version >= 153))
                 self.assertEqual(
                     conn.execute(
                         """
@@ -2063,7 +2083,7 @@ class DatabaseMigrationTests(unittest.TestCase):
 
                 self.assertEqual(
                     result.applied_versions,
-                    tuple(range(135, TESTED_SCHEMA_HEAD + 1)),
+                    tuple(version for version in POST_0126_MIGRATIONS if version >= 135),
                 )
                 todo = conn.execute(
                     """
@@ -2208,7 +2228,7 @@ class DatabaseMigrationTests(unittest.TestCase):
             upgraded = apply_database_migrations(conn, applied_at_ms=161)
             self.assertEqual(
                 upgraded.applied_versions,
-                tuple(range(160, TESTED_SCHEMA_HEAD + 1)),
+                tuple(version for version in POST_0126_MIGRATIONS if version >= 160),
             )
             self.assertEqual(upgraded.current_version, TESTED_SCHEMA_HEAD)
             review_columns = {
@@ -2277,7 +2297,7 @@ class DatabaseMigrationTests(unittest.TestCase):
 
             upgraded = apply_database_migrations(conn, applied_at_ms=185)
 
-            self.assertEqual(upgraded.applied_versions, tuple(range(185, TESTED_SCHEMA_HEAD + 1)))
+            self.assertEqual(upgraded.applied_versions, tuple(version for version in POST_0126_MIGRATIONS if version >= 185))
             self.assertEqual(
                 conn.execute(
                     "SELECT run_kind FROM memory_cleanup_runs "

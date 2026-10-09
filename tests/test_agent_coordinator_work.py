@@ -284,7 +284,11 @@ class CoordinatorWorkTests(unittest.TestCase):
         with patch.object(self.service, 'post_room_message', return_value={'accepted':True}) as post:
             self.command('prompt', targetId=room, input={'message':'Discuss','clientMessageId':'room-client'})
         post.assert_called_once()
-        self.assertEqual(self.attempts(), [])
+        self.assertEqual(len(self.attempts()), 1)
+        self.assertEqual(self.attempts()[0]['targetRoomId'], room)
+        self.assertNotIn('targetSessionId', self.attempts()[0])
+        with self.service.sessions._read_connect() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM agent_coordinator_work_attempts').fetchone()[0], 0)
 
     def test_new_target_user_turn_terminal_does_not_replace_original_attempt(self):
         self.send()

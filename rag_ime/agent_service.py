@@ -65,7 +65,7 @@ from .agent_event_projection import AgentEventProjectionService
 from .agent_coordinator_work import AgentCoordinatorWork
 from .agent_coordinator_delivery import AgentCoordinatorDelivery
 from .agent_block_store import AgentBlockStore
-from .agent_coordinator import CoordinatorPorts, coordinator_command, coordinator_identity, ensure_coordinator
+from .agent_coordinator import CoordinatorPorts, _room_result, coordinator_command, coordinator_identity, ensure_coordinator
 from .agent_delegation import AgentDelegationCoordinator
 from .agent_file_preview import AgentFilePreviewReader
 from .agent_media import AgentMediaStore, IMAGE_MIME_TYPES, TEXT_MEDIA_MIME_TYPES
@@ -897,6 +897,7 @@ class AgentService:
                 acceptance=self.command_receipts.acceptance_evidence_for_exact_command(
                     command_scope="session_prompt", scope_id=target, client_message_id=client)
                 or self.sessions.prompt_acceptance_evidence(target, client)),
+            read_room_result=lambda room, root: _room_result(self._coordinator_ports(), room, root),
         )
         self.coordinator_delivery = AgentCoordinatorDelivery(
             sessions=self.sessions, receipts=self.command_receipts, context=self.context_runtime,
@@ -2542,6 +2543,9 @@ class AgentService:
                 or self.sessions.prompt_acceptance_evidence(target, client)),
             register_session_prompt=self.coordinator_work.register_prompt,
             reconcile_session_acceptance=self.coordinator_work.reconcile_acceptance,
+            register_room_prompt=self.coordinator_work.register_room_prompt,
+            reconcile_room_acceptance=self.coordinator_work.reconcile_room_acceptance,
+            original_room_response=self.coordinator_work.original_room_response,
         )
 
     def ensure_coordinator(self, payload: Mapping[str, object]) -> dict[str, object]:

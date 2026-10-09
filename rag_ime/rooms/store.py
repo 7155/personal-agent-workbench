@@ -2523,6 +2523,60 @@ class AgentRoomStore:
             ).fetchall()
         return [_room_event_payload(row) for row in rows]
 
+    def root_result_for_turn(
+        self, room_id: str, turn_id: str, *, through_sequence: int,
+    ) -> dict[str, object] | None:
+        """Read the original Facilitator result's durable projection receipt.
+
+        An ordinary participant reply, even one labelled result, grants no
+        Root disposition. Only the existing Room result publication owner
+        writes this exact projection after its explicit review checks. Keep
+        the original author/Session identity; never republish recovery data.
+        """
+        with self._connect() as conn:
+            receipt = conn.execute(
+                "SELECT event_id,payload_hash FROM agent_room_public_projection_receipts "
+                "WHERE projection_key=? AND room_id=?",
+                (f"room-terminal-result:{room_id}:{turn_id}", room_id),
+            ).fetchone()
+            if receipt is None:
+                return None
+            row = conn.execute("SELECT * FROM agent_room_events WHERE event_id=?",
+                               (receipt["event_id"],)).fetchone()
+            room = conn.execute("SELECT room_file,last_event_sequence FROM agent_rooms WHERE id=?",
+                                (room_id,)).fetchone()
+        if room is None:
+            return None
+        if row is not None:
+            event = _room_event_payload(row)
+        else:
+            # The receipt survives display retention. The existing validated
+            # append-only mirror recovers its exact event, not a latest answer.
+            event = next((event for event in self._validated_room_file_events(
+                room_id, room["room_file"], last_sequence=int(room["last_event_sequence"]),
+            ) if event["eventId"] == receipt["event_id"]), None)
+            if event is None:
+                return None
+        payload = event.get("payload")
+        payload = payload if isinstance(payload, Mapping) else {}
+        post = payload.get("post")
+        if (event.get("roomId") != room_id or event.get("turnId") != turn_id
+            or event.get("eventType") != "room_post" or int(event.get("sequence") or 0) > through_sequence
+            or not isinstance(post, Mapping) or post.get("kind") != "result"
+            or post.get("roomId") != room_id or post.get("rootId") != turn_id
+            or not post.get("postId") or not post.get("idempotencyKey")
+            or not event.get("participantId") or not event.get("sourceSessionId")
+            or post.get("authorActorRef") != event.get("participantId")):
+            return None
+        # _append_event hashes the supplied topic before resolving an empty
+        # topic to the room's active topic. Both are existing publication forms;
+        # all Root, author, Session and payload fields must still match exactly.
+        digests = {_room_projection_hash(room_id=room_id, event_type="room_post", payload=payload,
+            turn_id=turn_id, participant_id=cast(str, event["participantId"]),
+            source_session_id=cast(str, event["sourceSessionId"]), topic_id=cast(str, topic))
+            for topic in (event["topicId"], "")}
+        return event if receipt["payload_hash"] in digests else None
+
     def has_typed_result(self, room_id: str, turn_id: str) -> bool:
         """Check the authoritative typed Root result without scanning the room."""
 

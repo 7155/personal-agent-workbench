@@ -4,6 +4,7 @@ import time
 import uuid
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import nullcontext
 from typing import Any, Callable
 
 from rag_ime.rooms.prompt_context import agent_message_text
@@ -1219,26 +1220,33 @@ class RoomPartnerApplicationService:
             "createdAtMs": finished_at_ms,
         }
         validate_contract(post, "room-post.v2.json")
-        publish_projection(
-            projection_key=f"room-terminal-result:{room_id}:{root_id}",
-            room_id=room_id,
-            event_type="room_post",
-            payload={
-                "post": post,
-                "sourceTurnId": turn_id,
-                "terminalProjection": {
-                    "kind": "runtime_terminal_receipt",
-                    "basis": "explicit_dual_axis_work_reviews",
-                    "sourceScheduleId": schedule_id,
-                    "sourceRunId": str(latest_run.get("runId") or ""),
+        with getattr(self.room_turns, "lock", nullcontext()):
+            cancelled = getattr(self.room_turns, "is_cancelled", None)
+            if callable(cancelled) and cancelled(moderator_session_id, root_id):
+                return False
+            if self._accepted_root_work(room_id=room_id, root_turn_id=root_id,
+                                        facilitator_participant_id=moderator_participant_id) is None:
+                return False
+            publish_projection(
+                projection_key=f"room-terminal-result:{room_id}:{root_id}",
+                room_id=room_id,
+                event_type="room_post",
+                payload={
+                    "post": post,
+                    "sourceTurnId": turn_id,
+                    "terminalProjection": {
+                        "kind": "runtime_terminal_receipt",
+                        "basis": "explicit_dual_axis_work_reviews",
+                        "sourceScheduleId": schedule_id,
+                        "sourceRunId": str(latest_run.get("runId") or ""),
+                    },
                 },
-            },
-            turn_id=root_id,
-            participant_id=moderator_participant_id,
-            source_session_id=moderator_session_id,
-            topic_id=self.room_topic_for_turn(root_id),
-            created_at_ms=finished_at_ms,
-        )
+                turn_id=root_id,
+                participant_id=moderator_participant_id,
+                source_session_id=moderator_session_id,
+                topic_id=self.room_topic_for_turn(root_id),
+                created_at_ms=finished_at_ms,
+            )
         return True
 
     def _accepted_root_work(
@@ -3175,23 +3183,30 @@ class RoomPartnerApplicationService:
         }
         published = True
         if kind == "result":
-            projection_key = (
-                f"room-terminal-result:{room['id']}:{root_id}"
-            )
-            has_projection = getattr(self.room_events, "has_projection", None)
-            if callable(has_projection) and has_projection(projection_key):
-                published = False
-            elif idempotent_replay:
-                published = False
-            elif self._root_has_typed_result(
-                {"roomId": str(room["id"]), "rootId": root_id}
-            ):
-                raise ValueError("Room Root already has a typed result")
-            else:
-                self.room_events.publish_projection(
-                    projection_key=projection_key,
-                    **publish_values,
-                )
+            # Stop records its intent and captures the original fan-out under
+            # this registry fence. A still-pending native drain must not allow
+            # a late Facilitator post to declare that cancelled Root complete.
+            with getattr(self.room_turns, "lock", nullcontext()):
+                cancelled = getattr(self.room_turns, "is_cancelled", None)
+                if callable(cancelled) and cancelled(str(source["sessionId"]), root_id):
+                    raise ValueError("Room Root stopped before result publication")
+                if self._active_root(source) != (root_id, dispatch_id):
+                    raise ValueError("Room result lost its original active Room turn")
+                projection_key = f"room-terminal-result:{room['id']}:{root_id}"
+                has_projection = getattr(self.room_events, "has_projection", None)
+                if callable(has_projection) and has_projection(projection_key):
+                    published = False
+                elif idempotent_replay:
+                    published = False
+                elif self._root_has_typed_result(
+                    {"roomId": str(room["id"]), "rootId": root_id}
+                ):
+                    raise ValueError("Room Root already has a typed result")
+                else:
+                    if self._accepted_root_work(room_id=str(room["id"]), root_turn_id=root_id,
+                                                facilitator_participant_id=author_participant_id) is None:
+                        raise ValueError("Room result requires every WorkItem to be explicitly accepted with passed/satisfied evidence")
+                    self.room_events.publish_projection(projection_key=projection_key, **publish_values)
         else:
             self.room_events.publish(**publish_values)
         return {

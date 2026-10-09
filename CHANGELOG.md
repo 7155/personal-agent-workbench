@@ -5,6 +5,10 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Return an ordinary Room's reviewed Root result to the same StarMate
+  conversation through the existing work journal and delivery owner. Preserve
+  the original Room, dispatch and Source identities; Stop and unknown delivery
+  acknowledgements cannot publish a late result or repeat the notification.
 - Open the Session and Room creator directly in the chat App. Keep existing
   conversations in the work-record sidebar and the persistent assistant in
   StarMate; opening the chat creator no longer initializes the primary assistant.
