@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-09T15:19:27.571769+00:00",
+  "generatedAt": "2026-10-09T15:57:16.060103+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "undo/paw-acceptance-20261009",
     "baseCommit": "55fc923944ffcee72a2c90b04a891c1106485227",
-    "candidateCommitPolicy": "Committed source checkpoint of user-authorized frontend polish, persistent Agent coordination, exact Room result return and native message receipt recovery; source checks do not establish complete foreground acceptance. Recover local Knowledge drafts without search replay; real browser and installed acceptance remain separate. Keep the Session caption compact while preserving explicit history access and keyboard focus; current-source Chrome verification remains separate. Keep responsive menu dimensions under the structural CSS owner regardless of lazy chunk arrival order; current-source Chrome validation remains required. Preserve full-row menu focus and compact distinct file receipts with truthful small-file sizes; source checks remain separate from current-source real browser and installed acceptance. Restore exact visible Durable sidecars under stable current native message/turn/client binding; no alias fabrication or replay, and current-source browser acceptance remains required."
+    "candidateCommitPolicy": "Committed source checkpoint of user-authorized frontend polish, persistent Agent coordination, exact Room result return and native message receipt recovery; source checks do not establish complete foreground acceptance. Recover local Knowledge drafts without search replay; real browser and installed acceptance remain separate. Keep the Session caption compact while preserving explicit history access and keyboard focus; current-source Chrome verification remains separate. Keep responsive menu dimensions under the structural CSS owner regardless of lazy chunk arrival order; current-source Chrome validation remains required. Preserve full-row menu focus and compact distinct file receipts with truthful small-file sizes; source checks remain separate from current-source real browser and installed acceptance. Restore exact visible Durable sidecars under stable current native message/turn/client binding; no alias fabrication or replay, and current-source browser acceptance remains required. Preserve current-stream authority during full-history reads and show recovery truthfully; source verification does not replace real connection/foreground acceptance."
   },
   "dispositions": {
     "keep_release": "Retain this source maintenance change.",

@@ -457,6 +457,11 @@ function createSharedAgentLiveSession(
         error: new Error('返回的记录不完整，请加载完整记录。'),
         recoverable: actualView === 'recent',
       }));
+      // An explicit history read keeps a proven live stream attached. Its
+      // accepted snapshot repairs the projection; no extra heartbeat is needed
+      // to reuse that connectivity. A new/dropped stream still needs its own
+      // stable frame, and markConnectionStable retains the gap/repair fence.
+      if (connected && snapshot.hydrated) markConnectionStable();
       if (shouldStream()) maybeSubscribe();
       else if (!snapshotNeedsRepair) setRecoveryState('synced');
       if (snapshotNeedsRepair) scheduleAutomaticRecovery();

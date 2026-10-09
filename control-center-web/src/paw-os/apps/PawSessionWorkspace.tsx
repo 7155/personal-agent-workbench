@@ -1864,7 +1864,7 @@ function PawSessionWorkspaceBody({
         <div className="paw-session-workspace__runtime">
           <span data-context={contextSnapshotState}><i />{evaluationSnapshot
             ? '只读证据'
-            : syncError && syncState !== 'synced'
+            : syncState !== 'synced' && (syncError || contextSnapshotState === undefined)
               ? '正在恢复连接'
             : stopping
             ? '正在停止'

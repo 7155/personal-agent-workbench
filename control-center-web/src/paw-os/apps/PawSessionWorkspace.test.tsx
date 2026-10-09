@@ -1372,7 +1372,13 @@ describe('PAWOS Agent Session structural migration', () => {
     act(() => repairObservers.at(-1)!.stable?.(''));
     expect(screen.queryByText('Session 操作没有完成，请重新同步后重试。')).not.toBeInTheDocument();
     expect(screen.getByText('正在恢复连接')).toBeVisible();
+    const beforeRepairStreams = observers.length;
     failSnapshot = false;
+    await waitFor(() => expect(observers.length).toBeGreaterThan(beforeRepairStreams), { timeout: 6000 });
+    // Recovery's recent read replaces the old stream. Its accepted snapshot
+    // cannot borrow the heartbeat from the discarded subscription.
+    expect(screen.getByText('正在恢复连接')).toBeVisible();
+    act(() => observers.at(-1)!.stable?.(''));
     await waitFor(() => expect(screen.queryByText('正在恢复连接')).not.toBeInTheDocument(), { timeout: 6000 });
     expect(screen.queryByRole('button', { name: '立即重连' })).not.toBeInTheDocument();
     expect(transport.requests.filter((request) => request.pathId === 'agent.session.prompt')).toHaveLength(0);
@@ -1706,6 +1712,52 @@ describe('PAWOS Agent Session structural migration', () => {
     const conversationNav = window.querySelector('.agent-conversation-nav');
     expect(conversationNav).not.toBeNull();
     expect(conversationNav?.querySelectorAll('button')).toHaveLength(2);
+  });
+
+  it.each([true, false])('keeps history feedback and task state tied to an actually stable stream (%s)', async (stable) => {
+    const sessionId = `history-feedback-${stable}`;
+    const archive = deferred<unknown>();
+    const stopped = parseAgentEvent({ schemaVersion: 'rag-ime.agent-event.v1', eventId: `${sessionId}:1`,
+      sessionId, turnId: 'original-stopped-turn', sequence: 1, createdAtMs: 1,
+      eventType: 'turn_completed', payload: { status: 'aborted' }, resumeToken: `${sessionId}:1` });
+    const snapshot = (full: boolean) => ({ messages: [{ schemaVersion: 'rag-ime.agent-message.v1',
+      id: `${sessionId}:stopped-answer`, sessionId, turnId: 'original-stopped-turn', role: 'assistant',
+      status: 'aborted', blocks: [], attachments: [], citations: [], createdAtMs: 1, completedAtMs: 2 }],
+      liveEvents: [stopped], lastSequence: full ? 2 : 1,
+      resumeToken: `${sessionId}:${full ? 2 : 1}`, status: 'idle', partial: !full,
+      snapshotScope: full ? 'full' : 'recent' });
+    const transport = new StubControlTransport('mock', { ...idleSessionRoutes(),
+      'agent.session.snapshot': (r: ControlRequest) => r.query?.view === 'recent' ? snapshot(false) : archive.promise });
+    const streams = vi.spyOn(transport, 'subscribe');
+    const view = render(<ControlTransportProvider transport={transport}><TooltipProvider>
+      <PawWindowFrame active appId="agent" bounds={{ x: 0, y: 0, width: 700, height: 720 }}
+        onBoundsCommit={() => undefined} onClose={() => undefined} onFocus={() => undefined}
+        onMinimize={() => undefined} onToggleMaximize={() => undefined} title="Original stopped Session"
+        windowChrome="agent-session" windowId={sessionId} zIndex={10}>
+        <PawSessionWorkspace record={{ ...liveSession(), id: sessionId }} recordId={sessionId}
+          initialDraft="原未发送草稿" onNewWork={vi.fn()} onSessionCreated={vi.fn()} onSessionUpdated={vi.fn()} />
+      </PawWindowFrame></TooltipProvider></ControlTransportProvider>);
+    const editor = await screen.findByRole('textbox', { name: '消息' });
+    await waitFor(() => expect(streams).toHaveBeenCalled());
+    if (stable) act(() => streams.mock.calls[0][1].stable?.(`${sessionId}:1`));
+    fireEvent.click(screen.getByRole('button', { name: '对话工具' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '加载完整记录' }));
+    await act(async () => { archive.resolve(snapshot(true)); await archive.promise; });
+    const header = document.querySelector('.paw-session-workspace__runtime')!;
+    const taskbar = screen.getByRole('region', { name: '当前工作' });
+    if (stable) {
+      await waitFor(() => expect(taskbar).toHaveTextContent('本轮已停止'));
+      expect(header).toHaveTextContent('已同步');
+    } else {
+      expect(taskbar).toHaveTextContent('连接恢复中 · 上次状态');
+      expect(header).toHaveTextContent('正在恢复连接');
+      expect(header).not.toHaveTextContent('已同步');
+    }
+    expect(screen.getByRole('textbox', { name: '消息' })).toBe(editor);
+    expect(editor).toHaveValue('原未发送草稿');
+    expect(transport.requests.filter(r => r.pathId === 'agent.session.snapshot' && r.query?.view === undefined)).toHaveLength(1);
+    expect(transport.requests.some(r => ['agent.session.prompt', 'agent.session.abort', 'agent.runtime.ensure'].includes(r.pathId))).toBe(false);
+    view.unmount();
   });
 
   it.each([
