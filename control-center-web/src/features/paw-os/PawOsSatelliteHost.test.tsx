@@ -629,7 +629,9 @@ describe('PawOsSatelliteHost', () => {
     expect(card?.querySelector('.ccui-tool-meta')).toHaveTextContent('已完成');
     // One card per real Runtime loop, with the loop's actor and time in its head.
     const turn = timeline.querySelector<HTMLElement>('article.ccui-assistant-turn');
-    expect(turn?.querySelector('.ccui-assistant-head strong')).toHaveTextContent('Mars');
+    expect(turn?.querySelector('.ccui-assistant-head strong')).toHaveTextContent('实现伙伴');
+    expect(turn?.querySelector('.paw-room-conversation__identity-link small')).toHaveTextContent('Mars');
+    expect(turn?.querySelector('.paw-room-conversation__identity-link')).toHaveAttribute('href', '#/agent?session=session-a');
     expect(turn?.querySelector('.ccui-assistant-head time')).toHaveTextContent(/\d/);
   });
 

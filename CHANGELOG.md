@@ -5,6 +5,9 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Restore the original Files Session and path when reopening the App. Keep
+  text drafts and disk reconciliation under the existing exact-file owner;
+  explicit navigation and current workspace permissions remain authoritative.
 - Add a separate persistent Agent App that controls the Sessions and Rooms it
   creates through existing Pi and Room owners. Rename the original entry to
   **Session 与 Room**. The new Agent uses the existing full-access permission

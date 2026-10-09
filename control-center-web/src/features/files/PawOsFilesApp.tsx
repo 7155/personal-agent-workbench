@@ -27,6 +27,8 @@ import {
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '@/components/primitives';
 import { useControlTransport } from '@/app/control-transport';
+import type { ControlTransport } from '@/platform/transport';
+import { recoveryScope } from '@/features/semantic-workspace/workspace-recovery';
 import { useMotionActivity } from '@/design/motion';
 import { CodePreview } from '@/features/agent/file-preview/CodePreview';
 import { DiffPreview } from '@/features/agent/file-preview/DiffPreview';
@@ -133,7 +135,13 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
   const [treeVisible, setTreeVisible] = useState(!sidebar.collapsed);
   const [treeRevealed, setTreeRevealed] = useState(false);
   const windowChromeTarget = usePawWindowChromeTarget();
-  const requested = useMemo(() => requestedWorkspaceFile(initialRoute), [initialRoute]);
+  const selectionIntent = useMemo(() => {
+    const caller = requestedWorkspaceFile(initialRoute);
+    if (caller.sessionId || caller.path) return { requested: caller, restored: false };
+    const rememberedRoute = readFilesSelectionRoute(transport);
+    return { requested: requestedWorkspaceFile(rememberedRoute), restored: Boolean(rememberedRoute) };
+  }, [initialRoute, transport]);
+  const requested = selectionIntent.requested;
   const requestedKey = JSON.stringify([requested.sessionId, requested.path]);
   const generationRef = useRef(0);
   const locationGenerationRef = useRef(0);
@@ -244,6 +252,11 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
     previewReady && preview?.path === selectedFile?.path ? preview : null,
     onFileSaved,
   );
+  useEffect(() => {
+    if (!selectedFile || selectedFile.sessionId !== selectedSessionId
+      || selectedSessionId && !sessions.some(session => session.id === selectedSessionId)) return;
+    rememberFilesSelectionRoute(transport, selectedSessionId, selectedFile.path);
+  }, [selectedFile?.sessionId, selectedFile?.path, selectedSessionId, sessions, transport]);
   // Loaded-line readout: honest for exactly the bytes on screen, never a
   // whole-file claim while the read window is still partial. A complete editor
   // owns its current text independently of the earlier bounded preview.
@@ -278,6 +291,7 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
       if (manual) {
         locationFocusIntentRef.current = locationInputEditRef.current !== inputEdit || focusIntent === locationFieldRef.current && locationFieldRef.current?.value !== focusInputValue ? null : focusIntent;
         setSessionSelection({ requestKey: requestedKey, sessionId: association });
+        rememberFilesSelectionRoute(transport, association, typeof response.selectedPath === 'string' ? response.selectedPath || response.path : response.path);
         setLocation({ requestKey: requestedKey, path: response.path, selectedPath: typeof response.selectedPath === 'string' ? response.selectedPath : '' });
         if (locationInputEditRef.current === inputEdit) setLocationInput(response.path);
         setTreeRevealed(true); sidebar.setCollapsed(false);
@@ -292,8 +306,13 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transport]);
   useEffect(() => {
-    manualLocationRef.current = false;
-    if (requested.path.startsWith('/') || requested.path.startsWith('~/')) void openLocation(requested.path, true, requested.sessionId, null);
+    manualLocationRef.current = selectionIntent.restored && !requested.sessionId;
+    // A remembered Session/path is only an intent. Let the current catalog
+    // and authorized roots resolve it; never promote old state to a grant.
+    if ((!selectionIntent.restored || !requested.sessionId)
+      && (requested.path.startsWith('/') || requested.path.startsWith('~/'))) {
+      void openLocation(requested.path, true, requested.sessionId, null);
+    }
     return () => { locationGenerationRef.current += 1; };
     // Absolute deep links can be opened even when their Session is gone.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -894,6 +913,7 @@ export function PawOsFilesApp({ initialRoute = '' }: { initialRoute?: string } =
             locationInputSyncRef.current = locationInputEditRef.current;
             setLocationLoading(false); setLocationError(''); setLocation(null);
             setSessionSelection({ requestKey: requestedKey, sessionId: event.target.value });
+            rememberFilesSelectionRoute(transport, event.target.value, '');
             if (!event.target.value) void openLocation('');
           }}
           value={selectedSessionId}
@@ -1267,6 +1287,34 @@ function highlightMatch(name: string, query: string): ReactNode {
       {name.slice(index + query.length)}
     </>
   );
+}
+
+// This preference keeps the existing Files route string, not file contents
+// or permissions. Anonymous surfaces do not share another backend's intent.
+function filesSelectionKey(transport: ControlTransport): string {
+  return recoveryScope(transport, `files-selection:${transport.kind}`);
+}
+function readFilesSelectionRoute(transport: ControlTransport): string {
+  const key = filesSelectionKey(transport);
+  if (!key) return '';
+  try {
+    const route = localStorage.getItem(key) ?? '';
+    if (!route.startsWith('/files?')) return '';
+    const query = new URLSearchParams(route.slice('/files?'.length));
+    const rawSession = query.get('session') ?? '';
+    const rawPath = query.get('path') ?? '';
+    const requested = requestedWorkspaceFile(route);
+    return rawSession === requested.sessionId && rawPath === requested.path
+      && !rawSession.includes('\0') && !rawPath.includes('\0')
+      && (!rawPath || rawPath.startsWith('/')) ? route : '';
+  } catch { return ''; }
+}
+function rememberFilesSelectionRoute(transport: ControlTransport, sessionId: string, path: string): void {
+  const key = filesSelectionKey(transport);
+  if (!key || sessionId.length > 200 || path.length > 1_000
+    || sessionId.includes('\0') || path.includes('\0') || path && !path.startsWith('/')) return;
+  try { localStorage.setItem(key, `/files?${new URLSearchParams({ session: sessionId, path })}`); }
+  catch { /* Keep the current selection usable if local preference storage fails. */ }
 }
 
 /** `/files?session=…&path=…` — 正向证据链把一个具体文件交给这扇窗。 */

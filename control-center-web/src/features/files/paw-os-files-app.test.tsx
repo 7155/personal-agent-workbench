@@ -1985,6 +1985,131 @@ function scopedFilesTransport(sessionList: MockRouteHandler = scopedSessions()) 
   } });
 }
 
+describe('Files original selection cold recovery', () => {
+  async function originalDraft(options?: Parameters<typeof recoveryFilesTransport>[0]) {
+    const user = userEvent.setup();
+    const backend = recoveryFilesTransport(options);
+    const view = renderApp(backend, <PawOsFilesApp />);
+    const selection = screen.getByRole('combobox', { name: '选择文件所属 Session' });
+    await waitFor(() => expect(selection).toHaveValue('first'));
+    await user.selectOptions(selection, 'original');
+    await user.click(await screen.findByRole('treeitem', { name: '打开文件 notes.md' }));
+    await user.click(await screen.findByRole('button', { name: '编辑文本' }));
+    const text = Array.from({ length: 350 }, (_, i) => `public line ${i} — retained`).join('\n');
+    fireEvent.change(await screen.findByRole('textbox', { name: '编辑 notes.md' }), { target: { value: text } });
+    return { user, backend, view, text };
+  }
+
+  it('reopens the exact original Session and path with all 350 draft lines despite a different active Session', async () => {
+    const original = await originalDraft();
+    original.view.unmount();
+    const backend = recoveryFilesTransport();
+    renderApp(backend, <PawOsFilesApp />);
+    expect(await screen.findByRole('textbox', { name: '编辑 notes.md' })).toHaveValue(original.text);
+    expect(screen.getByRole('combobox', { name: '选择文件所属 Session' })).toHaveValue('original');
+    expect(screen.getByRole('button', { name: '保存文件' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '核对磁盘版本' })).toBeInTheDocument();
+    expect(backend.requests.filter(({ request }) => request.pathId === 'files.read').every(({ request }) => request.query?.sessionId === 'original')).toBe(true);
+    expect(backend.requests.some(({ request }) => request.pathId === 'agent.session.workspace.save' || request.pathId === 'agent.session.workspace.read')).toBe(false);
+  });
+
+  it('gives the caller a new Session/path before any remembered original selection', async () => {
+    const original = await originalDraft(); original.view.unmount();
+    const backend = recoveryFilesTransport();
+    renderApp(backend, <PawOsFilesApp initialRoute={filesRoute('first', '/workspace/paw/other.txt')} />);
+    await screen.findByRole('heading', { name: 'other.txt', level: 2 });
+    expect(screen.getByRole('combobox', { name: '选择文件所属 Session' })).toHaveValue('first');
+    expect(screen.queryByRole('textbox', { name: '编辑 notes.md' })).toBeNull();
+    expect(backend.requests.filter(({ request }) => request.pathId === 'files.read').every(({ request }) => request.query?.sessionId === 'first')).toBe(true);
+  });
+
+  it('keeps an explicit Session change and does not attach the old selected path or draft to it', async () => {
+    const original = await originalDraft();
+    await original.user.selectOptions(screen.getByRole('combobox', { name: '选择文件所属 Session' }), 'first');
+    await waitFor(() => expect(screen.queryByRole('textbox', { name: '编辑 notes.md' })).toBeNull());
+    original.view.unmount();
+    const backend = recoveryFilesTransport(); renderApp(backend, <PawOsFilesApp />);
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '选择文件所属 Session' })).toHaveValue('first'));
+    expect(screen.queryByRole('textbox', { name: '编辑 notes.md' })).toBeNull();
+    expect(backend.requests.some(({ request }) => request.pathId === 'files.read')).toBe(false);
+    await original.user.selectOptions(screen.getByRole('combobox', { name: '选择文件所属 Session' }), 'original');
+    await original.user.click(await screen.findByRole('treeitem', { name: '打开文件 notes.md' }));
+    expect(await screen.findByRole('textbox', { name: '编辑 notes.md' })).toHaveValue(original.text);
+  });
+
+  it('retains explicitly selected local mode instead of borrowing the active Session on remount', async () => {
+    const original = await originalDraft();
+    await original.user.selectOptions(screen.getByRole('combobox', { name: '选择文件所属 Session' }), '');
+    await waitFor(() => expect(screen.getByRole('textbox', { name: '文件或文件夹路径' })).toHaveValue('/home/public'));
+    original.view.unmount();
+    const backend = recoveryFilesTransport(); renderApp(backend, <PawOsFilesApp />);
+    await screen.findByRole('treeitem', { name: '打开文件 notes.md' });
+    expect(screen.getByRole('combobox', { name: '选择文件所属 Session' })).toHaveValue('');
+    expect(screen.queryByRole('textbox', { name: '编辑 notes.md' })).toBeNull();
+    expect(backend.requests.some(({ request }) => request.pathId === 'agent.session.workspace.read' || request.pathId === 'agent.session.workspace.save')).toBe(false);
+  });
+
+  it.each(['deleted', 'scope-changed'] as const)('does not replay the remembered file under a %s Session or borrow another identity', async (mode) => {
+    const original = await originalDraft(); original.view.unmount();
+    const backend = recoveryFilesTransport({ original: mode });
+    const view = renderApp(backend, <PawOsFilesApp />);
+    await screen.findByRole('treeitem', { name: '打开文件 notes.md' });
+    expect(screen.getByRole('combobox', { name: '选择文件所属 Session' })).toHaveValue(mode === 'deleted' ? '' : 'original');
+    expect(screen.queryByRole('textbox', { name: '编辑 notes.md' })).toBeNull();
+    expect(backend.requests.some(({ request }) => request.pathId === 'files.read')).toBe(false);
+    view.unmount(); renderApp(recoveryFilesTransport(), <PawOsFilesApp />);
+    expect(await screen.findByRole('textbox', { name: '编辑 notes.md' })).toHaveValue(original.text);
+  });
+
+  it('ignores a closed view folder reply after a reopened view has selected a newer original route', async () => {
+    let finish!: (response: unknown) => void;
+    const original = await originalDraft({ slowLocation: () => new Promise(resolve => { finish = resolve; }) });
+    await original.user.click(screen.getByRole('button', { name: '文件工具' }));
+    const location = screen.getByRole('textbox', { name: '文件或文件夹路径' });
+    await original.user.clear(location); await original.user.type(location, '/slow');
+    await original.user.click(screen.getByRole('button', { name: '打开路径' }));
+    expect(finish).toBeTypeOf('function');
+    original.view.unmount();
+    const current = renderApp(recoveryFilesTransport(), <PawOsFilesApp initialRoute={filesRoute('first', '/workspace/paw/other.txt')} />);
+    await screen.findByRole('heading', { name: 'other.txt', level: 2 });
+    current.unmount();
+    await act(async () => finish({ ok: true, path: '/slow', homePath: '/home/public', items: [] }));
+    const backend = recoveryFilesTransport(); renderApp(backend, <PawOsFilesApp />);
+    await screen.findByRole('heading', { name: 'other.txt', level: 2 });
+    expect(screen.getByRole('combobox', { name: '选择文件所属 Session' })).toHaveValue('first');
+    expect(screen.queryByRole('textbox', { name: '编辑 notes.md' })).toBeNull();
+    expect(backend.requests.filter(({ request }) => request.pathId === 'files.read').every(({ request }) => request.query?.sessionId === 'first' && request.query?.path === '/workspace/paw/other.txt')).toBe(true);
+  });
+
+  it.each(['connection', 'kind'] as const)('keeps last-file navigation inside its original %s scope', async (mode) => {
+    const original = await originalDraft(); original.view.unmount();
+    const backend = recoveryFilesTransport({ connection: mode === 'connection' ? 'another-public-backend' : undefined, kind: mode === 'kind' ? 'http' : undefined });
+    renderApp(backend, <PawOsFilesApp />);
+    await waitFor(() => expect(screen.getByRole('combobox', { name: '选择文件所属 Session' })).toHaveValue('first'));
+    expect(screen.queryByRole('textbox', { name: '编辑 notes.md' })).toBeNull();
+    expect(backend.requests.some(({ request }) => request.pathId === 'files.read')).toBe(false);
+  });
+});
+
+function recoveryFilesTransport(options: { original?: 'deleted' | 'scope-changed'; connection?: string; kind?: 'http'; slowLocation?: (request: ControlRequest) => unknown } = {}) {
+  const result = new MockControlTransport({ routes: {
+    'agent.sessions.list': { ok: true, activeSessionId: 'first', items: ['first', ...(options.original === 'deleted' ? [] : ['original'])].map(id => ({ id, title: id, updatedAtMs: 1, status: 'idle', workspaceRoots: id === 'original' && options.original === 'scope-changed' ? ['/elsewhere'] : ['/workspace/paw'] })) },
+    'files.list': (request: ControlRequest) => {
+      if (request.query?.path === '/slow' && options.slowLocation) return options.slowLocation(request);
+      const requested = String(request.query?.path || '/home/public');
+      const selectedPath = /\.(md|txt)$/u.test(requested) ? requested : '';
+      const path = selectedPath ? requested.slice(0, requested.lastIndexOf('/')) : requested;
+      return { ok: true, path, homePath: '/home/public', selectedPath, items: ['notes.md', 'other.txt'].map(name => ({ path: `${path}/${name}`, name, kind: 'file', byteSize: 4 })) };
+    },
+    'files.read': (request: ControlRequest) => ({ ok: true, sessionId: request.query?.sessionId, requestedPath: request.query?.path, path: request.query?.path, content: 'disk', byteSize: 4, nextOffset: 4, truncated: false, resourceRevision: `sha256:${'a'.repeat(64)}`, editability: { editable: true } }),
+    'agent.session.workspace.save': () => { throw new Error('recovery must never automatically save'); },
+    'agent.session.workspace.read': () => { throw new Error('recovery must never automatically reconcile disk'); },
+  } });
+  Object.defineProperty(result, 'connectionIdentity', { value: options.connection ?? 'files-reopen-public-backend' });
+  if (options.kind) Object.defineProperty(result, 'kind', { value: options.kind });
+  return result;
+}
+
 // Geometry seam only: these receipts do not emulate native focus scrolling or hit testing.
 describe('file crumb focus reveal bounds', () => {
   const owner = { left: 293.16, width: 119, offsetWidth: 119, clientLeft: 0, clientWidth: 119, scrollWidth: 468, scrollLeft: 273 };

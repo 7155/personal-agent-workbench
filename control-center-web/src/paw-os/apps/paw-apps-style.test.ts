@@ -248,7 +248,7 @@ describe('PAWOS semantic type roles', () => {
     expect(primitiveCss).toMatch(/\.ui-toast__viewport\s*\{[^}]*z-index:\s*1120;/s);
   });
 
-  it('stacks Project planning controls and preserves action labels at narrow widths', () => {
+  it('keeps Project planning controls on one row and preserves action labels at narrow widths', () => {
     const compactDetailCss = workbenchMigratedCss.slice(
       workbenchMigratedCss.indexOf('@container paw-native-stage (max-width: 1050px)'),
       workbenchMigratedCss.indexOf('@container paw-native-stage (max-width: 760px)'),
@@ -262,15 +262,16 @@ describe('PAWOS semantic type roles', () => {
       workbenchMigratedCss.indexOf('@container paw-native-stage (max-width: 760px)'),
       workbenchMigratedCss.indexOf('@container paw-native-stage (max-width: 520px)'),
     );
-    expect(mediumProjectCss).toMatch(/\.paw-wb-planning-tools\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/s);
+    expect(mediumProjectCss).toMatch(/\.paw-wb-planning-tools\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto;/s);
     expect(mediumProjectCss).toMatch(/\.paw-wb-planning-tools__actions\s*\{[^}]*overflow-x:\s*auto;/s);
     expect(mediumProjectCss).toMatch(/\.paw-wb-documents\[data-reader-open='true'\] \.paw-wb-document-index\s*\{\s*display:\s*none;/s);
     expect(appCss).toMatch(/\.paw-native-stage\s*\{[^}]*container-name:\s*paw-native-stage;[^}]*container-type:\s*inline-size;/s);
     const narrowProjectCss = workbenchMigratedCss.slice(workbenchMigratedCss.indexOf('@container paw-native-stage (max-width: 520px)'));
     expect(narrowProjectCss).not.toMatch(/\.paw-wb-primary > span\s*\{\s*display:\s*none;/s);
     expect(narrowProjectCss).not.toContain('.paw-wb-primary { font-size: 0; }');
-    expect(narrowProjectCss).toMatch(/\.paw-wb-planning-tools\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/s);
-    expect(narrowProjectCss).toMatch(/\.paw-wb-planning-tools__date,[\s\S]*?\.paw-wb-planning-tools__actions\s*\{[^}]*overflow-x:\s*auto;/s);
+    // 520px inherits the date + nearby Popover trigger grid from 760px.
+    expect(narrowProjectCss).not.toMatch(/\.paw-wb-planning-tools\s*\{[^}]*grid-template-columns:/s);
+    expect(mediumProjectCss).toMatch(/\.paw-wb-planning-tools__date,[\s\S]*?\.paw-wb-planning-tools__actions\s*\{[^}]*overflow-x:\s*auto;/s);
     expect(narrowProjectCss).toMatch(/\.paw-wb-documents\[data-reader-open='true'\] \.paw-wb-document-index\s*\{\s*display:\s*none;/s);
     expect(narrowProjectCss).not.toContain('paw-wb-schedules-dialog');
   });
