@@ -5,6 +5,10 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Keep the original v2 chat controls in one compact row in very short full
+  Session and Room windows, leaving a readable editor and preserving the
+  primary Send/Stop targets and existing permissions and pickers.
+
 - Keep explicitly opened file previews within the transcript's measured editor
   clearance, preserving row focus and reading position when a reply arrives late.
   Long inline diffs share one keyboard-accessible preview reader.

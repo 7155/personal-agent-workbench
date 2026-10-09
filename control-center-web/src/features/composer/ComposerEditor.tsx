@@ -16,7 +16,12 @@ function boundedComposer(input: HTMLTextAreaElement) {
 
 function availableEditorHeight(input: HTMLTextAreaElement, maximum: number) {
   const bounded = boundedComposer(input);
-  if (!bounded || bounded.host.clientHeight <= 0) return null;
+  if (!bounded) return null;
+  // Width-only wrapping can spend the entire height of a restored short
+  // window on toolbar rows. Compact that chrome before measuring its budget.
+  if (bounded.host.clientHeight > 0 && bounded.host.clientHeight < 220) bounded.dock.dataset.composerHeight = 'compact';
+  else delete bounded.dock.dataset.composerHeight;
+  if (bounded.host.clientHeight <= 0) return null;
   // Subtract the textarea border box, leaving only the dock's actual chrome.
   const chrome = Math.max(0, bounded.dock.scrollHeight - input.offsetHeight);
   const gap = Number.parseFloat(getComputedStyle(bounded.host).getPropertyValue('--workspace-composer-gap')) || 8;
@@ -94,6 +99,7 @@ export function useComposerEditor(ref: RefObject<HTMLTextAreaElement | null>, dr
       observer?.disconnect();
       mutations.disconnect();
       window.removeEventListener('resize', update);
+      delete bounded.dock.dataset.composerHeight;
     };
   }, [expanded, ref, version]);
 }

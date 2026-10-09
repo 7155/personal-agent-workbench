@@ -166,13 +166,16 @@ function BoundedComposer({ surface, version = 'v2', full = true }: { surface: 'S
   </ChatPresentationProvider>;
 }
 
-function editorGeometryFixture() {
-  let available = 304; let overhead = 116;
+function editorGeometryFixture({ shortDock = false } = {}) {
+  let available = shortDock ? 180 : 304; let overhead = 116;
   const browserStyle = window.getComputedStyle;
   const minimum = (input: HTMLElement) => Number.parseFloat(input.style.minHeight)
     || (input.closest('[data-expanded]') ? 210 : 64);
   const height = (input: HTMLElement) => Math.max(minimum(input), Number.parseFloat(input.style.height) || minimum(input));
   const inputOf = (node: HTMLElement) => node.querySelector('textarea') as HTMLElement;
+  // A constrained two-row versus one-row layout model, not saved short-window
+  // BCR: that raw sample was not recorded by the failed browser observer.
+  const chrome = (node: HTMLElement) => shortDock ? node.dataset.composerHeight === 'compact' ? 84 : 170 : overhead;
   const isHost = (node: HTMLElement) => node.dataset.testid === 'editor-host';
   const isDock = (node: HTMLElement) => node.dataset.testid === 'editor-dock';
   vi.spyOn(window, 'getComputedStyle').mockImplementation((node, pseudo) => {
@@ -187,15 +190,15 @@ function editorGeometryFixture() {
     return isHost(this) ? available : this.tagName === 'TEXTAREA' ? height(this) : 0;
   });
   vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function(this: HTMLElement) {
-    return isHost(this) ? available : isDock(this) ? height(inputOf(this)) + overhead : this.tagName === 'TEXTAREA' ? height(this) : 64;
+    return isHost(this) ? available : isDock(this) ? height(inputOf(this)) + chrome(this) : this.tagName === 'TEXTAREA' ? height(this) : 64;
   });
   vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function(this: HTMLElement) {
-    return isDock(this) ? height(inputOf(this)) + overhead : this.tagName === 'TEXTAREA' ? 800 : 0;
+    return isDock(this) ? height(inputOf(this)) + chrome(this) : this.tagName === 'TEXTAREA' ? shortDock && !(this as HTMLTextAreaElement).value ? 0 : 800 : 0;
   });
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function(this: HTMLElement) {
-    const h = isHost(this) ? available : isDock(this) ? height(inputOf(this)) + overhead : this.tagName === 'TEXTAREA' ? height(this) : 64;
+    const h = isHost(this) ? available : isDock(this) ? height(inputOf(this)) + chrome(this) : this.tagName === 'TEXTAREA' ? height(this) : 64;
     const dock = this.closest('[data-testid="editor-dock"]') as HTMLElement | null;
-    const y = isHost(this) ? 161 : dock ? 161 + available - height(inputOf(dock)) - overhead + (this.tagName === 'TEXTAREA' ? 18 : 0) : 0;
+    const y = isHost(this) ? 161 : dock ? 161 + available - height(inputOf(dock)) - chrome(dock) + (this.tagName === 'TEXTAREA' ? 18 : 0) : 0;
     return { x: 15, y, width: 690, height: h, top: y, bottom: y + h, left: 15, right: 705, toJSON: () => ({}) };
   });
   vi.stubGlobal('ResizeObserver', EditorResizeObserver); EditorResizeObserver.instances = [];
@@ -206,6 +209,38 @@ function editorGeometryFixture() {
 // boxes and CSS minimum precedence; production observers are driven, not mocked.
 describe.each(['Session', 'Room'] as const)('%s bounded workbench editor', surface => {
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  it('retains a readable empty input and growing long draft in a very short host', () => {
+    editorGeometryFixture({ shortDock: true }); render(<BoundedComposer surface={surface} />);
+    const input = screen.getByRole('textbox') as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: '' } });
+    expect(input.getBoundingClientRect().height).toBe(64);
+    // Existing narrow padding is at most24px; at least one26.4px text line.
+    expect(input.getBoundingClientRect().height - 24).toBeGreaterThanOrEqual(26.4);
+    fireEvent.change(input, { target: { value: '短窗长草稿。\n'.repeat(350) } });
+    expect(input.getBoundingClientRect().height).toBeGreaterThan(64);
+    expect(input.getBoundingClientRect().height).toBeLessThanOrEqual(156);
+    const host = screen.getByTestId('editor-host').getBoundingClientRect();
+    expect(screen.getByTestId('editor-dock').getBoundingClientRect().height).toBeLessThan(host.height);
+    expect(input.getBoundingClientRect().top).toBeGreaterThanOrEqual(host.top);
+  });
+
+  it('resizes the short layout without losing the original input, draft, selection or focus', () => {
+    const layout = editorGeometryFixture({ shortDock: true }); const view = render(<BoundedComposer surface={surface} />);
+    const input = screen.getByRole('textbox') as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: '原输入节点和中文草稿。\n'.repeat(350) } });
+    fireEvent.click(screen.getByRole('button', { name: '展开长文本编辑' }));
+    input.focus(); input.setSelectionRange(7, 25, 'backward');
+    act(() => { layout.resizeHost(195); EditorResizeObserver.resize(screen.getByTestId('editor-host')); });
+    expect(input.getBoundingClientRect().height).toBeGreaterThanOrEqual(64);
+    expect(screen.getByRole('textbox')).toBe(input); expect(input).toHaveFocus();
+    expect(input.selectionStart).toBe(7); expect(input.selectionEnd).toBe(25); expect(input.selectionDirection).toBe('backward');
+    expect(input).toHaveValue('原输入节点和中文草稿。\n'.repeat(350));
+    const dock = screen.getByTestId('editor-dock'); expect(dock).toHaveAttribute('data-composer-height', 'compact');
+    act(() => { layout.resizeHost(304); EditorResizeObserver.resize(screen.getByTestId('editor-host')); });
+    expect(dock).not.toHaveAttribute('data-composer-height');
+    view.unmount(); expect(dock).not.toHaveAttribute('data-composer-height');
+  });
 
   it('keeps the expanded editor inside the original 304px host despite its 210px CSS minimum', () => {
     editorGeometryFixture(); render(<BoundedComposer surface={surface} />);
