@@ -14,7 +14,7 @@ from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from threading import RLock
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, cast
 
 from .agent_tool_ids import DANGEROUS_AUTO_APPROVE_TOOL_PROFILE
 
@@ -75,6 +75,9 @@ class CoordinatorPorts:
     session_result: Callable[[str, str, str], dict[str, object]]
     register_session_prompt: Callable[[str, str, Mapping[str, object]], None]
     reconcile_session_acceptance: Callable[[str, str], str]
+    register_room_prompt: Callable[[str, str, Mapping[str, object]], bool]
+    reconcile_room_acceptance: Callable[[str, str], str]
+    original_room_response: Callable[[str, str], dict[str, object]]
 
 
 _LOCKS: dict[str, RLock] = {}
@@ -317,7 +320,15 @@ def coordinator_command(ports: CoordinatorPorts, payload: Mapping[str, object], 
     else:
         if action == "prompt":
             with ports.runtime.gateway_control_scope(source_id, execution_binding):
-                return ports.post_room(target_id, input_value)
+                with effect_fence():
+                    first_dispatch = ports.register_room_prompt(source_id, target_id, input_value)
+                if not first_dispatch:
+                    # A durable dispatch reservation is not permission to
+                    # repeat an uncertain Room effect after reopening.
+                    return ports.original_room_response(target_id, str(input_value["clientMessageId"]))
+                accepted = ports.post_room(target_id, input_value)
+                ports.reconcile_room_acceptance(target_id, str(input_value["clientMessageId"]))
+                return accepted
         if action == "stop":
             return ports.abort_room(target_id, input_value)
     raise ValueError("unsupported Agent control action for this target")
@@ -365,6 +376,22 @@ def _room_result(ports: CoordinatorPorts, room_id: str, turn_id: str) -> dict[st
     selected: list[dict[str, object]] = []
     message_count = 0
     root_message = None
+    original_result = ports.rooms.root_result_for_turn(
+        room_id, turn_id, through_sequence=through_sequence,
+    )
+    if original_result is not None:
+        payload = cast(Mapping[str, object], original_result["payload"])
+        post = cast(Mapping[str, object], payload["post"])
+        reference = _room_result_reference(original_result, payload, payload)
+        # This is the existing Facilitator's explicit Root disposition, not
+        # a participant terminal or an inference from Session idleness.
+        root_terminal = {**reference, "status": "completed", "rootDisposition": "result",
+                         "postId": post["postId"]}
+        terminals.append(root_terminal)
+        root_status = "completed" if root_status in {"", "completed"} else "unknown"
+        text = str(post.get("content") or "")
+        root_message = {**reference, "messageId": post["postId"],
+                        "text": text[:8000], "truncated": len(text) > 8000}
     cursor = 0
     while True:
         page = ports.rooms.list_events_for_turn(room_id, turn_id,

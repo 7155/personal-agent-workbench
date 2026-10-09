@@ -162,6 +162,135 @@ class AgentServiceTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.service.close()
 
+    def test_recent_typed_receipts_exact_message_identity_bounded_receipts(self) -> None:
+        self._recent_typed_receipts_bounded_receipts(alias=False)
+
+    def test_recent_typed_receipts_native_sidecar_alias_bounded_receipts(self) -> None:
+        self._recent_typed_receipts_bounded_receipts(alias=True)
+
+    def _recent_typed_receipts_bounded_receipts(self, *, alias: bool) -> None:
+        session_id = str(self.service.create_session({"title": "public typed receipt fixture"})["session"]["id"])
+        turn_id = "public-original-turn"
+        stored_id = f"{turn_id}:assistant"
+        raw = {"schemaVersion": "rag-ime.agent-message.v1", "id": stored_id, "sessionId": session_id,
+               "turnId": turn_id, "role": "assistant", "status": "completed",
+               "blocks": [{"id": "original-text", "type": "text", "status": "completed",
+                           "presentationKind": "markdown", "data": {"text": "**result.txt**"}}],
+               "attachments": [], "citations": [], "createdAtMs": 100, "completedAtMs": 101}
+        receipts = normalize_trusted_agent_blocks([
+            {"id": f"file-{index}", "type": "file", "data": {
+                "mediaId": f"media_public_receipt_{index:04}", "sessionId": session_id,
+                "fileName": "result.txt" if index < 2 else "result.txt.diff",
+                "sha256": str(index + 1) * 64, "byteSize": [34, 55, 176, 297][index],
+                "mimeType": "text/plain", "receiptUrl": f"/api/agent/media/media_public_receipt_{index:04}/content?sessionId={session_id}"}}
+            for index in range(4)], source_kind="pi_runtime_event", source_ref=f"{session_id}:{stored_id}")
+        self.service.agent_blocks.persist_message({**raw, "blocks": [*raw["blocks"], *receipts]}, created_at_ms=101, native_message_id="native-original-id" if alias else "")
+        native = {**raw, "id": "native-original-id" if alias else stored_id}
+        with (
+            patch.object(self.service.runtime, "recent_session_snapshot", create=True, return_value={"messages": [native]}),
+            patch.object(self.service.runtime, "session_snapshot", create=True, side_effect=AssertionError("must not restore full Runtime")),
+            patch.object(self.service.runtime, "messages", create=True, side_effect=AssertionError("must not load full history")),
+        ):
+            response = self.service.message_snapshot.messages(session_id, view="recent")
+        self.assertEqual([message["id"] for message in response["items"]], [native["id"]])
+        self.assertEqual(response["snapshotScope"], "recent")
+        self.assertCountEqual([block["data"]["mediaId"] for block in response["items"][0]["blocks"] if block["type"] == "file"],
+                         [block["data"]["mediaId"] for block in receipts])
+
+    def test_native_entry_event_binds_recent_receipts_without_starting_host(self) -> None:
+        from rag_ime.pi.transcript import durable_branch_messages, recent_public_message_window
+        session_id = str(self.service.create_session({"title": "public native entry"})["session"]["id"])
+        native_id = "native-original-entry"
+        self._bind_public_native_session(session_id, "pi:public")
+        raw = {"role": "assistant", "timestamp": 101, "content": [{"type": "text", "text": "result.txt"}]}
+        receipts = [{"id": f"receipt:{i}", "type": "file", "data": {"fileName": "result.txt", "mediaId": f"media_public_entry_{i:024d}", "sessionId": session_id, "sha256": str(i + 1) * 64, "byteSize": 34 + i, "mimeType": "text/plain"}} for i in range(4)]
+        with patch("subprocess.Popen", side_effect=AssertionError("Host must not start")):
+            self.service.runtime._handle_host_event({"protocolVersion": "2", "event": "agent.event", "sessionId": session_id, "turnId": "public-turn", "payload": {"type": "message_end", "entryId": native_id, "nativePiSessionId": "pi:public", "message": raw, "agentBlocks": receipts}})
+        entries = [{"type": "message", "id": native_id, "parentId": None, "timestamp": "2026-10-09T00:00:00Z", "message": raw}]
+        native_messages, _ = durable_branch_messages(entries, leaf_id=native_id)
+        recent = recent_public_message_window(native_messages, session_id=session_id, media_resolver=None, raw_entries=entries)
+        self.assertEqual(recent[0]["id"], native_id)
+        with patch.object(self.service.runtime, "recent_session_snapshot", return_value={"messages": recent}), patch.object(self.service.runtime, "session_snapshot", side_effect=AssertionError("full forbidden")):
+            actual = self.service.message_snapshot.messages(session_id, view="recent")
+        self.assertEqual(actual["items"][0]["id"], native_id)
+        self.assertCountEqual([b["data"]["mediaId"] for b in actual["items"][0]["blocks"] if b["type"] == "file"], [b["data"]["mediaId"] for b in receipts])
+        with self.service.agent_blocks._connect() as conn:
+            binding = conn.execute("SELECT native_message_id,source_message_id,generation FROM agent_block_native_aliases WHERE session_id=?", (session_id,)).fetchone()
+        self.assertEqual(tuple(binding), (native_id, f"pi:pi:public:{native_id}", 0))
+
+    def test_same_turn_native_entries_keep_exact_receipts_and_replays_idempotent(self) -> None:
+        from rag_ime.pi.transcript import durable_branch_messages, recent_public_message_window
+        session_id = str(self.service.create_session({"title": "public multi-entry turn"})["session"]["id"])
+        self._bind_public_native_session(session_id, "pi:public")
+        entries = []
+        ids = ["native:first", "native:second"]
+        media = ["media_public_first_0000000000", "media_public_second_000000000"]
+        for i, (native_id, media_id) in enumerate(zip(ids, media)):
+            raw = {"role": "assistant", "timestamp": 101 + i, "content": [{"type": "text", "text": "same result.txt"}]}
+            payload = {"type": "message_end", "entryId": native_id, "nativePiSessionId": "pi:public", "message": raw, "agentBlocks": [{"id": "same-file-block", "type": "file", "data": {"fileName": "result.txt", "mediaId": media_id, "sessionId": session_id, "sha256": "a" * 64, "byteSize": 34, "mimeType": "text/plain"}}]}
+            envelope = {"protocolVersion": "2", "event": "agent.event", "sessionId": session_id, "turnId": "same-original-turn", "payload": payload}
+            with patch("subprocess.Popen", side_effect=AssertionError("Host must not start")):
+                self.service.runtime._handle_host_event(envelope)
+                self.service.runtime._handle_host_event(envelope)
+            entries.append({"type": "message", "id": native_id, "parentId": ids[i - 1] if i else None, "timestamp": "2026-10-09T00:00:00Z", "message": raw})
+        native_messages, _ = durable_branch_messages(entries, leaf_id=ids[-1])
+        recent = recent_public_message_window(native_messages, session_id=session_id, media_resolver=None, raw_entries=entries)
+        unknown = {**recent[0], "id": "native:unknown"}
+        foreign = {**recent[0], "sessionId": "foreign"}
+        with patch.object(self.service.runtime, "recent_session_snapshot", return_value={"messages": [*recent, unknown, foreign]}), patch.object(self.service.runtime, "session_snapshot", side_effect=AssertionError("full forbidden")):
+            actual = self.service.message_snapshot.messages(session_id, view="recent")["items"]
+        self.assertEqual([m["id"] for m in actual], [*ids, "native:unknown", ids[0]])
+        for i in range(2):
+            self.assertEqual([b["data"]["mediaId"] for b in actual[i]["blocks"] if b["type"] == "file"], [media[i]])
+        self.assertFalse(any(b["type"] == "file" for m in actual[2:] for b in m["blocks"]))
+        with self.service.agent_blocks._connect() as conn:
+            aliases = conn.execute("SELECT native_message_id,source_message_id,generation FROM agent_block_native_aliases WHERE session_id=? ORDER BY native_message_id", (session_id,)).fetchall()
+            sidecars = conn.execute("SELECT COUNT(*) FROM agent_message_block_sidecars WHERE session_id=?", (session_id,)).fetchone()[0]
+        self.assertEqual([tuple(row) for row in aliases], [(value, f"pi:pi:public:{value}", 0) for value in ids])
+        self.assertEqual(sidecars, 2)
+        completed = [e for e in self.service.events.replay(session_id)[0] if e.event_type == "message_completed"]
+        self.assertTrue(all(e.payload["message"]["id"] == "same-original-turn:assistant" for e in completed))
+
+    def _bind_public_native_session(self, session_id: str, native_session_id: str) -> None:
+        self.service.sessions.bind_runtime_session(session_id,
+            driver_id=self.service.runtime.driver_id, runtime_kind=self.service.runtime.runtime_kind,
+            external_session_id=native_session_id, transcript_ref="/public-fixture/transcript.jsonl")
+
+    def test_native_session_rebind_keeps_same_identity_but_never_borrows_reused_entry_id(self) -> None:
+        session_id = str(self.service.create_session({"title": "public rebound identity"})["session"]["id"])
+        raw = {"role": "assistant", "timestamp": 101, "content": [{"type": "text", "text": "same public result"}]}
+        native = {"schemaVersion": "rag-ime.agent-message.v1", "id": "same8hex", "sessionId": session_id, "turnId": "history:public", "role": "assistant", "status": "completed", "blocks": [], "attachments": [], "citations": [], "createdAtMs": 101}
+        def read():
+            with patch.object(self.service.runtime, "recent_session_snapshot", return_value={"messages": [native]}):
+                return self.service.message_snapshot.messages(session_id, view="recent")["items"][0]
+        def emit(pi_id, media_id):
+            with patch("subprocess.Popen", side_effect=AssertionError("Host must not start")):
+                self.service.runtime._handle_host_event({"protocolVersion": "2", "event": "agent.event", "sessionId": session_id, "turnId": "same-turn", "payload": {"type": "message_end", "entryId": "same8hex", "nativePiSessionId": pi_id, "message": raw, "agentBlocks": [{"id": "same-file", "type": "file", "data": {"fileName": "result.txt", "mediaId": media_id, "sessionId": session_id, "sha256": "a" * 64, "byteSize": 34}}]}})
+        self._bind_public_native_session(session_id, "pi:one")
+        emit("pi:one", "media_public_one_0000000000")
+        first = read()
+        self._bind_public_native_session(session_id, "pi:one")
+        self.assertEqual(read(), first)
+        from rag_ime.agent_block_store import AgentBlockStore
+        cold_store = AgentBlockStore(self.service.agent_blocks.db_path)
+        self.assertEqual(cold_store.hydrate_recent_messages(session_id, [native], native_pi_session_id="pi:one"), [first])
+        self._bind_public_native_session(session_id, "pi:two")
+        self.assertEqual(read(), native)
+        emit("pi:two", "media_public_two_0000000000")
+        second = read()
+        self.assertEqual([b["data"]["mediaId"] for b in second["blocks"]], ["media_public_two_0000000000"])
+        self._bind_public_native_session(session_id, "pi:one")
+        self.assertEqual(read(), first)
+        with self.service.agent_blocks._connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM agent_block_native_aliases WHERE session_id=?", (session_id,)).fetchone()[0], 2)
+        self._bind_public_native_session(session_id, "pi:two")
+        with patch.object(self.service.runtime, "session_snapshot", return_value={"messages": [native]}), patch("subprocess.Popen", side_effect=AssertionError("Host must not start")):
+            full = self.service.message_snapshot.messages(session_id, view="full")["items"]
+        self.assertEqual(len(full), 2)
+        rows = {message["id"]: [b["data"]["mediaId"] for b in message["blocks"] if b["type"] == "file"] for message in full}
+        self.assertEqual(rows["same8hex"], ["media_public_two_0000000000"])
+        self.assertEqual(rows["pi:pi:one:same8hex"], ["media_public_one_0000000000"])
+
     def _prepare_room_bound_approval(
         self,
         *,

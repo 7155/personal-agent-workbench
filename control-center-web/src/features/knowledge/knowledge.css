@@ -2413,8 +2413,9 @@
   display: flex;
   width: fit-content;
   min-width: 0;
-  max-width: 100%;
+  max-width: calc(100% - 32px);
   flex-wrap: nowrap;
+  margin: 6px 16px 10px;
   padding: 2px;
   border: 0;
   border-radius: 9px;
@@ -2422,6 +2423,8 @@
   overflow-x: auto;
   scrollbar-width: none;
 }
+
+:is(main, section).knowledge-feature--migrated-v1[data-paw-os-app='knowledge'] .knowledge-chunk-grid { padding: 0 16px 16px; gap: 16px; }
 
 :is(main, section).knowledge-feature--migrated-v1[data-paw-os-app='knowledge'] .knowledge-document-tabs > [role='tabpanel'] {
   display: none;
@@ -2489,6 +2492,46 @@
 }
 
 /* --- Workspace column ---------------------------------------------------- */
+
+/* In a short desktop window, fixed reader chrome can consume the entire
+   document panel. Let the library identity and reader controls scroll with
+   the content in that case, rather than create a second zero-height reader.
+   The source switch stays outside this scroll owner; inactive panes stay
+   hidden and wider/taller windows retain their existing fixed layout. */
+.paw-window-shell[data-app='knowledge'] .knowledge-source-workspace { container-type: size; }
+
+/* In the fixed reader layout, the active document scrollport owns the
+   available image height. Short flowing readers keep their source-pane
+   owner and existing bounded preview, without size-containing an auto row. */
+@container knowledge-source (min-height: 480.01px) {
+  .paw-window-shell[data-app='knowledge'] .knowledge-document-tabs > [role='tabpanel'][data-state='active']:not([hidden]) { container-type: size; }
+  .paw-window-shell[data-app='knowledge'] .knowledge-inline-image img { max-height: min(420px, calc(100cqh - 32px)); }
+}
+
+/* Parsed line/byte counts are metadata, not a persistent reading action.
+   Let this native heading scroll away instead of painting over source pixels. */
+.paw-window-shell[data-app='knowledge'] .knowledge-markdown-preview > header { position: static; }
+
+
+@container knowledge-source (max-height: 480px) {
+  .paw-window-shell[data-app='knowledge'] .knowledge-source-pane:not([hidden]):has(.knowledge-feature[data-knowledge-view='viewer']) { display: block; overflow-y: auto; }
+  .paw-window-shell[data-app='knowledge'] .knowledge-feature[data-paw-os-app='knowledge'][data-knowledge-view='viewer'] { display: block; height: auto; min-height: 100%; overflow: visible; }
+  .knowledge-feature[data-paw-os-app='knowledge'][data-knowledge-view='viewer'] .knowledge-library[data-native-layout='app'] { height: auto; min-height: 100%; overflow: visible; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto; grid-template-areas: 'band' 'workspace'; }
+  .knowledge-feature[data-paw-os-app='knowledge'][data-knowledge-view='viewer'] .knowledge-base-rail[data-variant='app'],
+  .knowledge-feature[data-paw-os-app='knowledge'][data-knowledge-view='viewer'] .knowledge-base-switcher__current,
+  .knowledge-feature[data-paw-os-app='knowledge'][data-knowledge-view='viewer'] .knowledge-base-switcher > .paw-app-sidebar-toggle { display: none; }
+  .knowledge-feature[data-paw-os-app='knowledge'][data-knowledge-view='viewer'] .knowledge-base-switcher > .ui-field { display: grid; }
+  .knowledge-feature[data-paw-os-app='knowledge'][data-knowledge-view='viewer'] .knowledge-library__detail,
+  .knowledge-feature[data-paw-os-app='knowledge'][data-knowledge-view='viewer'] .knowledge-library__tabs,
+  .knowledge-feature[data-paw-os-app='knowledge'][data-knowledge-view='viewer'] .knowledge-library__tabs > [role='tabpanel']:not([hidden]),
+  .knowledge-feature[data-paw-os-app='knowledge'][data-knowledge-view='viewer'] .knowledge-document-tabs,
+  .knowledge-feature[data-paw-os-app='knowledge'][data-knowledge-view='viewer'] .knowledge-document-tabs > [role='tabpanel']:not([hidden]) { height: auto; min-height: 0; overflow: visible; }
+  .knowledge-feature[data-paw-os-app='knowledge'][data-knowledge-view='viewer'] .knowledge-library__tabs,
+  .knowledge-feature[data-paw-os-app='knowledge'][data-knowledge-view='viewer'] .knowledge-document-tabs { grid-template-rows: auto auto; }
+  .knowledge-feature[data-paw-os-app='knowledge'][data-knowledge-view='viewer'] .knowledge-viewer { height: auto; min-height: 0; }
+  .knowledge-feature[data-paw-os-app='knowledge'][data-knowledge-view='viewer'] .knowledge-viewer > .knowledge-document-tabs { flex: none; }
+  .knowledge-feature[data-paw-os-app='knowledge'][data-knowledge-view='viewer'] .knowledge-inline-image img { max-height: 180px; }
+}
 
 @container knowledge-workspace (max-width: 760px) {
   :is(main, section).knowledge-feature[data-paw-os-app='knowledge'] .knowledge-viewer__bar { grid-template-columns: auto minmax(0, 1fr); }
@@ -2575,14 +2618,22 @@
 :root[data-reduce-motion='true'] .knowledge-pipeline__stages li[data-state='active'] .knowledge-pipeline__dot { animation: none; }
 
 .knowledge-structured-chunk { display: grid; gap: 10px; min-width: 0; }
+.knowledge-chunk-grid { align-items: start; }
+.knowledge-chunk-grid > article { align-content: start; grid-template-rows: none; }
 .knowledge-structured-chunk > small, .knowledge-table-limit { color: var(--color-text-secondary); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
 .knowledge-structured-chunk details p { white-space: pre-wrap; }
-.knowledge-inline-image { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 8px; max-width: 100%; vertical-align: top; }
-.knowledge-inline-image > span { display: flex; flex-direction: column; gap: 8px; max-width: 100%; }
-.knowledge-inline-image img { display: block; max-width: 100%; max-height: 420px; object-fit: contain; }
+.knowledge-inline-image { display: flex; width: 100%; min-width: 0; flex-direction: column; align-items: flex-start; gap: 8px; max-width: 100%; }
+.knowledge-inline-image > span { display: flex; width: 100%; min-width: 0; flex-direction: column; align-items: flex-start; gap: 8px; max-width: 100%; }
+.knowledge-inline-image img { display: block; width: min(100%, 320px); height: auto; max-height: 420px; object-fit: contain; }
 .knowledge-inline-image button { max-width: 100%; white-space: normal; text-align: start; overflow-wrap: anywhere; }
 .knowledge-media-summary { color: var(--color-text-secondary); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
 .knowledge-media-summary p { margin: 0 0 var(--space-1); }
+.knowledge-media-summary__details > summary { display: flex; min-height: 40px; align-items: center; flex-wrap: wrap; gap: 4px 8px; cursor: pointer; list-style: none; }
+.knowledge-media-summary__details > summary::-webkit-details-marker { display: none; }
+.knowledge-media-summary__details > summary > svg { flex: none; transform: rotate(-90deg); }
+.knowledge-media-summary__details[data-expanded] > summary > svg { transform: none; }
+.knowledge-media-summary__duration { font-variant-numeric: tabular-nums; }
+:is(main, section).knowledge-feature[data-paw-os-app='knowledge'] .knowledge-media-summary { padding: 4px 16px; }
 .knowledge-media-location { font-variant-numeric: tabular-nums; }
 .knowledge-inline-audio, .knowledge-audio-content, .knowledge-audio-list, .knowledge-audio-list > div { display: grid; min-width: 0; gap: var(--space-2); }
 .knowledge-audio-list { padding-top: var(--space-2); }

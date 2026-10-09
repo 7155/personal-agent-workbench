@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-08T12:25:57.066259+00:00",
+  "generatedAt": "2026-10-09T08:25:59.806946+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
-    "branch": "undo/paw-experience-20261007",
+    "branch": "undo/paw-acceptance-20261009",
     "baseCommit": "55fc923944ffcee72a2c90b04a891c1106485227",
-    "candidateCommitPolicy": "Committed source checkpoint of user-authorized frontend polish, persistent Agent coordination, exact recovery display and optional multimodal retrieval; source checks do not establish complete foreground acceptance."
+    "candidateCommitPolicy": "Committed source checkpoint of user-authorized frontend polish, persistent Agent coordination, exact Room result return and native message receipt recovery; source checks do not establish complete foreground acceptance."
   },
   "dispositions": {
     "keep_release": "Retain this source maintenance change.",
@@ -175,7 +175,7 @@
     },
     "primary_assistant_iteration": {
       "description": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions.",
-      "pathCount": 84
+      "pathCount": 83
     },
     "portable_guarded_acceptance": {
       "description": "Portable opt-in acceptance CLI, deterministic isolated fixtures, bounded budget and provider-call guard, teardown recovery, and offline regression coverage. Live acceptance is recorded separately.",
@@ -204,13 +204,21 @@
     "architecture_recovery_20261008": {
       "description": "Transactional Knowledge projection recovery, evaluation-only history, explicit scheduler lifecycle and removal of private implementations without consumers; foreground and installed acceptance are recorded separately. Preserve known original Wake admissions and reconcile exact durable evidence without effect replay. Batch canonical retrieval authority and hydrate lexical-prefix candidates without changing scope or complete fallback; admission counts do not imply a scan budget.",
       "pathCount": 17
+    },
+    "room_result_return": {
+      "description": "Original reviewed Room Root return through existing work and delivery owners, with append-only typed migration and regressions.",
+      "pathCount": 4
+    },
+    "native_message_receipts": {
+      "description": "Persist and recover exact native message/file receipts through existing Pi and PAW owners.",
+      "pathCount": 5
     }
   },
   "summary": {
-    "pathCount": 2239,
+    "pathCount": 2247,
     "dispositionCounts": {
       "delete_old_implementation": 316,
-      "keep_release": 1923
+      "keep_release": 1931
     },
     "groupCounts": {
       "local_docs": 121,
@@ -230,7 +238,7 @@
       "conversation_v2_integration": 48,
       "memory_lifecycle": 15,
       "pi1_experience_iteration": 38,
-      "primary_assistant_iteration": 84,
+      "primary_assistant_iteration": 83,
       "paw_experience_20261007": 96,
       "verification": 126,
       "voice_desktop": 19,
@@ -260,7 +268,9 @@
       "temporal_query_preservation": 3,
       "release_scope": 1,
       "refactor_verification": 66,
-      "startup_failure_diagnostics": 2
+      "startup_failure_diagnostics": 2,
+      "room_result_return": 4,
+      "native_message_receipts": 5
     },
     "unclassifiedPathCount": 0,
     "otherWorkNotInReleasePathCount": 0
@@ -8366,13 +8376,6 @@
       "disposition": "keep_release"
     },
     {
-      "path": "control-center-web/src/paw-os/apps/PrimaryAssistantComposerHeader.tsx",
-      "status": "added",
-      "disposition": "keep_release",
-      "group": "primary_assistant_iteration",
-      "reason": "Primary assistant discussion and task context, governed profile memory, transport-scoped chat and catalog ownership, reusable ChatSurface V1, and opt-in desktop pet with focused regressions."
-    },
-    {
       "path": "control-center-web/src/paw-os/apps/WorkspaceProjectContext.test.tsx",
       "status": "added",
       "disposition": "keep_release",
@@ -15938,6 +15941,69 @@
       "disposition": "keep_release",
       "group": "verification",
       "reason": "Verify bounded native media ingestion, time provenance and canonical vector/asset readback."
+    },
+    {
+      "path": "rag_ime/db/migrations/0226_agent_coordinator_room_work.sql",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_result_return",
+      "reason": "Return the original reviewed Room Root to the same StarMate Source through typed persisted work and existing delivery, with Stop and unknown-acknowledgement regression checks."
+    },
+    {
+      "path": "tests/test_agent_coordinator_room_work.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_result_return",
+      "reason": "Return the original reviewed Room Root to the same StarMate Source through typed persisted work and existing delivery, with Stop and unknown-acknowledgement regression checks."
+    },
+    {
+      "path": "tests/test_room_root_disposition.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_result_return",
+      "reason": "Return the original reviewed Room Root to the same StarMate Source through typed persisted work and existing delivery, with Stop and unknown-acknowledgement regression checks."
+    },
+    {
+      "path": "tests/test_room_closed_root_admission.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "room_result_return",
+      "reason": "Verify completed original Room Roots cannot admit late child work, including registry and caller-owned SQLite publication races."
+    },
+    {
+      "path": "control-center-web/src/features/agent/file-preview/AgentFileCollection.tsx",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "native_message_receipts",
+      "reason": "Keep managed file receipts and their exact message identities under the existing PAW and Pi owners."
+    },
+    {
+      "path": "rag_ime/agent_block_store.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "native_message_receipts",
+      "reason": "Keep managed file receipts and their exact message identities under the existing PAW and Pi owners."
+    },
+    {
+      "path": "rag_ime/db/migrations/0227_agent_block_native_aliases.sql",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "native_message_receipts",
+      "reason": "Bind managed result receipts to producer-supplied native Pi Session and transcript entry identities without guessed legacy aliases."
+    },
+    {
+      "path": "tests/test_agent_block_store.py",
+      "status": "modified",
+      "disposition": "keep_release",
+      "group": "native_message_receipts",
+      "reason": "Keep managed file receipts and their exact message identities under the existing PAW and Pi owners."
+    },
+    {
+      "path": "tests/test_native_receipt_snapshot_identity.py",
+      "status": "added",
+      "disposition": "keep_release",
+      "group": "native_message_receipts",
+      "reason": "Verify read-time native snapshot identity, cache binding races, same-Pi rebind and historical receipt recovery under original source IDs."
     }
   ]
 }

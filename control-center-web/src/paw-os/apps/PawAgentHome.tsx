@@ -142,6 +142,7 @@ export function PawAgentHome({
   projectRoots,
   rooms,
   sessions,
+  showRecents = true,
 }: {
   active?: boolean;
   interfaceMode?: 'traditional' | 'jev';
@@ -161,6 +162,7 @@ export function PawAgentHome({
   projectRoots: string[];
   rooms: RoomSummary[];
   sessions: SessionSummary[];
+  showRecents?: boolean;
 }) {
   const transport = useControlTransport();
   const electronHost = pawBrowserHost();
@@ -255,7 +257,7 @@ export function PawAgentHome({
     .slice(0, 4), [rooms, sessions]);
 
   useEffect(() => {
-    if (!active || !recents.length) return;
+    if (!active || !showRecents || !recents.length) return;
     const targets: ConversationPreloadTarget[] = recents.slice(0, 3).map(({ kind, item }) => ({
       kind,
       id: item.id,
@@ -263,7 +265,7 @@ export function PawAgentHome({
     }));
     const warmup = preloadRecentConversations(transport, targets);
     return () => warmup.cancel();
-  }, [active, recents, transport]);
+  }, [active, recents, showRecents, transport]);
 
   function moveModeFocus(event: KeyboardEvent<HTMLButtonElement>): void {
     const next = event.key === 'Home' ? 'session'
@@ -874,7 +876,7 @@ export function PawAgentHome({
             <p className="an-home-error" role="alert"><CircleAlert size={14} /><span>{error}</span></p>
           ) : null}
 
-          {interfaceMode === 'jev' ? <ContinuityHome
+          {showRecents && interfaceMode === 'jev' ? <ContinuityHome
             spaceKeys={[...sessions.filter(item => item.status !== 'archived').map(item => ({ key: `session:${item.id}`, at: item.updatedAtMs })), ...rooms.filter(item => item.status !== 'archived').map(item => ({ key: `room:${item.id}`, at: item.updatedAtMs }))].sort((a, b) => b.at - a.at).map(item => item.key)}
             onOpenIntent={key => {
               if (key.startsWith('session:')) warmAgentWorkspace('session');
@@ -883,7 +885,7 @@ export function PawAgentHome({
             onOpen={key => key.startsWith('session:') ? onOpenSession(key.slice(8)) : onOpenRoom(key.slice(5))}
           /> : null}
 
-          {interfaceMode === 'traditional' && recents.length ? (
+          {showRecents && interfaceMode === 'traditional' && recents.length ? (
             /* 桌面首屏合同：继续工作与 Composer 同屏。列表在自身内部滚动，
                绝不把页面推成一篇往下翻的长文。 */
             <div className="an-home-section an-home-recents">

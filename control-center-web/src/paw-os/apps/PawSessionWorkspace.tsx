@@ -52,6 +52,7 @@ import {
   type AgentProjectionState,
 } from '@/contracts/agent-reducer';
 import { approvalNeedsHumanDecision } from '@/contracts/approval-decision';
+import { parseContract } from '@/contracts/validators';
 import type { AgentPersonaV1 } from '@/contracts/generated/agent-persona.v1';
 import {
   AgentComposer,
@@ -114,6 +115,7 @@ import {
   type AgentPermissionSelection,
   type AgentProductCommandName,
   type ComposerAttachment,
+  type CodemodeMode,
   type ModelCatalog,
   type SessionSummary,
   type ThinkingLevel,
@@ -325,6 +327,15 @@ function PawSessionWorkspaceBody({
   }, [compactionTarget]);
   const [modelChangeRequest, setModelChangeRequest] = useState<{ scope: typeof workspaceScope }>();
   const modelChanging = modelChangeRequest?.scope === workspaceScope;
+  const [codemodeSelection, setCodemodeSelection] = useState<{ scope: typeof workspaceScope; mode?: CodemodeMode }>();
+  const codemodeMode = codemodeSelection?.scope === workspaceScope ? codemodeSelection.mode : undefined;
+  const codemodeRequestRef = useRef<{ scope: typeof workspaceScope } | undefined>(undefined);
+  const [codemodeChangeRequest, setCodemodeChangeRequest] = useState<{ scope: typeof workspaceScope }>();
+  const codemodeChanging = codemodeChangeRequest?.scope === workspaceScope;
+  useEffect(() => () => {
+    // An old Session or transport ACK cannot update a reopened workspace.
+    if (codemodeRequestRef.current?.scope === workspaceScope) codemodeRequestRef.current = undefined;
+  }, [workspaceScope]);
   const [panel, setPanel] = useState<WorkbenchPanel>('none');
   const [statusPanelVisited, setStatusPanelVisited] = useState(false);
   const [toolMenuOpen, setToolMenuOpen] = useState(false);
@@ -570,6 +581,12 @@ function PawSessionWorkspaceBody({
     onLoadingChange: setLoading,
     onRecoveryState: setSyncState,
     onSnapshot: (snapshot) => {
+      if (workspaceScopeRef.current === workspaceScope && codemodeRequestRef.current?.scope !== workspaceScope) {
+        const native = asRecord(snapshot.value);
+        if (!native.sessionId || native.sessionId === recordId) {
+          setCodemodeSelection({ scope: workspaceScope, mode: nativeCodemodeMode(native.codemodeMode) });
+        }
+      }
       setHistoryRead(current => ({
         scope: workspaceScope,
         view: current?.scope === workspaceScope && current.view === 'full' ? 'full' : snapshot.view,
@@ -590,7 +607,15 @@ function PawSessionWorkspaceBody({
     },
     onEvent: (event) => {
       if (event.eventType === 'snapshot_required') return;
-      if (event.eventType === 'session_configuration_changed') refreshControlCatalog(true);
+      if (event.eventType === 'session_configuration_changed') {
+        refreshControlCatalog(true);
+        const payload = asRecord(event.payload);
+        const mode = nativeCodemodeMode(payload.codemodeMode);
+        if (payload.kind === 'codemode' && mode && codemodeMode !== undefined
+          && workspaceScopeRef.current === workspaceScope && codemodeRequestRef.current?.scope !== workspaceScope) {
+          setCodemodeSelection({ scope: workspaceScope, mode });
+        }
+      }
       const completedMessage = asRecord(asRecord(event.payload).message);
       if (
         event.eventType === 'message_completed'
@@ -1589,6 +1614,33 @@ function PawSessionWorkspaceBody({
     } catch (reason) { if (isCurrent()) setError(errorText(reason)); }
   }
 
+  async function changeCodemodeMode(mode: CodemodeMode): Promise<void> {
+    if (evaluationSnapshot || busy || sending || codemodeMode === undefined || mode === codemodeMode
+      || codemodeRequestRef.current?.scope === workspaceScope) return;
+    const request = { scope: workspaceScope };
+    codemodeRequestRef.current = request;
+    setCodemodeChangeRequest(request);
+    const isCurrent = () => workspaceScopeRef.current === request.scope && codemodeRequestRef.current === request;
+    try {
+      const value = await transport.request({
+        pathId: 'agent.session.codemode.select', params: { sessionId: recordId }, body: { mode },
+      });
+      if (!isCurrent()) return;
+      const receipt = parseContract('agent-session-codemode-selection.v1', value);
+      if (receipt.sessionId !== recordId || !receipt.capability.available
+        || !receipt.capability.modes.includes(receipt.codemodeMode)) {
+        throw new Error('代码执行编排方式未获得当前对话的确认。');
+      }
+      setCodemodeSelection({ scope: workspaceScope, mode: receipt.codemodeMode });
+      setError('');
+    } catch (reason) {
+      if (isCurrent()) setError(errorText(reason));
+    } finally {
+      if (codemodeRequestRef.current === request) codemodeRequestRef.current = undefined;
+      setCodemodeChangeRequest(current => current === request ? undefined : current);
+    }
+  }
+
   async function changeModel(provider: string, modelId: string, level: ThinkingLevel): Promise<void> {
     if (evaluationSnapshot) return;
     const request = { scope: workspaceScope };
@@ -2028,6 +2080,8 @@ function PawSessionWorkspaceBody({
                 attachments={attachments}
                 attachmentsAvailable={!durableSession}
                 busy={busy}
+                codemodeMode={codemodeMode}
+                codemodeModePending={codemodeChanging}
                 capabilityCatalog={capabilityCatalog}
                 capabilityPolicyPending={capabilityMutation?.status === 'pending'}
                 catalog={catalog}
@@ -2065,6 +2119,7 @@ function PawSessionWorkspaceBody({
                 onDraftChange={setDraft}
                 onCancelEdit={cancelEdit}
                 onEditPrevious={() => void beginEditMessage()}
+                onCodemodeModeChange={(mode) => void changeCodemodeMode(mode)}
                 onModelChange={(provider, modelId, level) => void changeModel(provider, modelId, level)}
                 onPasteFromClipboard={() => void pasteFiles()}
                 onPasteImages={pasteFiles}
@@ -2348,4 +2403,9 @@ function validCompactionReceipt(receipt: Record<string, unknown>, target: AgentC
   const outcomes = receipt.outcomes.map(asRecord);
   return outcomes.every((outcome, index) => Object.keys(outcome).length === 2
     && outcome.taskId === target.taskIds[index] && ['completed', 'aborted', 'failed'].includes(String(outcome.status)));
+}
+
+/** Absence is a Runtime capability boundary, not a frontend default. */
+function nativeCodemodeMode(value: unknown): CodemodeMode | undefined {
+  return value === 'on' || value === 'only' || value === 'off' ? value : undefined;
 }

@@ -7,7 +7,7 @@ import sqlite3
 import time
 import uuid
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from pathlib import Path
 
 from rag_ime.contracts.json_schema import validate_contract
@@ -45,6 +45,34 @@ class AgentRoomWorkStore:
     ) -> None:
         self.db_path = Path(db_path)
         self._terminal_observer = terminal_observer
+        self._admission_fence: AbstractContextManager[object] = nullcontext()
+        self._root_cancelled: Callable[[str, str], bool] | None = None
+
+    def set_admission_fence(
+        self,
+        fence: AbstractContextManager[object],
+        root_cancelled: Callable[[str, str], bool],
+    ) -> None:
+        """Share the original Room registry's publication/Stop commit boundary."""
+
+        self._admission_fence = fence
+        self._root_cancelled = root_cancelled
+
+    def _require_open_root(
+        self, conn: sqlite3.Connection, room_id: str, root_id: str,
+        *, check_cancel: bool = True,
+    ) -> None:
+        if not root_id:
+            return
+        if check_cancel and self._root_cancelled is not None and self._root_cancelled("", root_id):
+            raise ValueError("Room Root stopped before work admission")
+        closed = conn.execute(
+            "SELECT 1 FROM agent_room_public_projection_receipts "
+            "WHERE projection_key = ? AND room_id = ?",
+            (f"room-terminal-result:{room_id}:{root_id}", room_id),
+        ).fetchone()
+        if closed is not None:
+            raise ValueError("Room Root closed by its formal result")
 
     def set_terminal_observer(
         self,
@@ -150,6 +178,8 @@ class AgentRoomWorkStore:
                     )
                 return payload
 
+            self._require_open_root(conn, normalized_room_id, str(root_turn_id or ""),
+                                    check_cancel=_connection is None)
             rows = conn.execute(
                 """
                 SELECT id, participant_status FROM agent_room_participants
@@ -293,6 +323,9 @@ class AgentRoomWorkStore:
                     "room definition WorkItem identity changed"
                 )
             return payload, False
+        # Caller-owned Jev transactions retain their existing admission fence.
+        # Never acquire the Room registry after their SQLite writer.
+        self._require_open_root(conn, normalized_room_id, root_turn, check_cancel=False)
         participant_rows = conn.execute(
             """
             SELECT id, participant_status FROM agent_room_participants
@@ -405,7 +438,7 @@ class AgentRoomWorkStore:
             f"{parent_work_id}\0{target_id}\0{' '.join(objective.lower().split())}".encode()
         ).hexdigest()
 
-        with self._connect(immediate=True) as conn:
+        with self._connect(immediate=True, admission=True) as conn:
             source = _participant_for_session(conn, source_session_id)
             room_id = str(source["room_id"])
             existing = conn.execute(
@@ -429,6 +462,7 @@ class AgentRoomWorkStore:
                     )
                 return work_item_payload(existing), False
 
+            self._require_open_root(conn, room_id, str(root_turn_id or ""))
             target = _participant(conn, room_id, target_id)
             if str(target["id"]) == str(source["id"]):
                 raise ValueError("Room work cannot be assigned to the current owner")
@@ -551,7 +585,7 @@ class AgentRoomWorkStore:
         updated_at_ms: int | None = None,
     ) -> dict[str, object]:
         timestamp = _timestamp(updated_at_ms)
-        with self._connect(immediate=True) as conn:
+        with self._connect(immediate=True, admission=True) as conn:
             row = self._row(conn, work_id)
             if str(row["state"]) == "active":
                 return work_item_payload(row)
@@ -559,6 +593,7 @@ class AgentRoomWorkStore:
                 raise ValueError("Room assignment is no longer queued")
             if str(row["offered_to_participant_id"] or "") != target_participant_id:
                 raise ValueError("only the offered participant may accept this assignment")
+            self._require_open_root(conn, str(row["room_id"]), str(row["root_turn_id"] or ""))
             conn.execute(
                 """
                 UPDATE agent_room_work_items
@@ -946,7 +981,7 @@ class AgentRoomWorkStore:
             maximum=320,
         )
         timestamp = _timestamp(updated_at_ms)
-        with self._connect(immediate=True) as conn:
+        with self._connect(immediate=True, admission=True) as conn:
             row = self._row(conn, work_id)
             if str(row["state"]) not in AUTHORITATIVE_WORK_STATES:
                 raise ValueError("only active or review work items can be reassigned")
@@ -966,6 +1001,7 @@ class AgentRoomWorkStore:
                 raise ValueError("only the current owner or accountable participant may reassign work")
             if previous_owner_id == owner_id:
                 return work_item_payload(row)
+            self._require_open_root(conn, room_id, str(row["root_turn_id"] or ""))
             conn.execute(
                 """
                 UPDATE agent_room_work_items
@@ -1200,8 +1236,9 @@ class AgentRoomWorkStore:
         expected = _revision(expected_revision, "expected_revision")
         retry_reason = _required_text(reason, "reason", maximum=2_000)
         timestamp = _timestamp(updated_at_ms)
-        with self._connect(immediate=True) as conn:
+        with self._connect(immediate=True, admission=True) as conn:
             row = self._row(conn, work_id)
+            self._require_open_root(conn, str(row["room_id"]), str(row["root_turn_id"] or ""))
             if str(row["state"]) not in {"blocked", "failed"}:
                 raise ValueError("only blocked or failed work may be retried")
             if int(row["revision"]) != expected:
@@ -1289,7 +1326,7 @@ class AgentRoomWorkStore:
     ) -> dict[str, object]:
         timestamp = _timestamp(claimed_at_ms)
         public_root_id = _optional_text(root_turn_id, maximum=320)
-        with self._connect(immediate=True) as conn:
+        with self._connect(immediate=True, admission=True) as conn:
             row = self._row(conn, work_id)
             if str(row["room_id"]) != str(room_id):
                 raise ValueError("work item does not belong to this room")
@@ -1301,6 +1338,8 @@ class AgentRoomWorkStore:
                 or str(row["accepted_turn_id"] or "") != str(previous_accepted_turn_id or "")
             ):
                 raise AgentRoomWorkAssignmentChanged("WorkItem assignment changed before dispatch")
+            self._require_open_root(conn, str(row["room_id"]),
+                                    public_root_id or str(row["root_turn_id"] or room_turn_id))
             cursor = conn.execute(
                 """
                 UPDATE agent_room_work_items
@@ -1594,7 +1633,7 @@ class AgentRoomWorkStore:
             payload.get("supersededByWorkId"),
             maximum=240,
         )
-        with self._connect(immediate=True) as conn:
+        with self._connect(immediate=True, admission=not accept) as conn:
             actor = _participant_for_session(conn, session_id)
             row = self._row(conn, work_id)
             self._require_reviewer(conn, row, str(actor["id"]))
@@ -1602,6 +1641,8 @@ class AgentRoomWorkStore:
                 raise ValueError("Room work must be in review")
             if int(row["revision"]) != expected_revision:
                 raise ValueError("Room work revision changed; refresh before review")
+            if not accept:
+                self._require_open_root(conn, str(row["room_id"]), str(row["root_turn_id"] or ""))
             event_payload: dict[str, object] | None = None
             if accept:
                 event_payload = self._accept_over_proposed_payload(
@@ -1930,7 +1971,7 @@ class AgentRoomWorkStore:
     def _creation_connection(self, connection: sqlite3.Connection | None):
         """Internal batch owner: all creates enlist in the caller's canonical transaction."""
         if connection is None:
-            with self._connect(immediate=True) as conn:
+            with self._connect(immediate=True, admission=True) as conn:
                 yield conn
             return
         databases = connection.execute("PRAGMA database_list").fetchall()
@@ -2013,21 +2054,22 @@ class AgentRoomWorkStore:
             return work_item_payload(current)
 
     @contextmanager
-    def _connect(self, *, immediate: bool = False) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self.db_path, timeout=10)
-        conn.row_factory = sqlite3.Row
-        try:
-            conn.execute("PRAGMA foreign_keys = ON")
-            if immediate:
-                conn.execute("BEGIN IMMEDIATE")
-            with participate_in_work_transaction(conn, self.db_path, immediate=immediate):
-                yield conn
-            conn.commit()
-        except BaseException:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
+    def _connect(self, *, immediate: bool = False, admission: bool = False) -> Iterator[sqlite3.Connection]:
+        with self._admission_fence if admission else nullcontext():
+            conn = sqlite3.connect(self.db_path, timeout=10)
+            conn.row_factory = sqlite3.Row
+            try:
+                conn.execute("PRAGMA foreign_keys = ON")
+                if immediate:
+                    conn.execute("BEGIN IMMEDIATE")
+                with participate_in_work_transaction(conn, self.db_path, immediate=immediate):
+                    yield conn
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
 
 
 def work_item_payload(row: sqlite3.Row) -> dict[str, object]:

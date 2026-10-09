@@ -28,6 +28,7 @@ vi.mock('./PawSessionWorkspace', () => {
       <div>
         Session 工作区
         <output data-testid="session-record-id">{record?.id ?? `missing:${recordId}`}</output>
+        <output data-testid="session-record-metadata">{JSON.stringify(record?.metadata)}</output>
         <output data-testid="session-record-known">{String(recordMetadataKnown)}</output>
         <output data-testid="session-record-read-only">{record?.evaluationSnapshot ? 'true' : 'false'}</output>
         <output data-testid="session-initial-submission">{JSON.stringify(initialSubmission)}</output>
@@ -70,6 +71,20 @@ afterEach(() => {
 });
 
 describe('PAWOS Agent App', () => {
+  it('opens Session and Room directly without initializing or dispatching the primary assistant', async () => {
+    const transport = createTransport();
+    renderAgent(transport, { initialRoute: '/agent' });
+    await waitFor(() => expect(transport.requests.some(({ request }) => request.pathId === 'agent.role.models')).toBe(true));
+    expect(screen.getByRole('radio', { name: 'Session' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Room' })).not.toBeChecked();
+    expect(screen.getByRole('textbox', { name: '描述你想完成的工作' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: '交给助手做' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '继续工作' })).not.toBeInTheDocument();
+    expect(transport.requests.filter(({ request }) => request.pathId.startsWith('agent.primary.'))).toHaveLength(0);
+    expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.snapshot' || request.pathId === 'agent.room.events')).toBe(false);
+    expect(transport.requests.some(({ request }) => ['agent.sessions.create', 'agent.rooms.create', 'agent.session.prompt', 'agent.room.message'].includes(request.pathId))).toBe(false);
+  });
+
   // Keep the cold-load contract before tests that intentionally open a Session.
   it('evaluates only the selected workspace and preserves route identity and draft across Room → Session → Room', async () => {
     const transport = createTransport();
@@ -100,124 +115,39 @@ describe('PAWOS Agent App', () => {
     expect(workspaceEvaluations).toEqual({ session: 1, room: 1 });
   });
 
-  it.each([false, true])('retains a task form while inspecting an old task only in its original transport (replacement: %s)', async replacement => {
-    const oldTask = { id: 'task-existing', title: '已有任务', mode: 'assistant', status: 'idle', updatedAtMs: 2, workspaceRoots: ['/work/demo'], metadata: { primaryTask: true, sourceSessionId: 'primary', assistantId: 'assistant-one' } };
-    const transport = createTransport({ primaryTasks: [oldTask] });
-    const view = renderAgent(transport, { initialRoute: '/agent' });
-    await waitFor(() => expect(screen.getByRole('button', { name: /进入对话/ })).toBeEnabled());
-    fireEvent.click(screen.getByRole('button', { name: /进入对话/ }));
-    fireEvent.click(await screen.findByRole('button', { name: '交给助手做' }));
-    const message = await screen.findByRole('textbox', { name: '和我的助手聊聊' });
-    fireEvent.change(message, { target: { value: '待确认的新目标' } });
-    fireEvent.change(screen.getByRole('textbox', { name: '本次工作目录' }), { target: { value: '/work/draft' } });
-    fireEvent.click(screen.getByText('完成标准', { selector: 'summary' }));
-    fireEvent.change(screen.getByRole('textbox', { name: '完成标准' }), { target: { value: '完成三项检查' } });
-    fireEvent.click(screen.getByRole('checkbox'));
-    if (!replacement) {
-      await waitFor(() => expect(screen.getByRole('button', { name: '授权并开始任务' })).toBeEnabled());
-      fireEvent.click(screen.getByRole('button', { name: '授权并开始任务' }));
-      await screen.findByText(/草稿已保留；重试会核对同一次请求/);
-    }
-    const controlled = await screen.findByRole('region', { name: '助手控制的 Sessions' });
-    const oldTaskButton = within(controlled).getByRole('button', { name: /^打开 已有任务 ·/ });
-    expect(oldTaskButton).toBeVisible();
-    fireEvent.click(oldTaskButton);
-    expect(await screen.findByTestId('session-record-id')).toHaveTextContent('task-existing');
-    expect(screen.getByTestId('session-initial-draft')).toBeEmptyDOMElement();
-    if (replacement) view.rerender(agentTree(createTransport({ primaryTasks: [oldTask] }), { initialRoute: '/agent?session=task-existing' }));
+  it('keeps legacy primary history reachable by its original Session without reinitializing its assistant', async () => {
+    const primary = { id: 'primary-existing', title: '原来的长期对话', mode: 'assistant', status: 'idle', updatedAtMs: 2,
+      workspaceRoots: ['/work/original'], messageCount: 54, lastMessagePreview: '原来的内容',
+      metadata: { primaryAssistant: true, assistantId: 'assistant-existing' } };
+    const transport = createTransport({ sessions: [primary] });
+    renderAgent(transport, { initialRoute: '/agent' });
+    await userEvent.setup().click(screen.getByRole('button', { name: '打开工作记录' }));
+    const rail = screen.getByRole('complementary', { name: 'Agent 工作记录' });
+    await userEvent.setup().click(await within(rail).findByRole('button', { name: /^原来的长期对话/ }));
+    expect(await screen.findByTestId('session-record-id')).toHaveTextContent('primary-existing');
+    expect(screen.getByTestId('session-record-metadata')).toHaveTextContent('assistant-existing');
+    expect(screen.queryByRole('button', { name: '交给助手做' })).not.toBeInTheDocument();
+    expect(transport.requests.some(({ request }) => request.pathId.startsWith('agent.primary.')
+      || ['agent.sessions.create', 'agent.session.prompt', 'agent.session.delete'].includes(request.pathId))).toBe(false);
     await userEvent.setup().click(screen.getByRole('button', { name: '工作台选项' }));
-    await userEvent.setup().click(screen.getByRole('menuitem', { name: '返回我的助手' }));
-    const restored = await screen.findByRole('textbox', { name: '和我的助手聊聊' });
-    if (replacement) {
-      expect(restored).toHaveValue('');
-      expect(screen.getByRole('button', { name: '聊一聊' })).toHaveAttribute('aria-pressed', 'true');
-      expect(screen.queryByRole('textbox', { name: '本次工作目录' })).not.toBeInTheDocument();
-    } else {
-      expect(restored).toHaveValue('待确认的新目标');
-      expect(screen.getByRole('textbox', { name: '本次工作目录' })).toHaveValue('/work/draft');
-      fireEvent.click(screen.getByText('完成标准', { selector: 'summary' }));
-      expect(screen.getByRole('textbox', { name: '完成标准' })).toHaveValue('完成三项检查');
-      expect(screen.getByRole('checkbox')).toBeChecked();
-      await waitFor(() => expect(screen.getByRole('button', { name: '授权并开始任务' })).toBeEnabled());
-      fireEvent.click(screen.getByRole('button', { name: '授权并开始任务' }));
-      await waitFor(() => expect(transport.requests.filter(({ request }) => request.pathId === 'agent.primary.tasks.create')).toHaveLength(2));
-      const attempts = transport.requests.filter(({ request }) => request.pathId === 'agent.primary.tasks.create');
-      expect(attempts[0].request.body).toMatchObject({ sourceSessionId: 'primary', sourceMessageId: 'source-cutoff', objective: '待确认的新目标', acceptanceCriteria: ['完成三项检查'] });
-      expect(attempts[1].request.body).toEqual(attempts[0].request.body);
-    }
+    await userEvent.setup().click(screen.getByRole('menuitem', { name: '新建 Session 或 Room' }));
+    expect(await screen.findByRole('radio', { name: 'Session' })).toBeChecked();
+    expect(transport.requests.some(({ request }) => request.pathId.startsWith('agent.primary.'))).toBe(false);
   });
 
-  it('preserves an unsubmitted Home task when leaving through the parent history sidebar', async () => {
-    const user = userEvent.setup();
-    renderAgent(createTransport(), { initialRoute: '/agent' });
-    await waitFor(() => {
-      expect(document.querySelector('.paw-agent-recents')).toBeInTheDocument();
-      expect(document.querySelector('.paw-agent-recents')).not.toHaveAttribute('aria-busy', 'true');
-    });
-    await user.click(screen.getByRole('button', { name: '交给助手做' }));
-    fireEvent.change(screen.getByRole('textbox', { name: '和我的助手聊聊' }), { target: { value: '保留侧栏跳转前的目标' } });
-    fireEvent.change(screen.getByRole('textbox', { name: '本次工作目录' }), { target: { value: '/work/draft' } });
-    fireEvent.change(screen.getByRole('textbox', { name: '完成标准' }), { target: { value: '检查后说明结果' } });
-    await user.click(screen.getByRole('checkbox'));
-    await user.click(screen.getByRole('button', { name: '打开工作记录' }));
-    const rail = screen.getByRole('complementary', { name: 'Agent 工作记录' });
-    await user.click(within(rail).getByRole('button', { name: /^发布检查/ }));
-    expect(await screen.findByTestId('session-record-id')).toHaveTextContent('session-old');
-    await user.click(screen.getByRole('button', { name: '工作台选项' }));
-    await user.click(screen.getByRole('menuitem', { name: '返回我的助手' }));
-    expect(await screen.findByRole('textbox', { name: '和我的助手聊聊' })).toHaveValue('保留侧栏跳转前的目标');
-    expect(screen.getByRole('textbox', { name: '本次工作目录' })).toHaveValue('/work/draft');
-    expect(screen.getByRole('textbox', { name: '完成标准' })).toHaveValue('检查后说明结果');
-    expect(screen.getByRole('checkbox')).toBeChecked();
-  });
-  it('carries unsent home text into the discussion without submitting it', async () => {
+  it('keeps Session and Room selection local until the user starts work', async () => {
     const transport = createTransport();
-    const view = renderAgent(transport, { initialRoute: '/agent' });
-    await waitFor(() => expect(screen.getByRole('button', { name: /进入对话/ })).toBeEnabled());
-    fireEvent.change(screen.getByRole('textbox', { name: '和我的助手聊聊' }), { target: { value: '先保留，不发送' } });
-    fireEvent.click(screen.getByRole('button', { name: /进入对话/ }));
-    expect(await screen.findByTestId('session-initial-draft')).toHaveTextContent('先保留，不发送');
-    view.rerender(agentTree(transport, { initialRoute: '/agent?session=primary' }));
-    expect(screen.getByTestId('session-initial-draft')).toHaveTextContent('先保留，不发送');
-    expect(screen.getByTestId('session-initial-submission')).toBeEmptyDOMElement();
-    expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.prompt')).toBe(false);
+    renderAgent(transport, { initialRoute: '/agent?draft=原来的待发送文字' });
+    const input = await screen.findByRole('textbox', { name: '描述你想完成的工作' });
+    expect(input).toHaveValue('原来的待发送文字');
+    await userEvent.setup().click(screen.getByRole('radio', { name: 'Room' }));
+    expect(input).toHaveValue('原来的待发送文字');
+    await userEvent.setup().click(screen.getByRole('radio', { name: 'Session' }));
+    expect(screen.getByRole('textbox', { name: '描述你想完成的工作' })).toBe(input);
+    expect(transport.requests.some(({ request }) => request.pathId.startsWith('agent.primary.')
+      || ['agent.sessions.create', 'agent.rooms.create', 'agent.session.prompt', 'agent.room.message'].includes(request.pathId))).toBe(false);
   });
-  it('preserves first submission and discussion handoff across desktop route acknowledgements', async () => {
-    const transport = createTransport();
-    const view = renderAgent(transport, { initialRoute: '/agent' });
-    await waitFor(() => expect(screen.getByRole('button', { name: /进入对话/ })).toBeEnabled());
-    fireEvent.change(screen.getByRole('textbox', { name: '和我的助手聊聊' }), { target: { value: '第一条消息' } });
-    fireEvent.click(screen.getByRole('button', { name: '发送给我的助手' }));
-    const pending = await screen.findByTestId('session-initial-submission');
-    expect(pending).toHaveTextContent('第一条消息');
-    const submission = pending.textContent;
-    view.rerender(agentTree(transport, { initialRoute: '/agent?session=primary' }));
-    expect(await screen.findByTestId('session-initial-submission')).toHaveTextContent(submission!);
-    fireEvent.click(screen.getByRole('button', { name: '交给助手做' }));
-    expect(await screen.findByRole('textbox', { name: '本次工作目录' })).toBeVisible();
-    view.rerender(agentTree(transport, { initialRoute: '/agent' }));
-    expect(await screen.findByRole('textbox', { name: '本次工作目录' })).toBeVisible();
-    expect(screen.getByRole('textbox', { name: '和我的助手聊聊' })).toHaveValue('检查具体目标');
-    fireEvent.change(screen.getByRole('textbox', { name: '本次工作目录' }), { target: { value: '/work/demo' } });
-    fireEvent.click(screen.getByRole('checkbox'));
-    await waitFor(() => expect(screen.getByRole('button', { name: '授权并开始任务' })).toBeEnabled());
-    fireEvent.click(screen.getByRole('button', { name: '授权并开始任务' }));
-    await waitFor(() => expect(transport.requests.some(({ request }) => request.pathId === 'agent.primary.tasks.create')).toBe(true));
-    expect(transport.requests.find(({ request }) => request.pathId === 'agent.primary.tasks.create')?.request.body).toMatchObject({ sourceSessionId: 'primary', sourceMessageId: 'source-cutoff' });
-  });
-  it('makes the stable assistant the default entry while keeping the advanced creator explicit', async () => {
-    const transport = createTransport();
-    renderAgent(transport, { initialRoute: '/agent' });
-    expect(await screen.findByRole('heading', { name: '这次想做什么？' })).toBeVisible();
-    expect(screen.getByRole('region', { name: 'Agent 工作台' })).toHaveAttribute('data-compact-work');
-    expect(screen.queryByRole('group', { name: 'Agent 界面模式' })).not.toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole('button', { name: /进入对话/ })).toBeEnabled());
-    expect(transport.requests.filter(({ request }) => request.pathId === 'agent.primary.ensure')).toHaveLength(1);
-    fireEvent.click(screen.getByRole('button', { name: /新建独立对话或多人协作/ }));
-    expect(await screen.findByRole('heading', { name: '今天想完成什么？' })).toBeVisible();
-    expect(screen.getByRole('region', { name: 'Agent 工作台' })).not.toHaveAttribute('data-compact-work');
-    expect(transport.requests.some(({ request }) => ['agent.sessions.create', 'agent.session.prompt'].includes(request.pathId))).toBe(false);
-  });
+
   it('uses the owned catalog capability and preserves a Durable draft when a replacement Host withdraws support', async () => {
     const user = userEvent.setup();
     const available = createTransport({ modelCatalog: { providers: [], selected: {}, sessionEngines: { durable: { available: true } } } });
@@ -876,7 +806,7 @@ describe('PAWOS Agent App', () => {
       .toBeInTheDocument();
   });
 
-  it('orders 继续工作 by real recency instead of catalog list position', async () => {
+  it('keeps every original record in the rail without a second work list in the composer', async () => {
     renderAgent(createTransport({
       sessions: [
         { id: 's-a', title: '最旧的检查', mode: 'coordinator', status: 'idle', updatedAtMs: 1, workspaceRoots: ['/work/paw'], messageCount: 1, lastMessagePreview: '' },
@@ -886,9 +816,11 @@ describe('PAWOS Agent App', () => {
       ],
     }));
 
-    const recent = (await screen.findByRole('heading', { name: '继续工作' })).parentElement!;
-    expect(within(recent).getByRole('button', { name: /最新的检查/ })).toBeInTheDocument();
-    expect(within(recent).queryByRole('button', { name: /最旧的检查/ })).not.toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole('button', { name: '打开工作记录' }));
+    const rail = screen.getByRole('complementary', { name: 'Agent 工作记录' });
+    expect(await within(rail).findByRole('button', { name: /^最新的检查/ })).toBeVisible();
+    expect(within(rail).getByRole('button', { name: /^最旧的检查/ })).toBeVisible();
+    expect(screen.queryByRole('heading', { name: '继续工作' })).not.toBeInTheDocument();
   });
 
   it('creates a Session and sends the first prompt from the same composer', async () => {
@@ -959,10 +891,10 @@ describe('PAWOS Agent App', () => {
     const transport = createTransport();
     const view = renderAgent(transport, { initialRoute: '/agent?draft=先检查发布门禁' });
 
-    expect(await screen.findByRole('textbox', { name: '和我的助手聊聊' })).toHaveValue('先检查发布门禁');
+    expect(await screen.findByRole('textbox', { name: '描述你想完成的工作' })).toHaveValue('先检查发布门禁');
 
     view.rerender(agentTree(transport, { initialRoute: '/agent?draft=再检查安装状态' }));
-    expect(await screen.findByRole('textbox', { name: '和我的助手聊聊' })).toHaveValue('再检查安装状态');
+    expect(await screen.findByRole('textbox', { name: '描述你想完成的工作' })).toHaveValue('再检查安装状态');
   });
 
   it('keeps a Room deep-link draft so a satellite can return input to the shared composer', async () => {

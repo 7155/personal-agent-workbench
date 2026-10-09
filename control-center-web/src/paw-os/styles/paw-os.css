@@ -785,14 +785,19 @@ html[data-paw-native-host='macos'] .paw-menu-bar > .paw-menu-status { grid-colum
      still promotes the whole shell via its scoped will-change. */
   contain: layout paint;
 }
-/* Desktop edges reach 12px inside the shell; corners reach 14px. Keep App
-   content inside both pointer planes; scroll-padding cannot inset a scrollport.
-   Focus, planet, overview and maximized geometry belong to their own modes. */
+/* Edges reach 12px inside the shell; corners reach 14px. Give the actual
+   content scrollport room below these pointer planes. Only unlocked window
+   frames with rendered handles participate; locked, planet and overview
+   geometry remains owned by its mode. */
 @media (min-width: 821px) {
   .paw-window-shell[data-frame-mode='window']:not([data-overview]):not([data-focus-layout]):not([data-focus-locked]):not([data-placement='maximized']):has(> .paw-window-resize) > .paw-window > .paw-window-body {
     padding-inline: 14px;
     padding-bottom: 14px;
   }
+}
+.paw-window-shell[data-frame-mode='window']:not([data-overview]):not([data-focus-locked]):is([data-focus-layout], [data-placement='maximized']):has(> .paw-window-resize) > .paw-window > .paw-window-body {
+  padding-inline: 14px;
+  padding-bottom: 14px;
 }
 .paw-window-body > *, .paw-window-route-surface, .paw-window-route-surface > * { min-width: 0; min-height: 0; }
 .paw-window-route-surface {

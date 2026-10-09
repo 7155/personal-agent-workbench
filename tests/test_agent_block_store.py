@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -39,6 +40,109 @@ class AgentBlockStoreTest(unittest.TestCase):
             "citations": [],
             "createdAtMs": 1,
         }
+
+    def test_recent_hydration_uses_only_exact_ids_and_preserves_four_receipts(self) -> None:
+        message = self.message()
+        message["blocks"] = list(normalize_trusted_agent_blocks([
+            {"id": f"file:{i}", "type": "file", "data": {"filename": "result.txt", "mediaId": f"media_public_{i:024d}", "sha256": str(i + 1) * 64, "bytes": 34 + i}}
+            for i in range(4)
+        ], source_kind="pi_runtime_event", source_ref="message:1", generation=2))
+        self.store.persist_message(message, generation=2)
+        runtime = {**message, "blocks": [{"type": "text", "data": {"text": "same answer"}}]}
+        adjacent = {**message, "id": "adjacent", "blocks": []}
+        foreign = {**runtime, "sessionId": "foreign"}
+        with patch.object(self.store, "hydrate_messages", side_effect=AssertionError("full forbidden")), patch.object(self.store, "blocks_for_message", side_effect=AssertionError("per-message query forbidden")):
+            actual = self.store.hydrate_recent_messages("session:1", [runtime, adjacent, foreign])
+        self.assertEqual([item["id"] for item in actual], ["message:1", "adjacent", "message:1"])
+        self.assertCountEqual([b["data"]["mediaId"] for b in actual[0]["blocks"] if b["type"] == "file"], [f"media_public_{i:024d}" for i in range(4)])
+        self.assertEqual(actual[1:], [adjacent, foreign])
+
+    def test_recent_does_not_guess_an_alias_from_equal_text_or_timestamp(self) -> None:
+        message = self.message()
+        message["id"] = "turn:1:assistant"
+        self.store.persist_message(message, generation=2)
+        runtime = {**message, "id": "native:unknown", "blocks": []}
+        self.assertEqual(self.store.hydrate_recent_messages("session:1", [runtime]), [runtime])
+        self.assertEqual(self.store.hydrate_recent_messages("session:1", []), [])
+
+    def test_exact_alias_is_generation_bound_and_replay_cannot_rebind_it(self) -> None:
+        message = self.message()
+        self.store.persist_message(message, generation=2, native_message_id="native:1")
+        self.store.persist_message(message, generation=2, native_message_id="native:1")
+        newer = self.message(generation=3)
+        self.store.persist_message(newer, generation=3)
+        runtime = {**message, "id": "native:1", "blocks": []}
+        actual = self.store.hydrate_recent_messages("session:1", [runtime])
+        self.assertEqual(actual[0]["id"], "native:1")
+        self.assertEqual(actual[0]["blocks"][0]["generation"], 2)
+        full = self.store.hydrate_messages("session:1", [runtime])
+        bound = next(message for message in full if message["id"] == "native:1")
+        self.assertEqual(bound["blocks"][0]["generation"], 2)
+        with self.assertRaisesRegex(AgentBlockConflict, "alias"):
+            self.store.persist_message(newer, generation=3, native_message_id="native:1")
+        alien = {**message, "id": "other:source"}
+        with self.assertRaisesRegex(AgentBlockConflict, "alias"):
+            self.store.persist_message(alien, generation=2, native_message_id="native:1")
+        with self.store._connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM agent_block_message_envelopes WHERE message_id='other:source'").fetchone()[0], 0)
+        self.assertEqual(self.store.hydrate_recent_messages("session:1", [runtime]), actual)
+
+    def test_one_source_cannot_claim_two_native_entries(self) -> None:
+        message = self.message()
+        self.store.persist_message(message, generation=2, native_message_id="native:one")
+        with self.assertRaisesRegex(AgentBlockConflict, "alias"):
+            self.store.persist_message(message, generation=2, native_message_id="native:two")
+        self.assertEqual(self.store.hydrate_recent_messages("session:1", [{**message, "id": "native:two", "blocks": []}])[0]["blocks"], [])
+
+    def test_recent_alias_revoke_and_foreign_session_do_not_borrow_blocks(self) -> None:
+        message = self.message()
+        self.store.persist_message(message, generation=2, native_message_id="native:1")
+        runtime = {**message, "id": "native:1", "blocks": []}
+        self.assertEqual(self.store.hydrate_recent_messages("foreign", [runtime]), [runtime])
+        rich_before_revoke = self.store.hydrate_recent_messages("session:1", [runtime])
+        ref = str(self.store.blocks_for_message("session:1", "message:1")[0]["ref"])
+        self.store.revoke(ref, root_id="session:session:1", session_id="session:1")
+        self.assertEqual(self.store.hydrate_recent_messages("session:1", [runtime]), [runtime])
+        self.assertEqual(self.store.hydrate_recent_messages("session:1", rich_before_revoke), [runtime])
+
+    def test_recent_native_alias_is_scoped_to_each_original_session(self) -> None:
+        first = self.message()
+        self.store.persist_message(first, generation=2, native_message_id="same-native-id")
+        second = {**self.message(), "sessionId": "session:other", "id": "other:source"}
+        second["blocks"] = list(normalize_trusted_agent_blocks([{"id": "other", "type": "status", "data": {"title": "other original"}}], source_kind="pi_runtime_event", source_ref="other:source", generation=2))
+        self.store.persist_message(second, generation=2, native_message_id="same-native-id")
+        for message in (first, second):
+            actual = self.store.hydrate_recent_messages(str(message["sessionId"]), [{**message, "id": "same-native-id", "blocks": []}])
+            self.assertEqual([b["id"] for b in actual[0]["blocks"]], [message["blocks"][0]["id"]])
+
+    def test_recent_batch_is_bounded_and_queries_only_returned_ids(self) -> None:
+        original_connect = sqlite3.connect
+        message = self.message()
+        self.store.persist_message(message, generation=2)
+        statements: list[str] = []
+        steps: list[int] = []
+        def traced(*args, **kwargs):
+            conn = original_connect(*args, **kwargs)
+            conn.set_trace_callback(statements.append)
+            conn.set_progress_handler(lambda: (steps.append(1), 0)[1], 1)
+            return conn
+        runtime = [{**message, "id": f"missing:{i}", "blocks": []} for i in range(95)] + [{**message, "blocks": []}]
+        with patch("rag_ime.agent_block_store.sqlite3.connect", side_effect=traced):
+            self.store.hydrate_recent_messages("session:1", runtime)
+        baseline_steps = len(steps)
+        with self.store._connect() as conn:
+            # Adjacent history is deliberately large; it is not a recovery source.
+            conn.executemany("INSERT INTO agent_block_message_envelopes SELECT session_id,?,generation,root_id,message_hash,message_json,created_at_ms FROM agent_block_message_envelopes WHERE message_id='message:1'", [(f"old:{i}",) for i in range(1000)])
+        statements.clear()
+        steps.clear()
+        with patch("rag_ime.agent_block_store.sqlite3.connect", side_effect=traced):
+            actual = self.store.hydrate_recent_messages("session:1", runtime)
+        self.assertEqual(len(actual), 96)
+        self.assertEqual(len(actual[-1]["blocks"]), 1)
+        self.assertEqual(sum(statement.lstrip().upper().startswith(("SELECT", "WITH")) for statement in statements), 2)
+        self.assertEqual(len(steps), baseline_steps)
+        with patch.object(self.store, "_connect", side_effect=AssertionError("must not query excessive input")):
+            self.assertEqual(self.store.hydrate_recent_messages("session:1", [*runtime, runtime[0]]), [*runtime, runtime[0]])
 
     def test_persists_rerender_data_and_projection_receipt(self) -> None:
         receipt = self.store.persist_message(
@@ -121,7 +225,7 @@ class AgentBlockStoreTest(unittest.TestCase):
         merged = self.store.hydrate_messages("session:1", [newer])
         self.assertEqual([item["id"] for item in merged], ["message:1", "message:2"])
 
-    def test_hydration_merges_live_envelope_into_durable_pi_message_alias(self) -> None:
+    def test_hydration_retains_unbound_legacy_receipt_without_guessing_native_alias(self) -> None:
         live = self.message()
         live["id"] = "turn:1:assistant"
         live["blocks"] = [
@@ -134,8 +238,7 @@ class AgentBlockStoreTest(unittest.TestCase):
             },
             *live["blocks"],
         ]
-        # Event-envelope and Pi transcript clocks can arrive in the opposite
-        # order. Projection identity, not timestamp direction, owns the alias.
+        # Equal text and nearby clocks are not a producer binding.
         live["createdAtMs"] = 95
         self.store.persist_message(
             live,
@@ -161,12 +264,12 @@ class AgentBlockStoreTest(unittest.TestCase):
 
         hydrated = self.store.hydrate_messages("session:1", [durable])
 
-        self.assertEqual(len(hydrated), 1)
-        self.assertEqual(hydrated[0]["id"], "pi:message:assistant:101")
-        self.assertEqual(
-            [block["type"] for block in hydrated[0]["blocks"]],
-            ["text", "table"],
-        )
+        self.assertEqual(len(hydrated), 2)
+        self.assertEqual([item["id"] for item in hydrated], ["turn:1:assistant", "pi:message:assistant:101"])
+        self.assertEqual([block["type"] for block in hydrated[0]["blocks"]], ["text", "table"])
+        self.assertEqual(hydrated[1], durable)
+        with self.store._connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM agent_block_native_aliases").fetchone()[0], 0)
 
     def test_hydration_preserves_runtime_order_when_timestamps_are_reversed_or_equal(self) -> None:
         first = {

@@ -43,20 +43,25 @@ describe('PawRoomConversation', () => {
     expect(screen.getByRole('region', { name: '行星公开对话' })).toHaveTextContent('已接入生产 reducer。');
   });
 
-  it.each(['session-a', '', 'session-from-other-room'])('binds prose file links only to the proven source Session (%s)', async source => {
+  it.each(['session-a', '', 'session-from-other-room'])('keeps unproven relative prose plain and binds absolute files only to the proven source Session (%s)', async source => {
     const { projection, room } = roomConversation();
     projection.messagesById['message-agent']!.sourceSessionId = source;
     projection.activitiesById['tool-a']!.sourceSessionId = source;
     projection.activitiesById['approval-a']!.sourceSessionId = source;
-    projection.messagesById['message-agent']!.text = '交付文档：[结果](docs/result.md)';
+    projection.messagesById['message-agent']!.text = '交付文档：[结果](docs/result.md)；明确路径：[原文](/workspace/docs/result.md)。';
     const routes: string[] = [];
     render(<PawOsDesktopProvider openRoute={route => routes.push(route)} openWindow={() => undefined}>
       <PawRoomConversation projection={projection} room={room} readOnly />
     </PawOsDesktopProvider>);
+    expect(screen.getByText('结果').closest('a')).toBeNull();
     const link = await screen.findByRole('link', { name: '打开文件 result.md' });
+    expect(link).toHaveTextContent('原文');
+    expect(link).toHaveAttribute('title', '/workspace/docs/result.md');
+    expect(screen.getAllByRole('link', { name: '打开文件 result.md' })).toHaveLength(1);
     await userEvent.setup().click(link);
+    expect(routes).toHaveLength(1);
     const params = new URL(routes[0]!, 'http://localhost').searchParams;
-    expect(params.get('path')).toBe('docs/result.md');
+    expect(params.get('path')).toBe('/workspace/docs/result.md');
     expect(params.get('session')).toBe(source === 'session-a' ? 'session-a' : null);
   });
 

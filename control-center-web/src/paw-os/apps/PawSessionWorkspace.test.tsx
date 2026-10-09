@@ -3915,3 +3915,217 @@ function compactionAbortAck(sessionId: string) {
       compactionTarget: compactionTarget(), drained: true, state: { paused: false },
       outcomes: compactionTarget().taskIds.map(taskId => ({ taskId, status: 'aborted' })) } };
 }
+
+
+describe('Session codemode wiring', () => {
+  const sessionId = 'codemode-original-session';
+  const ack = { schemaVersion: 'rag-ime.agent-session-codemode-selection.v1', ok: true, sessionId,
+    codemodeMode: 'only', capability: { available: true, modes: ['on', 'only', 'off'], defaultMode: 'on' } };
+  function workspace(transport: StubControlTransport, id: string, initialDraft = '保留原草稿') {
+    return <ControlTransportProvider transport={transport}><TooltipProvider>
+      <PawSessionWorkspace record={{ ...liveSession(), id }} recordId={id} initialDraft={initialDraft}
+        appearance="embedded" showComposerControls fullHistoryOnOpen={false}
+        onNewWork={vi.fn()} onSessionCreated={vi.fn()} onSessionUpdated={vi.fn()} />
+    </TooltipProvider></ControlTransportProvider>;
+  }
+  function setup(mode: string | null = 'on', reply: unknown = ack) {
+    const transport = new StubControlTransport('mock', {
+      ...idleSessionRoutes(),
+      'agent.session.snapshot': { messages: [], liveEvents: [], lastSequence: 0, resumeToken: '', status: 'active',
+        sessionId, ...(mode ? { codemodeMode: mode } : {}) },
+      'agent.session.codemode.select': () => reply,
+    });
+    const view = render(workspace(transport, sessionId));
+    return { transport, view, user: userEvent.setup() };
+  }
+  it('shows the native mode through the entire picker chain and changes only after the original ACK', async () => {
+    const pending = deferred<unknown>();
+    const { transport, user } = setup('on', pending.promise);
+    const editor = await screen.findByRole('textbox', { name: '消息' });
+    (editor as HTMLTextAreaElement).setSelectionRange(1, 3);
+    await user.click(screen.getByRole('button', { name: /对话功能：/ }));
+    const select = await screen.findByRole('combobox', { name: '代码执行编排方式' });
+    expect(select).toHaveValue('on');
+    await user.selectOptions(select, 'only');
+    expect(select).toHaveValue('on');
+    expect(select).toBeDisabled();
+    expect(screen.getByText('正在保存…')).toBeInTheDocument();
+    expect(transport.requests.filter(request => request.pathId === 'agent.session.codemode.select')).toEqual([
+      expect.objectContaining({ params: { sessionId }, body: { mode: 'only' } }),
+    ]);
+    await act(async () => pending.resolve(ack));
+    await waitFor(() => expect(select).toHaveValue('only'));
+    expect(select).not.toBeDisabled();
+    expect(screen.getByRole('textbox', { name: '消息' })).toBe(editor);
+    expect(editor).toHaveValue('保留原草稿');
+    expect((editor as HTMLTextAreaElement).selectionStart).toBe(1);
+    expect((editor as HTMLTextAreaElement).selectionEnd).toBe(3);
+    expect(transport.requests.filter(request => ['agent.session.prompt', 'agent.session.model.select', 'agent.session.thinking.select'].includes(request.pathId))).toHaveLength(0);
+  });
+
+  it.each(['only', 'off'])('shows the existing native %s mode without a write', async (mode) => {
+    const { transport, user } = setup(mode);
+    await screen.findByRole('textbox', { name: '消息' });
+    await user.click(screen.getByRole('button', { name: /对话功能：/ }));
+    expect(await screen.findByRole('combobox', { name: '代码执行编排方式' })).toHaveValue(mode);
+    expect(transport.requests.filter(request => request.pathId === 'agent.session.codemode.select')).toHaveLength(0);
+  });
+  it('does not replay a pending selection when duplicate change events arrive', async () => {
+    const pending = deferred<unknown>();
+    const { transport, user } = setup('on', pending.promise);
+    await screen.findByRole('textbox', { name: '消息' });
+    await user.click(screen.getByRole('button', { name: /对话功能：/ }));
+    const select = await screen.findByRole('combobox', { name: '代码执行编排方式' });
+    fireEvent.change(select, { target: { value: 'only' } });
+    fireEvent.change(select, { target: { value: 'off' } });
+    expect(transport.requests.filter(request => request.pathId === 'agent.session.codemode.select')).toHaveLength(1);
+    await act(async () => pending.resolve(ack));
+    expect(select).toHaveValue('only');
+  });
+  it.each([
+    ['foreign Session', { ...ack, sessionId: 'another-session' }],
+    ['unsupported capability', { ...ack, capability: { ...ack.capability, available: false } }],
+    ['malformed ACK', { ok: true, codemodeMode: 'only' }],
+  ])('keeps the original mode and draft after a %s ACK', async (_label, receipt) => {
+    const { transport, user } = setup('on', receipt);
+    const editor = await screen.findByRole('textbox', { name: '消息' });
+    await user.click(screen.getByRole('button', { name: /对话功能：/ }));
+    const select = await screen.findByRole('combobox', { name: '代码执行编排方式' });
+    await user.selectOptions(select, 'only');
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+    expect(select).toHaveValue('on');
+    expect(select).not.toBeDisabled();
+    expect(editor).toHaveValue('保留原草稿');
+    expect(transport.requests.filter(request => request.pathId === 'agent.session.codemode.select')).toHaveLength(1);
+  });
+  it('keeps the original mode after an unknown transport outcome without retrying', async () => {
+    let reject!: (reason: Error) => void;
+    const pending = new Promise((_resolve, rejectPromise) => { reject = rejectPromise; });
+    const { transport, user } = setup('on', pending);
+    await screen.findByRole('textbox', { name: '消息' });
+    await user.click(screen.getByRole('button', { name: /对话功能：/ }));
+    const select = await screen.findByRole('combobox', { name: '代码执行编排方式' });
+    await user.selectOptions(select, 'only');
+    await act(async () => reject(new Error('worker_unavailable')));
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(select).toHaveValue('on');
+    expect(select).not.toBeDisabled();
+    expect(transport.requests.filter(request => request.pathId === 'agent.session.codemode.select')).toHaveLength(1);
+  });
+  it.each(['next-session', sessionId])('ignores a late original ACK after switching transport to %s', async (nextId) => {
+    const pending = deferred<unknown>();
+    const { view, user } = setup('on', pending.promise);
+    await screen.findByRole('textbox', { name: '消息' });
+    await user.click(screen.getByRole('button', { name: /对话功能：/ }));
+    await user.selectOptions(await screen.findByRole('combobox', { name: '代码执行编排方式' }), 'only');
+    const next = new StubControlTransport('mock', { ...idleSessionRoutes(),
+      'agent.session.snapshot': { messages: [], liveEvents: [], lastSequence: 0, resumeToken: '', status: 'active',
+        sessionId: nextId, codemodeMode: 'off' } });
+    view.rerender(workspace(next, nextId, '新对话草稿'));
+    const opener = screen.getByRole('button', { name: /对话功能：/ });
+    if (opener.getAttribute('aria-expanded') === 'false') await user.click(opener);
+    const select = await screen.findByRole('combobox', { name: '代码执行编排方式' });
+    await waitFor(() => expect(select).toHaveValue('off'));
+    await act(async () => pending.resolve(ack));
+    expect(select).toHaveValue('off');
+    expect(select).not.toBeDisabled();
+    expect(next.requests.filter(request => request.pathId === 'agent.session.codemode.select')).toHaveLength(0);
+  });
+  it('locks composition changes during the original turn while keeping its mode visible', async () => {
+    const { transport, user } = setup();
+    await screen.findByRole('textbox', { name: '消息' });
+    await user.click(screen.getByRole('button', { name: /对话功能：/ }));
+    const select = await screen.findByRole('combobox', { name: '代码执行编排方式' });
+    act(() => emitStreamDelta(transport, sessionId));
+    expect(select).toHaveValue('on');
+    await waitFor(() => expect(select).toBeDisabled());
+    fireEvent.change(select, { target: { value: 'off' } });
+    expect(transport.requests.filter(request => request.pathId === 'agent.session.codemode.select')).toHaveLength(0);
+  });
+
+  it('reflects a committed native configuration event without issuing another command', async () => {
+    const { transport, user } = setup();
+    await screen.findByRole('textbox', { name: '消息' });
+    await user.click(screen.getByRole('button', { name: /对话功能：/ }));
+    const select = await screen.findByRole('combobox', { name: '代码执行编排方式' });
+    act(() => transport.emit('agent.session.events', parseAgentEvent({
+      schemaVersion: 'rag-ime.agent-event.v1', eventId: `${sessionId}:1`, sessionId,
+      turnId: '', sequence: 1, createdAtMs: 1, eventType: 'session_configuration_changed',
+      payload: { kind: 'codemode', codemodeMode: 'off' }, resumeToken: `${sessionId}:1`,
+    })));
+    await waitFor(() => expect(select).toHaveValue('off'));
+    expect(transport.requests.filter(request => request.pathId === 'agent.session.codemode.select')).toHaveLength(0);
+  });
+  it('waits for the original HTTP ACK even when its configuration event arrives first', async () => {
+    const pending = deferred<unknown>();
+    const { transport, user } = setup('on', pending.promise);
+    await screen.findByRole('textbox', { name: '消息' });
+    await user.click(screen.getByRole('button', { name: /对话功能：/ }));
+    const select = await screen.findByRole('combobox', { name: '代码执行编排方式' });
+    await user.selectOptions(select, 'only');
+    act(() => transport.emit('agent.session.events', parseAgentEvent({
+      schemaVersion: 'rag-ime.agent-event.v1', eventId: `${sessionId}:1`, sessionId,
+      turnId: '', sequence: 1, createdAtMs: 1, eventType: 'session_configuration_changed',
+      payload: { kind: 'codemode', codemodeMode: 'only' }, resumeToken: `${sessionId}:1`,
+    })));
+    await waitFor(() => expect(screen.getByRole('button', { name: /对话功能：/ })).toBeInTheDocument());
+    expect(select).toHaveValue('on');
+    expect(select).toBeDisabled();
+    await act(async () => pending.resolve(ack));
+    expect(select).toHaveValue('only');
+    expect(transport.requests.filter(request => request.pathId === 'agent.session.codemode.select')).toHaveLength(1);
+  });
+  it.each([null, 'unsupported'])('does not fabricate support for native mode %s', async (mode) => {
+    const { transport, user } = setup(mode);
+    await screen.findByRole('textbox', { name: '消息' });
+    await user.click(screen.getByRole('button', { name: /对话功能：/ }));
+    expect(screen.queryByRole('combobox', { name: '代码执行编排方式' })).not.toBeInTheDocument();
+    expect(transport.requests.filter(request => request.pathId === 'agent.session.codemode.select')).toHaveLength(0);
+  });
+});
+
+describe('bounded recent typed file receipts in the formal v2 consumer', () => {
+  it('keeps four distinct receipts clickable without guessing bold basenames or restoring full history', async () => {
+    const sessionId = 'public-recent-receipts';
+    const files = [34, 55, 176, 297].map((byteSize, index) => ({
+      schemaVersion: 'rag-ime.agent-block.v1', id: `file:${index}`, type: 'file', status: 'completed',
+      presentationKind: 'file', visibility: 'private_session', generation: 0,
+      ref: `block:public-receipt-${index}`, digest: String(index + 1).repeat(64),
+      source: { kind: 'pi_runtime_event', ref: `${sessionId}:native-entry` },
+      data: { mediaId: `media_public_receipt_${String(index).padStart(24, '0')}`, sessionId,
+        fileName: index < 2 ? 'result.txt' : 'result.txt.diff', mimeType: 'text/plain', byteSize,
+        sha256: String(index + 1).repeat(64), receiptUrl: `/api/agent/media/media_public_receipt_${String(index).padStart(24, '0')}/content?sessionId=${sessionId}` },
+    }));
+    const original = { schemaVersion: 'rag-ime.agent-message.v1', id: 'native-entry', sessionId,
+      turnId: 'public-turn', role: 'assistant', status: 'completed', attachments: [], citations: [], createdAtMs: 100,
+      blocks: [{ id: 'text:public', type: 'text', status: 'completed', presentationKind: 'markdown', data: { text: '**result.txt** public receipt fixture' } }, ...files] };
+    const transport = new StubControlTransport('mock', { ...idleSessionRoutes(),
+      'agent.session.snapshot': (request: ControlRequest) => {
+        expect(request.query?.view).toBe('recent');
+        return { schemaVersion: 'rag-ime.agent-messages.v1', sessionId, items: [original], status: 'idle',
+          partial: true, snapshotScope: 'recent', runtimeQuiescent: true, lastSequence: 0, liveEvents: [] };
+      }, 'agent.media.preview': () => new Promise(() => {}) });
+    const { container } = render(<ControlTransportProvider transport={transport}><TooltipProvider>
+      <PawOsDesktopProvider openRoute={vi.fn()} openWindow={vi.fn()}>
+        <PawSessionWorkspace record={{ ...liveSession(), id: sessionId, workspaceRoots: ['/'] }} recordId={sessionId}
+          appearance="full" showComposerControls initialDraft="public unsaved draft"
+          onNewWork={vi.fn()} onSessionCreated={vi.fn()} onSessionUpdated={vi.fn()} />
+      </PawOsDesktopProvider>
+    </TooltipProvider></ControlTransportProvider>);
+    const address = agentSessionAddress(transport, sessionId);
+    await waitFor(() => expect(useAgentLiveStore.getState().projections[agentProjectionKey(address)]?.messagesById[original.id]).toBeDefined());
+    const message = useAgentLiveStore.getState().projections[agentProjectionKey(address)]?.messagesById[original.id];
+    expect(message?.blocks.filter(block => block.type === 'file')).toHaveLength(4);
+    expect(container.querySelector('.paw-session-workspace')).toHaveAttribute('data-chat-presentation-version', 'v2');
+    const buttons = within(screen.getByRole('region', { name: '结果文件' })).getAllByRole('button', { name: /展开 result.txt/ });
+    expect(buttons).toHaveLength(4);
+    expect(screen.queryByRole('link', { name: '打开文件 result.txt' })).not.toBeInTheDocument();
+    const user = userEvent.setup();
+    for (const button of buttons) await user.click(button);
+    const requests = transport.requests.filter(request => request.pathId === 'agent.media.preview');
+    expect(requests.map(request => [request.params?.mediaId, request.query?.sessionId, request.query?.sha256])).toEqual(
+      files.map(block => [block.data.mediaId, sessionId, block.data.sha256]));
+    expect(screen.getByRole('textbox', { name: '消息' })).toHaveValue('public unsaved draft');
+    expect(transport.requests.filter(request => request.pathId === 'agent.session.prompt')).toHaveLength(0);
+  });
+});

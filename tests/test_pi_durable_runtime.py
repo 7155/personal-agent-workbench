@@ -590,7 +590,13 @@ class PiDurableRuntimeTests(unittest.TestCase):
 
     def test_public_full_and_recent_snapshot_preserve_authoritative_recovery_identity(self):
         blocks = Mock()
-        blocks.hydrate_messages.side_effect = lambda _id, messages: messages
+        def hydrate_original(_id, messages, *, native_pi_session_id):
+            self.assertEqual(_id, self.session_id)
+            self.assertEqual(native_pi_session_id, self.host.snapshot["piSessionId"])
+            return messages
+
+        blocks.hydrate_messages.side_effect = hydrate_original
+        blocks.hydrate_recent_messages.side_effect = hydrate_original
         projection = AgentMessageSnapshotService(sessions=self.store, runtime_provider=lambda: self.runtime,
             workflow_projector=lambda _: {"todo": {}, "goal": {}, "actGate": {}}, agent_blocks=blocks,
             media=Mock(), observations=Mock(snapshot=Mock(return_value={"items": []})), events=self.events,
@@ -604,6 +610,8 @@ class PiDurableRuntimeTests(unittest.TestCase):
                 self.assertTrue(result["recoverable"])
                 self.assertTrue(result["projectionCurrent"])
                 self.assertEqual(result["activeTurn"], {"turnId": "original-input", "clientMessageId": "original-client"})
+        self.assertEqual(blocks.hydrate_messages.call_count, 1)
+        self.assertEqual(blocks.hydrate_recent_messages.call_count, 1)
         self.assertFalse(any(method in {"session.prompt", "session.resume"} for method, _ in self.host.calls))
 
     def test_completed_idle_host_reopen_projects_no_recovery_and_admits_distinct_prompt(self):
@@ -624,7 +632,13 @@ class PiDurableRuntimeTests(unittest.TestCase):
 
         self.host.send = send
         blocks = Mock()
-        blocks.hydrate_messages.side_effect = lambda _id, messages: messages
+        def hydrate_original(_id, messages, *, native_pi_session_id):
+            self.assertEqual(_id, self.session_id)
+            self.assertEqual(native_pi_session_id, self.host.snapshot["piSessionId"])
+            return messages
+
+        blocks.hydrate_messages.side_effect = hydrate_original
+        blocks.hydrate_recent_messages.side_effect = hydrate_original
         projection = AgentMessageSnapshotService(sessions=self.store, runtime_provider=lambda: self.runtime,
             workflow_projector=lambda _: {"todo": {}, "goal": {}, "actGate": {}}, agent_blocks=blocks,
             media=Mock(), observations=Mock(snapshot=Mock(return_value={"items": []})), events=self.events,
@@ -641,6 +655,8 @@ class PiDurableRuntimeTests(unittest.TestCase):
                 self.assertEqual(result["status"], "idle")
                 self.assertEqual([message["turnId"] for message in result["items"]],
                                  ["original-input", "original-input"])
+        self.assertEqual(blocks.hydrate_messages.call_count, 1)
+        self.assertEqual(blocks.hydrate_recent_messages.call_count, 1)
         self.assertFalse(any(method in {"session.prompt", "session.resume", "session.abort"}
                              for method, _ in self.host.calls))
         result = self.runtime.prompt(self.session_id, "不同的新任务", client_message_id="new-distinct-client")
@@ -720,7 +736,13 @@ class PiDurableRuntimeTests(unittest.TestCase):
     def test_compaction_projection_preserves_target_full_and_recent(self):
         target = self.compaction_host()
         blocks = Mock()
-        blocks.hydrate_messages.side_effect = lambda _id, messages: messages
+        def hydrate_original(_id, messages, *, native_pi_session_id):
+            self.assertEqual(_id, self.session_id)
+            self.assertEqual(native_pi_session_id, self.host.snapshot["piSessionId"])
+            return messages
+
+        blocks.hydrate_messages.side_effect = hydrate_original
+        blocks.hydrate_recent_messages.side_effect = hydrate_original
         projection = AgentMessageSnapshotService(sessions=self.store, runtime_provider=lambda: self.runtime,
             workflow_projector=lambda _: {"todo": {}, "goal": {}, "actGate": {}}, agent_blocks=blocks,
             media=Mock(), observations=Mock(snapshot=Mock(return_value={"items": []})), events=self.events,
@@ -732,6 +754,8 @@ class PiDurableRuntimeTests(unittest.TestCase):
             self.assertIsNone(result["activeTurn"])
             self.assertEqual(result["status"], "busy")
             self.assertTrue(result["recoverable"])
+        self.assertEqual(blocks.hydrate_messages.call_count, 1)
+        self.assertEqual(blocks.hydrate_recent_messages.call_count, 1)
 
     def test_compaction_control_requires_new_host_capability(self):
         target = self.compaction_host()
@@ -1069,7 +1093,13 @@ class PiDurableRuntimeTests(unittest.TestCase):
         self.store.set_status(self.session_id, "busy", message_count=64)
         self.host.snapshot.update(partial=True, historyCursor="older")
         blocks = Mock()
-        blocks.hydrate_messages.side_effect = lambda _id, messages: messages
+        def hydrate_original(_id, messages, *, native_pi_session_id):
+            self.assertEqual(_id, self.session_id)
+            self.assertEqual(native_pi_session_id, self.host.snapshot["piSessionId"])
+            return messages
+
+        blocks.hydrate_messages.side_effect = hydrate_original
+        blocks.hydrate_recent_messages.side_effect = hydrate_original
         projection = AgentMessageSnapshotService(sessions=self.store, runtime_provider=lambda: self.runtime,
             workflow_projector=lambda _: {"todo": {}, "goal": {}, "actGate": {}}, agent_blocks=blocks,
             media=Mock(), observations=Mock(snapshot=Mock(return_value={"items": []})), events=self.events,
@@ -1079,6 +1109,8 @@ class PiDurableRuntimeTests(unittest.TestCase):
             result = projection.messages(self.session_id, view=view)
             self.assertTrue(result["partial"])
             self.assertEqual(self.store.get(self.session_id)["messageCount"], 64)
+        self.assertEqual(blocks.hydrate_messages.call_count, 1)
+        self.assertEqual(blocks.hydrate_recent_messages.call_count, 1)
 
     def test_final_message_settlement_does_not_replace_durable_history_count_with_context_count(self):
         self.open()
