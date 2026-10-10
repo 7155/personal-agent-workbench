@@ -1975,6 +1975,12 @@ function fxActivityHint(
   // stop an unbounded receipt from riding in the DOM — not decide how much of
   // it the reader gets to see. 96 characters was doing the latter.
   const hint = boundedInlineSummary(raw, 200);
+  // A title plus the same state adds no object/result to the scan lane. Keep
+  // the original receipt in disclosure; concrete targets and errors stay here.
+  const stateOnly = activity.status === 'running' ? '正在处理'
+    : activity.status === 'failed' ? '执行失败'
+      : activity.status === 'aborted' ? '已停止' : '已完成';
+  if (toolView && !toolView.error && hint === `${label} ${stateOnly}`) return '';
   return hint === label || hint === `${label}已更新` ? '' : hint;
 }
 

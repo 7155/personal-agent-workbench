@@ -2203,6 +2203,53 @@ describe('Agent chat rendering', () => {
     expect(container.querySelector('.agent-assistant-turn')).not.toBeInTheDocument();
   });
 
+  it.each(['local-request', 'native-aborting'] as const)('keeps exact Stop pending over a provisional failed transcript (%s)', owner => {
+    const sessionId = 'session-1'; const turnId = 'turn-1';
+    const failed = { ...assistantMessage(sessionId, turnId, '保留的原回复', 2), status: 'failed' as const };
+    useAgentLiveStore.getState().hydrateSnapshot(sessionId, {
+      messages: [userMessage(sessionId, turnId), failed], liveEvents: [], lastSequence: 0,
+      resumeToken: '', status: owner === 'native-aborting' ? 'aborting' : 'busy', partial: true,
+    });
+    const view = render(<AgentTurn sessionId={sessionId} turnId={turnId} presentation="fx"
+      stoppingTurn={owner === 'local-request' ? { sessionId, turnId } : undefined}
+      onContinueTurn={() => true} onSwitchModel={() => {}} onApprovalDecision={() => {}} />);
+    expect(screen.getByText('正在停止')).toBeInTheDocument();
+    expect(screen.getByText('正在取消当前模型与工具执行。')).toBeInTheDocument();
+    expect(view.container.querySelector('.agent-turn__failure')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Trace Agent|继续|重试|切换模型/ })).not.toBeInTheDocument();
+    expect(useAgentLiveStore.getState().projections[sessionId]?.messagesById[failed.id]?.status).toBe('failed');
+    act(() => useAgentLiveStore.getState().applyEvents(sessionId, [agentEventFixture(1, 'turn_completed', { status: 'aborted' })]));
+    expect(screen.queryByText('正在停止')).not.toBeInTheDocument();
+    expect(view.container.querySelector('.agent-turn__failure')).not.toBeInTheDocument();
+    expect(useAgentLiveStore.getState().projections[sessionId]?.turnsById[turnId]?.status).toBe('aborted');
+  });
+
+  it.each([
+    { sessionId: 'foreign-session', turnId: 'turn-1' },
+    { sessionId: 'session-1', turnId: 'older-turn' },
+    undefined,
+  ])('keeps ordinary failures visible without the exact Stop owner (%j)', stoppingTurn => {
+    useAgentLiveStore.getState().hydrateSnapshot('session-1', {
+      messages: [userMessage('session-1', 'turn-1'), { ...assistantMessage('session-1', 'turn-1', '', 2), status: 'failed' }],
+      liveEvents: [], lastSequence: 0, resumeToken: '', status: 'failed', partial: true,
+    });
+    const view = render(<AgentTurn sessionId="session-1" turnId="turn-1" stoppingTurn={stoppingTurn}
+      onSwitchModel={() => {}} onApprovalDecision={() => {}} />);
+    expect(view.container.querySelector('.agent-turn__failure')).toHaveTextContent('本轮未完成');
+    expect(screen.queryByText('正在取消当前模型与工具执行。')).not.toBeInTheDocument();
+  });
+
+  it('keeps an exact typed terminal failure visible even while the Stop presentation prop lags', () => {
+    useAgentLiveStore.getState().hydrateSnapshot('session-1', {
+      messages: [userMessage('session-1', 'turn-1')], liveEvents: [], lastSequence: 0, resumeToken: '', status: 'busy',
+    });
+    useAgentLiveStore.getState().applyEvents('session-1', [agentEventFixture(1, 'turn_failed', { error: '工具进程退出，结果校验失败' })]);
+    const view = render(<AgentTurn sessionId="session-1" turnId="turn-1" stoppingTurn={{ sessionId: 'session-1', turnId: 'turn-1' }}
+      onSwitchModel={() => {}} onApprovalDecision={() => {}} />);
+    expect(view.container.querySelector('.agent-turn__failure')).toHaveTextContent('工具进程退出，结果校验失败');
+    expect(screen.queryByText('正在取消当前模型与工具执行。')).not.toBeInTheDocument();
+  });
+
   it('shows the stopping transition while the terminal receipt is pending', () => {
     const sessionId = 'session-1';
     const turnId = 'turn-1';

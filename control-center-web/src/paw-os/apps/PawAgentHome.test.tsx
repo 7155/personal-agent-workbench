@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ControlTransportProvider } from '@/app/control-transport';
@@ -14,6 +14,7 @@ import { ControlTransportHttpError } from '@/platform/http-transport';
 import { MockControlTransport, type MockRouteHandler } from '@/test/mock-transport';
 import agentNextCss from '../styles/paw-os-agent-next.css?raw';
 import { PawAgentHome } from './PawAgentHome';
+import { PawSessionWorkspace } from './PawSessionWorkspace';
 import { warmAgentWorkspace } from './agent-workspace-loader';
 
 vi.mock('./agent-workspace-loader', async importOriginal => ({
@@ -30,6 +31,138 @@ afterEach(() => {
 });
 
 describe('PAWOS Agent Home 首屏合同', () => {
+  it.each([
+    { phase: 'model', newerDraft: '' },
+    { phase: 'thinking', newerDraft: '' },
+    { phase: 'attachments', newerDraft: '' },
+    { phase: 'model', newerDraft: 'public newer draft\nkeep this complete text' },
+  ] as const)('cancels the original Home intent through real Session Stop while $phase is pending (newer draft: $newerDraft)', async ({ phase, newerDraft }) => {
+    const originalText = 'public original line with whitespace\n'.repeat(40);
+    let releaseImport!: (value: PickedFile[]) => void;
+    const pendingImport = new Promise<PickedFile[]>(resolve => { releaseImport = resolve; });
+    const importFiles = vi.fn(() => pendingImport);
+    let releaseModel!: (value: unknown) => void;
+    const pendingModel = new Promise(resolve => { releaseModel = resolve; });
+    let created: SessionSummary | undefined;
+    const setup = renderHome({
+      modelReference: 'gpt/gpt-5.6-luna', models: [model('gpt-5.6-luna', 'GPT-5.6 Luna')],
+      onCreated: (_selection, record) => { created = record; },
+      modelRoute: () => phase === 'model' ? pendingModel : { ok: true },
+      thinkingRoute: () => phase === 'thinking' ? pendingModel : { ok: true },
+      ...(phase === 'attachments' ? { imagePaste: importFiles } : {}),
+      workspaceRoutes: {
+        'agent.session.snapshot': { messages: [], liveEvents: [], lastSequence: 0, resumeToken: '', status: 'idle' },
+        'agent.session.models': {}, 'agent.session.commands': {}, 'agent.tools.list': {}, 'agent.runtime.get': {},
+        // This is an idle abort ACK, not Pi cancellation of a future Prompt.
+        'agent.session.abort': { ok: true, runtimeReceipt: { pendingAdmission: false }, backgroundJobs: { drained: true, pendingJobIds: [] } },
+      },
+    });
+    const homeInput = screen.getByRole('textbox', { name: '描述你想完成的工作' });
+    fireEvent.change(homeInput, { target: { value: originalText } });
+    if (phase === 'attachments') fireEvent.paste(homeInput, { clipboardData: { files: [new File(['public'], 'public.txt', { type: 'text/plain' })], items: [], getData: () => '' } });
+    await userEvent.setup().click(screen.getByRole('button', { name: '开始 Session' }));
+    await waitFor(() => expect(created).toBeDefined());
+    if (phase === 'attachments') await waitFor(() => expect(importFiles).toHaveBeenCalledTimes(1));
+    else await waitFor(() => expect(setup.transport.requests.filter(x => x.request.pathId === (phase === 'model' ? 'agent.session.model.select' : 'agent.session.thinking.select'))).toHaveLength(1));
+    const address = agentSessionAddress(setup.transport, created!.id);
+    const projection = homeProjection(setup.transport)!;
+    const [clientMessageId, messageId] = Object.entries(projection.optimisticByClientMessageId)[0]!;
+    expect(projection.messagesById[messageId]?.blocks[0]?.data.text).toBe(originalText.trim());
+    setup.rerender(<QueryClientProvider client={setup.client}><ControlTransportProvider transport={setup.transport}><TooltipProvider>
+      <PawSessionWorkspace record={created} recordId={created!.id} onNewWork={vi.fn()} onSessionCreated={vi.fn()} onSessionUpdated={vi.fn()} />
+    </TooltipProvider></ControlTransportProvider></QueryClientProvider>);
+    if (newerDraft) fireEvent.change(await screen.findByRole('textbox', { name: '消息' }), { target: { value: newerDraft } });
+    await userEvent.setup().click((await screen.findAllByRole('button', { name: '停止当前回合' }))[0]!);
+    await waitFor(() => expect(setup.transport.requests.filter(x => x.request.pathId === 'agent.session.abort')).toHaveLength(1));
+    await act(async () => {
+      releaseModel({ ok: true });
+      releaseImport([{ id: 'public-imported-file', name: 'public.txt', mimeType: 'text/plain', byteSize: 6, sha256: 'a'.repeat(64), sessionId: created!.id }]);
+    });
+    expect(setup.transport.requests.filter(x => x.request.pathId === 'agent.session.prompt')).toHaveLength(0);
+    await waitFor(() => expect(screen.getByRole('textbox', { name: '消息' })).toHaveValue(newerDraft || originalText.trim()));
+    expect(setup.transport.requests.filter(x => x.request.pathId === 'agent.session.thinking.select')).toHaveLength(phase === 'thinking' ? 1 : 0);
+    expect(selectAgentProjection(useAgentLiveStore.getState(), address)?.optimisticByClientMessageId[clientMessageId]).toBe(messageId);
+    expect(selectAgentProjection(useAgentLiveStore.getState(), address)?.messagesById[messageId]?.blocks[0]?.data.text).toBe(originalText.trim());
+    expect(selectAgentProjection(useAgentLiveStore.getState(), address)?.turnsById[projection.messagesById[messageId]!.turnId]?.status).toBe('aborted');
+    if (phase === 'attachments') expect(selectAgentProjection(useAgentLiveStore.getState(), address)?.messagesById[messageId]?.attachments).toEqual(['public-imported-file']);
+  });
+
+  it.each(['append', 'handoff'] as const)('releases the exact Home preparation after %s setup throws', async failure => {
+    const owner = useAgentLiveStore.getState();
+    const registered: Parameters<typeof owner.prepareHomePrompt>[] = [];
+    const originalPrepare = owner.prepareHomePrompt;
+    const prepare = vi.spyOn(owner, 'prepareHomePrompt').mockImplementation((...args) => {
+      registered.push(args);
+      return originalPrepare(...args);
+    });
+    const error = new Error(`public ${failure} setup rejected`);
+    const append = failure === 'append' ? vi.spyOn(owner, 'appendOptimistic').mockImplementation(() => { throw error; }) : undefined;
+    const onCreated = vi.fn(() => { if (failure === 'handoff') throw error; });
+    try {
+      const { transport } = renderHome({ onCreated });
+      fireEvent.change(screen.getByRole('textbox', { name: '描述你想完成的工作' }), { target: { value: 'public retained setup draft' } });
+      await userEvent.setup().click(screen.getByRole('button', { name: '开始 Session' }));
+      expect(await screen.findByText(error.message)).toBeVisible();
+      expect(registered).toHaveLength(1);
+      const [address, clientMessageId] = registered[0]!;
+      expect(useAgentLiveStore.getState().cancelHomePrompt(address, clientMessageId)).toBe(false);
+      expect(transport.requests.filter(x => x.request.pathId === 'agent.session.prompt')).toHaveLength(0);
+      expect(transport.requests.filter(x => x.request.pathId === 'agent.session.model.select')).toHaveLength(0);
+      expect(screen.getByRole('textbox', { name: '描述你想完成的工作' })).toHaveValue('public retained setup draft');
+      expect(onCreated).toHaveBeenCalledTimes(failure === 'handoff' ? 1 : 0);
+    } finally {
+      for (const [address, clientMessageId] of registered) useAgentLiveStore.getState().cancelHomePrompt(address, clientMessageId);
+      append?.mockRestore();
+      prepare.mockRestore();
+    }
+  });
+
+  it('holds the exact first message until model ACK then thinking ACK, even after Home unmount', async () => {
+    let modelAck!: (value: unknown) => void;
+    let thinkingAck!: (value: unknown) => void;
+    const modelPending = new Promise(resolve => { modelAck = resolve; });
+    const thinkingPending = new Promise(resolve => { thinkingAck = resolve; });
+    const onCreated = vi.fn();
+    const { transport, unmount } = renderHome({
+      modelReference: 'gpt/gpt-5.6-luna', models: [model('gpt-5.6-luna', 'GPT-5.6 Luna')],
+      onCreated, modelRoute: () => modelPending, thinkingRoute: () => thinkingPending,
+    });
+    const input = screen.getByRole('textbox', { name: '描述你想完成的工作' });
+    fireEvent.change(input, { target: { value: 'public deferred first message' } });
+    await userEvent.setup().click(screen.getByRole('button', { name: '开始 Session' }));
+    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(transport.requests.filter(x => x.request.pathId === 'agent.session.model.select')).toHaveLength(1));
+    try {
+      expect(transport.requests.filter(x => x.request.pathId === 'agent.session.thinking.select')).toHaveLength(0);
+      expect(transport.requests.filter(x => x.request.pathId === 'agent.session.prompt')).toHaveLength(0);
+      unmount();
+      modelAck({ ok: true });
+      await waitFor(() => expect(transport.requests.filter(x => x.request.pathId === 'agent.session.thinking.select')).toHaveLength(1));
+      expect(transport.requests.filter(x => x.request.pathId === 'agent.session.prompt')).toHaveLength(0);
+      thinkingAck({ ok: true });
+      await waitFor(() => expect(transport.requests.filter(x => x.request.pathId === 'agent.session.prompt')).toHaveLength(1));
+      const prompt = transport.requests.find(x => x.request.pathId === 'agent.session.prompt')!.request;
+      expect(prompt.params).toEqual({ sessionId: 'session-created' });
+      expect(prompt.body).toMatchObject({ message: 'public deferred first message' });
+      const projection = homeProjection(transport)!;
+      expect(Object.values(projection.messagesById).filter(x => x.blocks[0]?.data.text === 'public deferred first message')).toHaveLength(1);
+    } finally { modelAck({ ok: true }); thinkingAck({ ok: true }); }
+  });
+
+  it('does not send the first prompt after model rejection and retains the original failed message', async () => {
+    const { transport } = renderHome({
+      modelReference: 'gpt/gpt-5.6-luna', models: [model('gpt-5.6-luna', 'GPT-5.6 Luna')],
+      modelRoute: () => { throw new Error('public model selection rejected'); },
+      thinkingRoute: { ok: true },
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: '描述你想完成的工作' }), { target: { value: 'public retained unsent message' } });
+    await userEvent.setup().click(screen.getByRole('button', { name: '开始 Session' }));
+    await waitFor(() => expect(Object.values(homeProjection(transport)?.messagesById ?? {}).some(x => x.status === 'failed')).toBe(true), { timeout: 1000 });
+    expect(transport.requests.filter(x => x.request.pathId === 'agent.session.thinking.select')).toHaveLength(0);
+    expect(transport.requests.filter(x => x.request.pathId === 'agent.session.prompt')).toHaveLength(0);
+    expect(Object.values(homeProjection(transport)!.messagesById)).toEqual([expect.objectContaining({ status: 'failed', blocks: [expect.objectContaining({ data: expect.objectContaining({ text: 'public retained unsent message' }) })] })]);
+  });
+
   it('keeps Durable unavailable in settings until the owned Host advertises it', async () => {
     renderHome();
     expect(screen.queryByRole('combobox', { name: '会话执行方式' })).not.toBeInTheDocument();
@@ -774,6 +907,9 @@ function renderHome({
   promptRoute = { ok: true },
   continuityRoute,
   createRoute,
+  modelRoute,
+  thinkingRoute,
+  workspaceRoutes,
 }: {
   interfaceMode?: 'traditional' | 'jev';
   durableAvailable?: boolean;
@@ -786,6 +922,9 @@ function renderHome({
   promptRoute?: MockRouteHandler;
   continuityRoute?: MockRouteHandler;
   createRoute?: MockRouteHandler;
+  modelRoute?: MockRouteHandler;
+  thinkingRoute?: MockRouteHandler;
+  workspaceRoutes?: Record<string, MockRouteHandler>;
 } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const transport = new MockControlTransport({
@@ -816,6 +955,9 @@ function renderHome({
         },
       },
       'agent.session.prompt': promptRoute,
+      ...workspaceRoutes,
+      ...(modelRoute ? { 'agent.session.model.select': modelRoute } : {}),
+      ...(thinkingRoute ? { 'agent.session.thinking.select': thinkingRoute } : {}),
       ...(continuityRoute ? { 'agent.continuity.read': continuityRoute } : {}),
     },
     ...(imagePaste ? { imagePaste } : {}),
@@ -841,7 +983,7 @@ function renderHome({
       </ControlTransportProvider>
     </QueryClientProvider>,
   );
-  return { ...rendered, transport };
+  return { ...rendered, transport, client };
 }
 
 function model(id: string, name: string): PiModelOption {

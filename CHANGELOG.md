@@ -5,6 +5,21 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Keep the original turn's Stop feedback visible until its terminal arrives.
+  Ignore older turns for local Stop state and retain genuine failure details.
+
+- Keep Tool scan rows concise without hiding concrete results or errors, and
+  distinguish local prediction and knowledge readiness from Session model health.
+
+- Wait for explicit model and thinking choices before sending the first Home
+  message. Keep unsent input and attachments when preparation fails or is stopped.
+
+- Fit two-line captions and full-size actions in the collapsed desktop companion
+  by reducing whitespace while preserving its planet and readable text.
+
+- Resolve active Session planet textures from the document's public resource
+  root so packaged stylesheets retain the correct HTTP and portable file paths.
+
 - Display exact pending-input and successful-completion satellite signals through
   the existing desktop companion, without replaying historical arrivals. Improve
   the expanded planet mouth and caption readability.

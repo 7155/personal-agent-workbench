@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PawStellarBackdrop } from './PawStellarBackdrop';
@@ -104,5 +106,40 @@ describe('stellar wallpaper suspension', () => {
     expect(remove).toHaveBeenCalledWith('pointermove', expect.any(Function));
     expect(remove).toHaveBeenCalledWith('pointerleave', expect.any(Function));
     expect(media.get('(hover: hover) and (pointer: fine)')!.listeners.size).toBe(0);
+  });
+});
+
+
+describe('stellar public textures across packaged stylesheet bases', () => {
+  it.each([
+    'http://127.0.0.1:8768/index.html?controlTransport=http#/agent',
+    'https://example.test/paw/index.html#/agent',
+    'file:///Applications/PAW%20Test.app/Contents/Resources/web/index.html',
+  ])('anchors all six identity textures to the document public root: %s', async (documentUrl) => {
+    vi.resetModules();
+    vi.stubEnv('BASE_URL', './');
+    const { StellarAgentField } = await import('./StellarAgentField');
+    const base = vi.spyOn(document, 'baseURI', 'get').mockReturnValue(documentUrl);
+    try {
+      const projection = projectStellarAgents({ nowMs: 1000, sessions: [{ id: 'agent:public', title: 'Public fixture', status: 'busy' }], rooms: [], sessionStatusFresh: true, roomStatusFresh: true });
+      const expectedNames = ['earth', 'mars', 'jupiter', 'neptune', 'venus', 'saturn'];
+      for (let palette = 0; palette < expectedNames.length; palette++) {
+        projection.runningPlanets[0]!.style.paletteIndex = palette;
+        const view = render(<StellarAgentField projection={projection} />);
+        const planet = view.container.querySelector<HTMLElement>('[data-agent-session="agent:public"]')!;
+        const css = planet.style.getPropertyValue('--stellar-texture');
+        const match = /^url\("([^"\n]+)"\)$/.exec(css);
+        expect(match).not.toBeNull();
+        const asset = `paw-media/starfield/${expectedNames[palette]}-1k.jpg`;
+        const expected = new URL(asset, documentUrl).href;
+        const stylesheet = new URL('assets/PawOsApp.css', documentUrl).href;
+        expect(new URL(match![1]!, stylesheet).href).toBe(expected);
+        expect(new URL(match![1]!, documentUrl).href).toBe(expected);
+        expect(existsSync(resolve(process.cwd(), 'public', asset))).toBe(true);
+        expect(planet).toHaveAttribute('data-running', 'true');
+        expect(planet.querySelector('strong')).toHaveTextContent('Public fixture');
+        view.unmount();
+      }
+    } finally { base.mockRestore(); vi.unstubAllEnvs(); }
   });
 });

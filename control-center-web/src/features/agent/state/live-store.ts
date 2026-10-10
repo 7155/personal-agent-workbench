@@ -90,8 +90,19 @@ interface AgentSnapshotHydrationOptions {
   controlMetadataSequence?: number;
 }
 
+/** One cancellable browser-side Home intent, consumed synchronously at send.
+ * It never represents native delivery or a Runtime cancellation receipt. */
+interface HomePromptPreparation {
+  signal: AbortSignal;
+  beginAdmission(): boolean;
+  release(): void;
+}
+const homePromptPreparations = new Map<string, Map<string, AbortController>>();
+
 interface AgentLiveStore {
   projections: Record<string, AgentLiveProjection>;
+  prepareHomePrompt(target: AgentSessionTarget, clientMessageId: string): HomePromptPreparation;
+  cancelHomePrompt(target: AgentSessionTarget, clientMessageId: string): boolean;
   setLiveOwnerActive(target: AgentSessionTarget, active: boolean): void;
   ensure(target: AgentSessionTarget): void;
   hydrate(target: AgentSessionTarget, value: unknown, options?: AgentSnapshotHydrationOptions): boolean;
@@ -140,6 +151,39 @@ interface AgentLiveStore {
 
 export const useAgentLiveStore = create<AgentLiveStore>((set, get) => ({
   projections: {},
+  prepareHomePrompt(target, clientMessageId) {
+    const key = agentProjectionKey(target);
+    const pending = homePromptPreparations.get(key) ?? new Map<string, AbortController>();
+    if (pending.has(clientMessageId)) throw new Error('Home prompt preparation already exists for this client');
+    const controller = new AbortController();
+    pending.set(clientMessageId, controller);
+    homePromptPreparations.set(key, pending);
+    const ownsPreparation = () => homePromptPreparations.get(key)?.get(clientMessageId) === controller;
+    const release = () => {
+      if (!ownsPreparation()) return;
+      pending.delete(clientMessageId);
+      if (!pending.size) homePromptPreparations.delete(key);
+    };
+    return {
+      signal: controller.signal,
+      beginAdmission: () => {
+        if (!ownsPreparation() || controller.signal.aborted) return false;
+        release();
+        return true;
+      },
+      release,
+    };
+  },
+  cancelHomePrompt(target, clientMessageId) {
+    const key = agentProjectionKey(target);
+    const pending = homePromptPreparations.get(key);
+    const controller = pending?.get(clientMessageId);
+    if (!controller) return false;
+    pending!.delete(clientMessageId);
+    if (!pending!.size) homePromptPreparations.delete(key);
+    controller.abort();
+    return true;
+  },
   setLiveOwnerActive(target, active) {
     const key = agentProjectionKey(target);
     if (active) {

@@ -431,68 +431,89 @@ export function PawAgentHome({
           executionMode,
           toolProfileVersion,
         );
-        const attachmentImport = importPendingAttachments({ sessionId });
         const pendingAttachmentIds = [
           ...pendingAttachments.map((attachment) => attachment.id),
           ...(pendingClipboardPaste ? ['pending-clipboard-image'] : []),
         ];
-        // Session existence is enough to make the user's intent visible. File
-        // import continues under that owner; local attachment identities keep
-        // the optimistic row truthful until the durable message replaces it
-        // with managed media receipts.
-        useAgentLiveStore.getState().appendOptimistic(address, {
-          clientMessageId,
-          text: message,
-          attachments: pendingAttachmentIds,
-          nowMs: Date.now(),
-        });
-        onCreated({ kind: 'session', id: sessionId }, createdSession);
-        clearPendingAttachments();
+        const preparation = useAgentLiveStore.getState().prepareHomePrompt(address, clientMessageId);
+        try {
+          // Session existence is enough to make the user's intent visible. File
+          // import continues under that owner; local attachment identities keep
+          // the optimistic row truthful until the durable message replaces it
+          // with managed media receipts.
+          useAgentLiveStore.getState().appendOptimistic(address, {
+            clientMessageId,
+            text: message,
+            attachments: pendingAttachmentIds,
+            nowMs: Date.now(),
+          });
+          onCreated({ kind: 'session', id: sessionId }, createdSession);
+          clearPendingAttachments();
+        } catch (handoffError) {
+          preparation.release();
+          throw handoffError;
+        }
         void (async () => {
-          const configuration = [] as Promise<unknown>[];
           const explicitModelSelection = preferenceEditedRef.current.modelReference
             || Boolean(preferences.modelReference && preferences.modelReference !== 'inherit');
-          if (selectedModel && explicitModelSelection) {
-            configuration.push(transport.request({
-              pathId: 'agent.session.model.select',
-              params: { sessionId },
-              body: { provider: selectedModel.provider, modelId: selectedModel.id },
-            }));
-            if (thinkingLevels.includes(thinking)) {
-              configuration.push(transport.request({
-                pathId: 'agent.session.thinking.select',
-                params: { sessionId },
-                body: { level: thinking },
-              }));
-            }
-          }
-          void Promise.allSettled(configuration);
-          let importedAttachments: PickedFile[];
           try {
-            importedAttachments = await attachmentImport;
-          } catch (attachmentError) {
-            failHomeAttachmentImportBeforeAdmission(
-              address,
-              clientMessageId,
-              attachmentError,
-            );
-            return;
-          }
-          const attachmentIds = importedAttachments.map((attachment) => attachment.id);
-          replaceHomeOptimisticAttachmentIds(address, clientMessageId, attachmentIds);
-          try {
-            const response = await transport.request<Record<string, unknown>>({
-              pathId: 'agent.session.prompt',
-              params: { sessionId },
-              body: { message, attachments: attachmentIds, clientMessageId },
-            });
-            if (isCancelledPromptAdmission(response)) {
-              useAgentLiveStore.getState().discardOptimistic(address, clientMessageId);
+            let importedAttachments: PickedFile[];
+            try {
+              importedAttachments = await importPendingAttachments({ sessionId });
+            } catch (attachmentError) {
+              if (preparation.signal.aborted) return;
+              failHomeAttachmentImportBeforeAdmission(
+                address,
+                clientMessageId,
+                attachmentError,
+              );
               return;
             }
-            useAgentLiveStore.getState().acknowledgeOptimistic(address, clientMessageId, Date.now());
-          } catch (requestError) {
-            settleHomePromptAdmissionFailure(address, clientMessageId, requestError);
+            const attachmentIds = importedAttachments.map((attachment) => attachment.id);
+            replaceHomeOptimisticAttachmentIds(address, clientMessageId, attachmentIds);
+            if (preparation.signal.aborted) return;
+            try {
+              if (selectedModel && explicitModelSelection) {
+                // Apply the captured configuration before admitting the first
+                // message. Model selection can change supported thinking levels.
+                await transport.request({
+                  pathId: 'agent.session.model.select',
+                  params: { sessionId },
+                  body: { provider: selectedModel.provider, modelId: selectedModel.id },
+                });
+                if (preparation.signal.aborted) return;
+                if (thinkingLevels.includes(thinking)) {
+                  await transport.request({
+                    pathId: 'agent.session.thinking.select',
+                    params: { sessionId },
+                    body: { level: thinking },
+                  });
+                }
+              }
+            } catch (configurationError) {
+              if (preparation.signal.aborted) return;
+              failHomePromptBeforeAdmission(address, clientMessageId, configurationError);
+              return;
+            }
+            // Claim and request are synchronous: Stop either cancels this local
+            // intent, or the original native admission/Stop fence owns it.
+            if (!preparation.beginAdmission()) return;
+            try {
+              const response = await transport.request<Record<string, unknown>>({
+                pathId: 'agent.session.prompt',
+                params: { sessionId },
+                body: { message, attachments: attachmentIds, clientMessageId },
+              });
+              if (isCancelledPromptAdmission(response)) {
+                useAgentLiveStore.getState().discardOptimistic(address, clientMessageId);
+                return;
+              }
+              useAgentLiveStore.getState().acknowledgeOptimistic(address, clientMessageId, Date.now());
+            } catch (requestError) {
+              settleHomePromptAdmissionFailure(address, clientMessageId, requestError);
+            }
+          } finally {
+            preparation.release();
           }
         })();
       } else {

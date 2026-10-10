@@ -11576,7 +11576,7 @@ def _model_status_summary(payload: Mapping[str, object]) -> str:
         return "本地预测与深度知识模型均已就绪"
     if predictor_ready:
         return "本地预测已就绪，深度知识模型当前不可用"
-    return "模型运行链路当前未就绪"
+    return "本地预测与知识模型链路尚未全部就绪"
 
 
 def _is_primary_task_session(session: Mapping[str, object]) -> bool:
