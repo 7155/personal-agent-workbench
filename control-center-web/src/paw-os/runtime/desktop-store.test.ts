@@ -147,6 +147,56 @@ describe('PAWOS desktop store', () => {
     }
   });
 
+  it('restores an ordinary frame after automatic narrow and zoom-like viewport fitting', () => {
+    const before = [window.innerWidth, window.innerHeight];
+    const viewport = (width: number, height: number) => {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: height });
+    };
+    try {
+      viewport(1440, 900);
+      const store = createPawDesktopStore('files');
+      const intended = { x: 135, y: 68, width: 1168, height: 640 };
+      store.getState().commitBounds('files', intended);
+      viewport(375, 812); store.getState().fitWindowsToViewport();
+      expect(store.getState().windows.files.bounds.width).toBe(359);
+      viewport(1440, 900); store.getState().fitWindowsToViewport();
+      expect(store.getState().windows.files.bounds).toEqual(intended);
+      viewport(720, 450); store.getState().fitWindowsToViewport();
+      expect(store.getState().windows.files.bounds.height).toBeLessThan(intended.height);
+      viewport(1440, 900); store.getState().fitWindowsToViewport();
+      expect(store.getState().windows.files.bounds).toEqual(intended);
+    } finally { viewport(before[0], before[1]); }
+  });
+
+  it.each(['same-bounds commit', 'manual resize', 'placement', 'close', 'close app', 'close all'] as const)(
+    'does not restore obsolete automatic bounds after %s', (action) => {
+      const before = [window.innerWidth, window.innerHeight];
+      const viewport = (width: number, height: number) => {
+        Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
+        Object.defineProperty(window, 'innerHeight', { configurable: true, value: height });
+      };
+      try {
+        viewport(1440, 900);
+        const store = createPawDesktopStore('files');
+        const intended = { x: 135, y: 68, width: 1168, height: 640 };
+        store.getState().commitBounds('files', intended);
+        viewport(375, 812); store.getState().fitWindowsToViewport();
+        const fitted = store.getState().windows.files.bounds;
+        if (action === 'same-bounds commit') store.getState().commitBounds('files', fitted);
+        if (action === 'manual resize') store.getState().commitBounds('files', { ...fitted, height: 300 });
+        if (action === 'placement') { store.getState().toggleMaximize('files'); store.getState().toggleMaximize('files'); }
+        if (action === 'close') { store.getState().closeWindow('files'); store.getState().openApp('files'); }
+        if (action === 'close app') { store.getState().closeAppWindows('files'); store.getState().openApp('files'); }
+        if (action === 'close all') { store.getState().closeAllWindows(); store.getState().openApp('files'); }
+        const chosen = store.getState().windows.files.bounds;
+        viewport(1440, 900); store.getState().fitWindowsToViewport();
+        expect(store.getState().windows.files.bounds).toEqual(chosen);
+        expect(store.getState().windows.files.bounds).not.toEqual(intended);
+      } finally { viewport(before[0], before[1]); }
+    },
+  );
+
   it('preserves intentionally partial windows while fitting maximized restore bounds on shrink', () => {
     const width = window.innerWidth;
     const height = window.innerHeight;

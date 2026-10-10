@@ -200,6 +200,9 @@ export function createPawDesktopStore(initialAppId?: PawAppId | null, initialRou
     : null;
   const initialDockAppIds = snapshot?.dockAppIds ? [...snapshot.dockAppIds] : [...pawDockAppIds];
   let fittedViewport = pawWindowArea();
+  // Viewport fitting is temporary. Keep the person's ordinary frame in this
+  // store only; explicit geometry/placement/close actions replace that intent.
+  const preferredViewportBounds = new Map<string, PawWindowBounds>();
   const store = createStore<PawDesktopState>((set, get) => ({
     windows: initialWindows,
     stack: initialStack,
@@ -251,6 +254,7 @@ export function createPawDesktopStore(initialAppId?: PawAppId | null, initialRou
         });
         return windowId;
       }
+      preferredViewportBounds.delete(windowId);
       const currentState = get();
       const participantTarget = options.target?.kind === 'participant' ? options.target : undefined;
       const roomPanelTarget = options.target?.kind === 'room' && options.target.panel ? options.target : undefined;
@@ -407,6 +411,7 @@ export function createPawDesktopStore(initialAppId?: PawAppId | null, initialRou
       });
     },
     closeWindow(windowId) {
+      preferredViewportBounds.delete(windowId);
       set((state) => {
         const closing = state.windows[windowId];
         const orphaned = closing
@@ -421,9 +426,13 @@ export function createPawDesktopStore(initialAppId?: PawAppId | null, initialRou
       });
     },
     closeAppWindows(appId) {
+      for (const node of Object.values(get().windows)) {
+        if (node.appId === appId) preferredViewportBounds.delete(node.id);
+      }
       set((state) => closeWindowsWhere(state, (node) => node.appId === appId));
     },
     closeAllWindows() {
+      preferredViewportBounds.clear();
       set((state) => closeWindowsWhere(state, () => true));
     },
     minimizeWindow(windowId) {
@@ -469,6 +478,7 @@ export function createPawDesktopStore(initialAppId?: PawAppId | null, initialRou
       });
     },
     commitBounds(windowId, bounds) {
+      preferredViewportBounds.delete(windowId);
       set((state) => {
         const node = state.windows[windowId];
         if (!node || sameBounds(node.bounds, bounds)) return state;
@@ -534,6 +544,7 @@ export function createPawDesktopStore(initialAppId?: PawAppId | null, initialRou
     fitWindowsToViewport() {
       const viewport = pawWindowArea();
       const previousViewport = fittedViewport;
+      const viewportChanged = !sameBounds(viewport, previousViewport);
       fittedViewport = viewport;
       const fit = (bounds: PawWindowBounds) => {
         // A smaller desktop must not push previously visible content outside.
@@ -546,10 +557,21 @@ export function createPawDesktopStore(initialAppId?: PawAppId | null, initialRou
       };
       set((state) => {
         let changed = false;
+        for (const id of preferredViewportBounds.keys()) {
+          if (!state.windows[id]) preferredViewportBounds.delete(id);
+        }
         const windows = Object.fromEntries(Object.entries(state.windows).map(([windowId, node]) => {
+          const preferred = preferredViewportBounds.get(windowId) ?? node.bounds;
           const bounds = node.placement
             ? placementBounds(node.placement)
-            : fit(node.bounds);
+            : fit(viewportChanged ? preferred : node.bounds);
+          if (!node.placement) {
+            if (bounds.width < preferred.width || bounds.height < preferred.height) {
+              preferredViewportBounds.set(windowId, preferred);
+            } else {
+              preferredViewportBounds.delete(windowId);
+            }
+          }
           const restoreBounds = node.restoreBounds
             ? fit(node.restoreBounds)
             : undefined;
@@ -564,6 +586,7 @@ export function createPawDesktopStore(initialAppId?: PawAppId | null, initialRou
       });
     },
     snapWindow(windowId, placement) {
+      preferredViewportBounds.delete(windowId);
       set((state) => {
         const node = state.windows[windowId];
         if (!node) return state;
@@ -582,6 +605,7 @@ export function createPawDesktopStore(initialAppId?: PawAppId | null, initialRou
       });
     },
     toggleMaximize(windowId) {
+      preferredViewportBounds.delete(windowId);
       set((state) => {
         const node = state.windows[windowId];
         if (!node) return state;
