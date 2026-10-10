@@ -6,7 +6,10 @@ import './stellar-agent-field.css';
 // planet size/position never stands for cost, progress or model capability.
 const surfaces = ['earth', 'mars', 'jupiter', 'neptune', 'venus', 'saturn'];
 const base = import.meta.env.BASE_URL || '/';
-const texture = (index: number) => `${base}paw-media/starfield/${surfaces[index % surfaces.length]}-1k.jpg`;
+const texture = (index: number) => new URL(
+  `${base}paw-media/starfield/${surfaces[index % surfaces.length]}-1k.jpg`,
+  document.baseURI,
+).href;
 
 export function StellarAgentField({ projection }: { projection: StellarAgentProjection }) {
   const planets = projection.runningPlanets;

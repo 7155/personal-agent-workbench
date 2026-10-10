@@ -16,6 +16,38 @@ function event(sequence: number, delta: string) {
 }
 
 describe('Agent store transport addresses', () => {
+  it('cancels only the original unsent Home client and transport before admission', () => {
+    const { first, second } = addressPair(); const store = useAgentLiveStore.getState();
+    const original = store.prepareHomePrompt(first, 'original-client');
+    const twin = store.prepareHomePrompt(second, 'original-client');
+    const sibling = store.prepareHomePrompt(first, 'other-client');
+    try {
+      expect(store.cancelHomePrompt(first, 'unknown-client')).toBe(false);
+      expect(store.cancelHomePrompt(first, 'original-client')).toBe(true);
+      expect(original.signal.aborted).toBe(true);
+      expect(original.beginAdmission()).toBe(false);
+      expect(twin.signal.aborted).toBe(false);
+      expect(sibling.signal.aborted).toBe(false);
+      expect(twin.beginAdmission()).toBe(true);
+      expect(sibling.beginAdmission()).toBe(true);
+    } finally { original.release(); twin.release(); sibling.release(); }
+  });
+
+  it('hands an admitted Home input to native Stop and fences stale lease cleanup', () => {
+    const { first } = addressPair(); const store = useAgentLiveStore.getState();
+    const original = store.prepareHomePrompt(first, 'same-client');
+    expect(() => store.prepareHomePrompt(first, 'same-client')).toThrow(/already exists/);
+    expect(original.beginAdmission()).toBe(true);
+    expect(store.cancelHomePrompt(first, 'same-client')).toBe(false);
+    expect(original.beginAdmission()).toBe(false);
+    const replacement = store.prepareHomePrompt(first, 'same-client');
+    original.release();
+    expect(store.cancelHomePrompt(first, 'same-client')).toBe(true);
+    expect(replacement.signal.aborted).toBe(true);
+    expect(replacement.beginAdmission()).toBe(false);
+    replacement.release();
+  });
+
   it('reuses one address for one transport while keeping endpoint twins and legacy fixtures separate', () => {
     const { a, first, second } = addressPair();
     expect(agentSessionAddress(a, sessionId)).toBe(first);

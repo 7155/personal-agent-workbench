@@ -5,6 +5,15 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Wait for explicit model and thinking choices before sending the first Home
+  message. Keep unsent input and attachments when preparation fails or is stopped.
+
+- Fit two-line captions and full-size actions in the collapsed desktop companion
+  by reducing whitespace while preserving its planet and readable text.
+
+- Resolve active Session planet textures from the document's public resource
+  root so packaged stylesheets retain the correct HTTP and portable file paths.
+
 - Display exact pending-input and successful-completion satellite signals through
   the existing desktop companion, without replaying historical arrivals. Improve
   the expanded planet mouth and caption readability.

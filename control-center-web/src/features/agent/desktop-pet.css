@@ -42,6 +42,12 @@ html:has(.desktop-pet), body:has(.desktop-pet), #root:has(.desktop-pet) {
   background: var(--color-surface); font-size: 12px; line-height: 1.35;
 }
 .desktop-pet__actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; max-width: 100%; gap: 1px; padding: 3px; border: 1px solid var(--color-border); border-radius: 24px; background: var(--color-surface); box-shadow: 0 2px 10px rgb(30 54 74 / .07); }
+/* The 160x240 native main window needs room for a two-line caption as well
+   as the 112px planet and full 44px actions. Trim only collapsed whitespace;
+   keep the expanded directory's padding and scrollable error fallback. */
+.desktop-pet[data-expanded='false'] { padding-bottom: 4px; gap: 2px; }
+.desktop-pet[data-expanded='false'] .desktop-pet__hint { padding: 2px 6px; }
+.desktop-pet[data-expanded='false'] .desktop-pet__actions { padding: 0 3px; }
 .desktop-pet__actions button { display: grid; place-items: center; min-width: 44px; min-height: 44px; border: 0; border-radius: 20px; background: transparent; color: var(--color-text); cursor: pointer; }
 .desktop-pet__actions button > span { padding-inline: 5px; font-size: 11px; }
 .desktop-pet__actions button + button { border-left: 1px solid var(--color-border); border-top-left-radius: 0; border-bottom-left-radius: 0; }

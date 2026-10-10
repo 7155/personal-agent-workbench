@@ -6,6 +6,7 @@ import { DesktopPetSurface } from './desktop-pet-surface';
 import { emptyPetCounts, unavailablePetSnapshot, type PetSnapshot } from './desktop-pet-snapshot';
 import { RoomPlanetAvatar } from '@/features/rooms/RoomPlanetAvatar';
 import petCss from './desktop-pet.css?inline';
+import petWindowOwner from '../../../electron/desktop-pet.mjs?raw';
 
 beforeEach(() => { vi.spyOn(document, 'hasFocus').mockReturnValue(true); vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible'); localStorage.removeItem('rag-ime-control-motion'); });
 
@@ -35,6 +36,51 @@ function liveSnapshot(): PetSnapshot {
 }
 
 describe('single planet companion', () => {
+  it.each(['v2', 'v1'] as const)('reserves two readable hint lines and both full-size actions in the native %s window', async version => {
+    if (version === 'v1') localStorage.setItem('paw:chat-presentation:v1', JSON.stringify({ 'builtin:desktop-pet': { version: 'v1', previousVersion: 'v2' } }));
+    render(<style>{petCss}</style>);
+    const { button, directory, push } = renderPet();
+    push({ ...liveSnapshot(), counts: { ...emptyPetCounts(), terminal: 1 } });
+    const hint = screen.getByRole('status');
+    expect(hint).toHaveTextContent('当前没有运行中的对话');
+    expect(button).toHaveAttribute('aria-describedby', hint.id);
+    const main = button.closest('main')!, actions = directory.closest('nav')!;
+    const voice = screen.getByRole('button', { name: '语音输入设置' });
+    // This is an intrinsic source budget, not a JSDOM layout/raster claim.
+    // Use the real native window contract, rendered avatar and live CSS cascade.
+    // Two lines also cover legacy mixed-state or keyboard-movement hints.
+    const nativeHeight = Number(petWindowOwner.match(/const SIZE = \{ width: \d+, height: (\d+) \}/)![1]);
+    const px = (value: string) => Number.parseFloat(value) || 0;
+    const blockEdges = (style: CSSStyleDeclaration) => ['paddingTop', 'paddingBottom', 'borderTopWidth', 'borderBottomWidth'].reduce((sum, key) => sum + px(style[key as keyof CSSStyleDeclaration] as string), 0);
+    const rootStyle = getComputedStyle(main), hintStyle = getComputedStyle(hint), actionStyle = getComputedStyle(actions);
+    const font = px(hintStyle.fontSize), lineHeight = Number(hintStyle.lineHeight) * font;
+    const avatarHeight = Number(button.querySelector('svg[data-room-planet]')!.getAttribute('height'));
+    const targets = [directory, voice].map(target => getComputedStyle(target));
+    expect(font).toBeGreaterThanOrEqual(12); expect(lineHeight).toBeGreaterThanOrEqual(font);
+    expect(avatarHeight).toBe(112);
+    for (const style of targets) {
+      expect(px(style.minHeight)).toBeGreaterThanOrEqual(44);
+      expect(px(style.minWidth)).toBeGreaterThanOrEqual(44);
+    }
+    // JSDOM may omit the var-colored capsule border. Reserve its two
+    // observed 1px edges even when the computed shorthand is unresolved.
+    const actionHeight = Math.max(...targets.map(style => px(style.minHeight))) + blockEdges(actionStyle) + 2;
+    const requiredHeight = blockEdges(rootStyle) + avatarHeight + 2 * lineHeight + blockEdges(hintStyle) + actionHeight + 2 * px(rootStyle.gap);
+    expect(requiredHeight).toBeLessThanOrEqual(nativeHeight);
+    // Never obtain room by clipping status text, shrinking an avatar or removing
+    // the original controls. Expanded list retains its ordinary padded cascade.
+    expect(hintStyle.overflow).not.toBe('hidden'); expect(rootStyle.overflowY).toBe('auto');
+    fireEvent.click(directory); await screen.findByRole('region', { name: '后台对话' });
+    expect(screen.getByRole('button', { name: '查看后台对话' })).toBe(directory);
+    expect(Number(button.querySelector('svg[data-room-planet]')!.getAttribute('height'))).toBe(64);
+    expect(getComputedStyle(hint).paddingTop).toBe('4px');
+    expect(getComputedStyle(actions).paddingTop).toBe('3px');
+    fireEvent.keyDown(directory, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('region')).toBeNull());
+    expect(directory).toHaveFocus(); expect(screen.getByRole('button', { name: '语音输入设置' })).toBe(voice);
+    expect(hint).toHaveTextContent('当前没有运行中的对话');
+  });
+
   it('keeps a readable small mouth on the expanded pet without changing its face or other avatar consumers', async () => {
     const neighbors = render(<MotionProvider><style>{petCss}</style>{[0, 1, 4].map(ordinal =>
       <RoomPlanetAvatar key={ordinal} ordinal={ordinal} variant="sphere" size={64} activity="static" />,

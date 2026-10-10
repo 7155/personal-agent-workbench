@@ -1168,6 +1168,17 @@ function PawSessionWorkspaceBody({
       ? resolveAgentTurnUserMessage(projection, activeTurnId) : undefined;
     const request = { scope: workspaceScope, clientMessageId: pendingAdmission?.clientMessageId,
       acknowledged: false, admissionCancelled: false };
+    // Home can still own a browser-side first input while importing files or
+    // awaiting configuration. Cancel only that exact unsent client; an idle
+    // native Stop ACK cannot cancel a future Prompt on its behalf.
+    if (pendingAdmission?.clientMessageId
+      && useAgentLiveStore.getState().cancelHomePrompt(address, pendingAdmission.clientMessageId)) {
+      request.admissionCancelled = true;
+      const originalText = pendingAdmission.blocks.filter(block => block.type === 'text')
+        .map(block => typeof block.data.text === 'string' ? block.data.text : '').join('\n');
+      useAgentLiveStore.getState().abortTurn(address, activeTurnId, Date.now());
+      recovery.recoverInput(current => ({ ...current, draft: current.draft.trim() ? current.draft : originalText }));
+    }
     turnStopRequestRef.current = request;
     const ownsRequest = () => turnStopRequestRef.current === request && workspaceScopeRef.current === workspaceScope;
     setStopping(true);
