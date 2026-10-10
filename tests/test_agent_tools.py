@@ -5349,6 +5349,33 @@ class ControlToolGatewayTests(unittest.TestCase):
         self.assertNotIn("searchMode", self.knowledge.calls[-1][1])
         self.assertIn("深度知识模型当前不可用", models["summary"])
 
+    def test_models_status_summary_scopes_readiness_and_preserves_status_payload(self) -> None:
+        cases = (
+            ({"ok": False}, {"remoteReady": False}, "本地预测与知识模型链路尚未全部就绪"),
+            ({"ok": False}, {"remoteReady": True}, "本地预测与知识模型链路尚未全部就绪"),
+            (None, None, "本地预测与知识模型链路尚未全部就绪"),
+            ({"ok": True}, {"remoteReady": True}, "本地预测与深度知识模型均已就绪"),
+            ({"ok": True}, {"remoteReady": False}, "本地预测已就绪，深度知识模型当前不可用"),
+        )
+        for predictor, route, expected in cases:
+            with self.subTest(predictor=predictor, route=route):
+                payload = {
+                    "ok": False,
+                    "configurationError": "public configuration diagnostic",
+                    "healthAgreement": {"ok": False},
+                }
+                if predictor is not None:
+                    payload["predictor"] = predictor
+                if route is not None:
+                    payload["activeRagRoute"] = route
+                original_payload = json.loads(json.dumps(payload))
+                with patch.object(self.facade, "models_status", return_value=payload) as status:
+                    result = self.gateway.execute(self._tool_call("models", "status"))["result"]
+                status.assert_called_once_with()
+                self.assertEqual(result["summary"], expected)
+                self.assertEqual(result["status"], original_payload)
+                self.assertEqual(payload, original_payload)
+
     def test_document_knowledge_search_normalizes_mode_and_preserves_file_name_scope(self) -> None:
         self.gateway.execute(
             self._tool_call(

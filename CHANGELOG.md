@@ -5,6 +5,9 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Keep Tool scan rows concise without hiding concrete results or errors, and
+  distinguish local prediction and knowledge readiness from Session model health.
+
 - Wait for explicit model and thinking choices before sending the first Home
   message. Keep unsent input and attachments when preparation fails or is stopped.
 

@@ -17,6 +17,43 @@ afterEach(() => {
 });
 
 describe('Agent tool activity details', () => {
+  it('keeps distinct Tool rows without repeating a title-only completion hint', () => {
+    const activities = [
+      toolActivity('tool_finished', 'completed', { toolCallId: 'public-unknown-step', toolName: 'unmapped_tool' }),
+      toolActivity('tool_finished', 'completed', { toolCallId: 'public-load-step', toolName: 'tool_load' }),
+    ];
+    const { container } = render(<FxActivityStack activities={activities} sessionId="public-summary" />);
+    const rows = [...container.querySelectorAll('.paw-activity')];
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.querySelector('.paw-activity__label')).toHaveTextContent('工具操作');
+    expect(rows[1]!.querySelector('.paw-activity__label')).toHaveTextContent('已读取工具说明');
+    for (const row of rows) {
+      expect(row.querySelector('.paw-activity__hint')).not.toBeInTheDocument();
+      expect(row.querySelector('.fx-pill')).toHaveTextContent('完成');
+      fireEvent.click(row);
+      expect(row).toHaveAttribute('aria-expanded', 'true');
+    }
+    expect(container.querySelectorAll('.agent-activity-row')).toHaveLength(2);
+    expect(container.querySelectorAll('.agent-activity-row')[0]).toHaveTextContent('工具操作 已完成');
+    expect(container.querySelectorAll('.agent-activity-row')[1]).toHaveTextContent('读取工具说明 已完成');
+  });
+
+  it('retains a concrete model diagnostic and a real Tool error in their original rows', () => {
+    const activities = [
+      toolActivity('tool_finished', 'completed', { toolCallId: 'public-model-status', toolName: 'models', operation: 'status',
+        publicResult: { summary: '模型运行链路当前未就绪' } }),
+      toolActivity('tool_finished', 'failed', { toolCallId: 'public-read-error', toolName: 'read', isError: true,
+        result: { details: { error: '文件权限不足' } } }),
+    ];
+    const { container } = render(<FxActivityStack activities={activities} sessionId="public-diagnostic" />);
+    const rows = [...container.querySelectorAll('.paw-activity')];
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.querySelector('.paw-activity__hint')).toHaveTextContent('模型运行链路当前未就绪');
+    expect(rows[0]!.querySelector('.fx-pill')).toHaveTextContent('完成');
+    expect(rows[1]!.querySelector('.paw-activity__hint')).toHaveTextContent('文件权限不足');
+    expect(rows[1]!.querySelector('.fx-pill')).toHaveTextContent('失败');
+  });
+
   it.each(['PAW_GUARD_MODEL_REJECTED', 'PAW_PROVIDER_CALL_LIMIT'])('shows a safe concrete reason for %s', (code) => {
     const activity: AgentActivityProjection = {
       id: 'guard-failure', turnId: 'guard-turn', kind: 'turn_failed', status: 'failed',
@@ -313,7 +350,7 @@ describe('Agent tool activity details', () => {
       toolName: 'overview',
       durationMs: 1_000,
       usage: { outputTokens: 12 },
-      result: { details: { ok: true, result: { summary: '很长的可见结果'.repeat(80) } } },
+      result: { details: { ok: true, result: { summary: '很长的可见结果'.repeat(60) } } },
     });
 
     const { container } = render(<FxActivityStack activities={[activity]} />);
@@ -321,7 +358,7 @@ describe('Agent tool activity details', () => {
     const status = row.querySelector('.fx-pill')!;
     const receipt = row.querySelector('.fx-meta')!;
 
-    expect(row.querySelector('.paw-activity__hint')).toBeInTheDocument();
+    expect(row.querySelector('.paw-activity__hint')).toHaveTextContent('很长的可见结果');
     expect(status.compareDocumentPosition(receipt) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(receipt).toHaveTextContent('1.0s · 12 token');
   });
