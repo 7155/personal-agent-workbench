@@ -44,6 +44,8 @@ knowledge-ann = [
 [dependency-groups]
 dev = [
   "jsonschema>=4.0,<5",
+  "numpy>=2.0,<3",
+  "Pillow>=12.0,<13",
 ]
 
 [tool.pytest.ini_options]
