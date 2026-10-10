@@ -10,6 +10,8 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from rag_ime.agent_block_store import AgentBlockStore
+from rag_ime.agent_blocks import normalize_trusted_agent_blocks
 from rag_ime.agent_configuration import default_agent_configuration
 from rag_ime.agent_capability_catalog import build_capability_catalog, capability_disclosure_enabled
 from rag_ime.agent_events import AgentEventHub
@@ -587,6 +589,116 @@ class PiDurableRuntimeTests(unittest.TestCase):
         result = self.runtime.session_snapshot(self.session_id)
         self.assertEqual(result["messages"][0]["turnId"], "original-input")
         self.assertFalse(any(method in {"session.prompt", "session.resume"} for method, _ in self.host.calls))
+
+    def _stopped_file_projection(self):
+        self.host.initial_active = False
+        self.open()
+        self.host.snapshot["messages"] = [
+            {"id": "durable:7:0", "role": "user", "content": "Produce files", "_ragImeTurnId": "file-turn", "clientMessageId": "file-client"},
+            {"id": "durable:task:17:assistant", "role": "assistant", "content": "Files are ready", "_ragImeTurnId": "file-turn", "clientMessageId": "file-client"},
+            {"id": "durable:19:0", "role": "user", "content": "Stop this task", "_ragImeTurnId": "stop-turn", "clientMessageId": "stop-client"},
+        ]
+        blocks = AgentBlockStore(self.root / "product.sqlite")
+        original = next(m for m in self.runtime.session_snapshot(self.session_id)["messages"] if m["id"] == "durable:task:17:assistant")
+        original["blocks"] = [*original["blocks"], *normalize_trusted_agent_blocks([
+            {"id": f"file:{i}", "type": "file", "data": {"fileName": "result.txt", "mediaId": f"media_public_{i:024d}", "sha256": str(i + 1) * 64, "byteSize": 72 + i, "mimeType": "text/plain"}}
+            for i in range(4)
+        ], source_kind="pi_runtime_event", source_ref=original["id"], generation=0)]
+        blocks.persist_message(original, generation=0)
+        expected = blocks.blocks_for_message(self.session_id, original["id"], generation=0)
+        self.store.record_runtime_event(event_id="public-stop-terminal", session_id=self.session_id, turn_id="stop-turn",
+            sequence=1, event_type="turn_completed", created_at_ms=100, redacted_summary="aborted")
+        projection = AgentMessageSnapshotService(sessions=self.store, runtime_provider=lambda: self.runtime,
+            workflow_projector=lambda _: {"todo": {}, "goal": {}, "actGate": {}}, agent_blocks=blocks,
+            media=Mock(), observations=Mock(snapshot=Mock(return_value={"items": []})), events=self.events,
+            background_jobs=Mock(list=Mock(return_value={"items": []})),
+            room_public_messages=lambda _: None, room_recent_public_messages=lambda _: None)
+        self.host.calls.clear()
+        return blocks, projection, original, expected
+
+    def test_full_and_recent_restore_original_file_sidecars_after_normal_stop(self):
+        blocks, projection, original, expected = self._stopped_file_projection()
+        for view in ("", "recent", "", "recent"):
+            with self.subTest(view=view):
+                result = projection.messages(self.session_id, view=view)
+                file_message = next(m for m in result["items"] if m["id"] == original["id"])
+                self.assertEqual([b for b in file_message["blocks"] if b["type"] == "file"], expected)
+                self.assertEqual((file_message["turnId"], file_message["clientMessageId"]), ("file-turn", "file-client"))
+                stopped = next(m for m in result["items"] if m["id"] == "paw-stop:stop-turn")
+                self.assertEqual(stopped["status"], "aborted")
+                self.assertFalse(any(b["type"] == "file" for b in stopped["blocks"]))
+                self.assertNotIn("durableProjectionMessageIds", result)
+        with blocks._connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM agent_block_message_envelopes").fetchone()[0], 1)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM agent_message_block_sidecars").fetchone()[0], 4)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM agent_block_native_aliases").fetchone()[0], 0)
+        self.assertFalse(any(method in {"session.prompt", "session.resume", "session.abort"} for method, _ in self.host.calls))
+
+    def test_stopped_history_does_not_borrow_sidecars_for_another_native_client(self):
+        _, projection, original, _ = self._stopped_file_projection()
+        self.host.snapshot["messages"][1]["clientMessageId"] = "different-client"
+        for view in ("", "recent"):
+            result = projection.messages(self.session_id, view=view)
+            message = next(m for m in result["items"] if m["id"] == original["id"])
+            self.assertFalse(any(b["type"] == "file" for b in message["blocks"]))
+
+    def test_stopped_history_rejects_unknown_projection_and_non_native_ids(self):
+        _, projection, original, _ = self._stopped_file_projection()
+        for field, value in (("projectionCurrent", False), ("projectionCurrent", None)):
+            self.host.snapshot[field] = value
+            for view in ("", "recent"):
+                with self.subTest(field=field, value=value, view=view):
+                    message = next(m for m in projection.messages(self.session_id, view=view)["items"] if m["id"] == original["id"])
+                    self.assertFalse(any(b["type"] == "file" for b in message["blocks"]))
+        self.host.snapshot["projectionCurrent"] = True
+        self.host.snapshot["messages"][1]["id"] = "paw-stop:file-turn"
+        self.host.snapshot["durableProjectionMessageIds"] = [original["id"]]
+        for view in ("", "recent"):
+            result = projection.messages(self.session_id, view=view)
+            self.assertFalse(any(b["type"] == "file" for m in result["items"] for b in m["blocks"]))
+
+    def test_native_whitelist_cannot_hide_identity_or_binding_drift(self):
+        _, projection, original, _ = self._stopped_file_projection()
+        for method, view in (("session_snapshot", ""), ("recent_session_snapshot", "recent")):
+            producer = getattr(self.runtime, method)
+            def inspect_and_change(*args, _producer=producer):
+                snapshot = _producer(*args)
+                current = self.store.runtime_binding(self.session_id)
+                self.store.bind_runtime_session(self.session_id, driver_id=current["driverId"],
+                    runtime_kind=current["runtimeKind"], external_session_id=current["externalSessionId"],
+                    transcript_ref=current["transcriptRef"], metadata=current["metadata"])
+                return snapshot
+            with patch.object(self.runtime, method, side_effect=inspect_and_change):
+                result = projection.messages(self.session_id, view=view)
+            message = next(m for m in result["items"] if m["id"] == original["id"])
+            self.assertFalse(any(b["type"] == "file" for b in message["blocks"]))
+
+    def test_native_whitelist_rejects_foreign_or_forged_entries(self):
+        from rag_ime.agent_message_snapshot import _verified_durable_message_ids
+        self.host.initial_active = False
+        self.open()
+        self.host.snapshot["messages"] = [{"id":"durable:task:17:assistant","role":"assistant","content":"Original result","_ragImeTurnId":"file-turn","clientMessageId":"file-client"}]
+        snapshot = self.runtime.session_snapshot(self.session_id)
+        binding = self.store.runtime_binding(self.session_id)
+        expected = ["durable:task:17:assistant"]
+        self.assertEqual(_verified_durable_message_ids(self.session_id, self.store.get(self.session_id), snapshot, binding, binding), expected)
+        variants = [
+            ("foreign Session", lambda s: s["messages"][0].update(sessionId="other")),
+            ("missing client", lambda s: s["messages"][0].pop("clientMessageId")),
+            ("different native binding", lambda s: s.update(nativePiSessionId="other-native")),
+            ("invented whitelist ID", lambda s: s.update(durableProjectionMessageIds=["durable:task:18:assistant"])),
+            ("duplicate whitelist ID", lambda s: s.update(durableProjectionMessageIds=expected*2)),
+            ("omitted native ID", lambda s: s.update(durableProjectionMessageIds=[])),
+            ("non-string message ID", lambda s: s["messages"][0].update(id=[])),
+            ("unknown extra entry", lambda s: s["messages"].append({"id":"unknown","role":"assistant"})),
+        ]
+        for label, mutate in variants:
+            value = copy.deepcopy(snapshot)
+            mutate(value)
+            with self.subTest(label=label):
+                self.assertIsNone(_verified_durable_message_ids(self.session_id, self.store.get(self.session_id), value, binding, binding))
+        legacy = {k:v for k,v in snapshot.items() if k != "durableProjectionMessageIds"}
+        self.assertEqual(_verified_durable_message_ids(self.session_id, self.store.get(self.session_id), legacy, binding, binding), expected)
 
     def test_public_full_and_recent_snapshot_preserve_authoritative_recovery_identity(self):
         blocks = Mock()
