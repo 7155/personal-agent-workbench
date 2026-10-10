@@ -1,10 +1,11 @@
 import type { ControlRequest } from '@/platform/transport';
 import { createRoot } from 'react-dom/client';
 import { ControlTransportProvider } from '../../src/app/control-transport';
-import { TooltipProvider } from '../../src/components/primitives';
+import { Button, TooltipProvider } from '../../src/components/primitives';
 import type { AgentFilePreviewV1 } from '../../src/contracts/generated/agent-file-preview.v1';
 import { AgentFileBlock } from '../../src/features/agent/file-preview/AgentFileBlock';
 import { FilePreviewHost } from '../../src/features/agent/file-preview/FilePreviewHost';
+import { useFilePreviewStore } from '../../src/features/agent/file-preview/file-preview-store';
 import type { FilePreviewRequest } from '../../src/features/agent/file-preview/file-descriptor';
 import { InlineHtmlOutput } from '../../src/features/agent/timeline/InlineHtmlOutput';
 import { MockControlTransport } from '../../src/test/mock-transport';
@@ -51,7 +52,22 @@ const files: PreviewFixture[] = [
   },
 ];
 
-const byMediaId = new Map(files.map((file) => [file.mediaId, file]));
+const contentHeight = new URLSearchParams(location.search).has('content-height');
+const shortCode = 'export function roomCommit(post: string) {\n  return { post, committed: true };\n}';
+const heightFiles: PreviewFixture[] = [
+  { mediaId: 'media_heightplain001', sessionId, expectedSha256: 'f'.repeat(64),
+    fileNameHint: 'short-plain.code', mimeTypeHint: 'text/plain', byteSizeHint: 0,
+    kind: 'code', language: 'unsupported-fixture-language', content: shortCode },
+  { mediaId: 'media_heightshiki001', sessionId, expectedSha256: '1'.repeat(64),
+    fileNameHint: 'short-highlight.ts', mimeTypeHint: 'text/plain', byteSizeHint: 0,
+    kind: 'code', language: 'typescript', content: shortCode },
+  { mediaId: 'media_heightlong001', sessionId, expectedSha256: '2'.repeat(64),
+    fileNameHint: 'long-code.txt', mimeTypeHint: 'text/plain', byteSizeHint: 0,
+    kind: 'code', language: 'unsupported-fixture-language',
+    content: Array.from({ length: 400 }, (_, index) => `public code line ${index + 1}`).join('\n') },
+];
+const displayedFiles = contentHeight ? heightFiles : files;
+const byMediaId = new Map(displayedFiles.map((file) => [file.mediaId, file]));
 const inlineHtml = '<section><h2>页内 HTML 已渲染</h2><label>页内备注 <input aria-label="页内报告备注" value="初始页内值"></label><button type="button" onclick="document.querySelector(\'h2\').textContent=document.querySelector(\'input\').value">更新页内报告</button></section>';
 const largeHtml = `<!doctype html><html><body><h1>大型交互报告</h1><button type="button" onclick="document.querySelector('h1').textContent='大型报告脚本已运行'">运行脚本</button><!--${'x'.repeat(1_600_000)}--></body></html>`;
 const transport = new MockControlTransport({
@@ -70,7 +86,7 @@ createRoot(document.getElementById('root')!).render(
       <section aria-labelledby="file-preview-title">
         <h1 id="file-preview-title">受控文件产物</h1>
         <p>同一个 file Rich Block，按类型选择渲染器。</p>
-        {files.map((file) => (
+        {displayedFiles.map((file) => (
           <AgentFileBlock
             data={{
               mediaId: file.mediaId,
@@ -82,7 +98,11 @@ createRoot(document.getElementById('root')!).render(
             sessionId={sessionId}
           />
         ))}
-        <InlineHtmlOutput content={location.search.includes('large-html') ? largeHtml : inlineHtml} />
+        {contentHeight ? (
+          <Button onClick={() => useFilePreviewStore.getState().openPreview(heightFiles[2]!, transport, 'dialog')}>
+            完整预览 long-code.txt
+          </Button>
+        ) : <InlineHtmlOutput content={location.search.includes('large-html') ? largeHtml : inlineHtml} />}
       </section>
       <FilePreviewHost />
     </ControlTransportProvider>

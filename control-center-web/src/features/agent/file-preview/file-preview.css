@@ -180,11 +180,21 @@
 .agent-file-preview-inline[data-status='loading'] .agent-file-preview-inline__state > svg {
   animation: agent-status-spin 1.2s linear infinite;
 }
-.agent-file-preview-inline__body > .agent-file-code,
 .agent-file-preview-inline__body > .agent-diff-preview,
 .agent-file-preview-inline__body > .agent-file-image-preview,
 .agent-file-preview-inline__body > .agent-file-markdown {
   min-height: 280px;
+}
+/* Short code is a few source lines, not a full-height dialog pane. Keep both
+   the fallback and highlighted branch intrinsic inside the existing reader. */
+.agent-file-preview-inline__body > .agent-file-code {
+  min-height: 0;
+  grid-template-rows: 38px auto;
+}
+.agent-file-preview-inline__body > .agent-file-code > pre,
+.agent-file-preview-inline__body > .agent-file-code > .agent-file-code__highlight,
+.agent-file-preview-inline__body > .agent-file-code > .agent-file-code__highlight pre {
+  min-height: 0;
 }
 .agent-file-preview-inline__body > .agent-file-markdown {
   background: var(--color-paper);
