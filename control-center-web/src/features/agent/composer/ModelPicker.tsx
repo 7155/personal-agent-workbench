@@ -96,7 +96,9 @@ export function ModelPicker({
   const modelRequestRef = useRef(0);
   const thinkingRequestRef = useRef(0);
 
-  useEffect(() => { if (!pending) committed.current = false; }, [pending]);
+  // Home applies its selection locally without a pending transition. Release
+  // only once the selected value changes or the request owner finishes pending.
+  useEffect(() => { if (!pending) committed.current = false; }, [pending, selectedKey, thinking]);
   const choose = (provider: string, modelId: string, level: ThinkingLevel, keepOpen = false) => {
     if (blocked || committed.current) return;
     committed.current = true;

@@ -10,7 +10,7 @@ import type {
 } from './generated/agent-workflow-state.v1';
 import { parseAgentEvent, tryParseAgentMessage, validateContract } from './validators';
 import { approvalDecisionView, approvalNeedsHumanDecision } from './approval-decision';
-import { hasAbortedDurableToolOutcome } from './durable-tool-outcome';
+import { hasAbortedToolOutcome } from './durable-tool-outcome';
 
 export type AgentTurnStatus =
   | 'queued'
@@ -272,7 +272,7 @@ export function reduceAgentEvent(
   if (isToolActivityEvent(event.eventType)) {
     const previous = state.activitiesById[text(payload.toolCallId)];
     if (previous?.status === 'aborted' && previous.turnId === event.turnId
-      && hasAbortedDurableToolOutcome(previous.payload, { sessionId: event.sessionId, turnId: event.turnId })) {
+      && hasAbortedToolOutcome(previous.payload, { sessionId: event.sessionId, turnId: event.turnId })) {
       return { state: next, disposition: 'applied' };
     }
   }
@@ -396,7 +396,7 @@ export function reduceAgentEvent(
         next,
         event,
         projectedPayload,
-        hasAbortedDurableToolOutcome(correlatedPayload, { sessionId: event.sessionId, turnId: event.turnId })
+        hasAbortedToolOutcome(correlatedPayload, { sessionId: event.sessionId, turnId: event.turnId })
           ? 'aborted'
           : expectedNoop || (correlatedPayload.isError !== true && !approvalDenied) ? 'completed' : 'failed',
       );

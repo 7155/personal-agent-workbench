@@ -1,6 +1,6 @@
 import type { ProjectionDiagnostic, ProjectionGap, ProjectionReduction } from './agent-reducer';
 import { approvalNeedsHumanDecision } from './approval-decision';
-import { hasAbortedDurableToolOutcome } from './durable-tool-outcome';
+import { hasAbortedToolOutcome } from './durable-tool-outcome';
 import {
   MAX_COMPOSER_ATTACHMENT_BYTES,
   isComposerAttachmentMimeType,
@@ -1779,8 +1779,10 @@ function upsertActivity(
   const id = roomActivityId(event, payload);
   const existing = state.activitiesById[id];
   if (existing?.status === 'aborted'
+    && existing.sourceSessionId === sourceSessionId
+    && text(existing.payload.sourceTurnId) === text(payload.sourceTurnId)
     && ['tool_started', 'tool_progress', 'tool_finished'].includes(sourceEventType)
-    && hasAbortedDurableToolOutcome(existing.payload, {
+    && hasAbortedToolOutcome(existing.payload, {
       sessionId: sourceSessionId, turnId: text(payload.sourceTurnId),
     })) return;
   const approvalId = text(payload.approvalId);
@@ -1818,7 +1820,7 @@ function upsertActivity(
       ? 'failed'
       : automaticPolicyAuthorizationReceipt
       ? automaticPolicyAuthorizationFailed ? 'failed' : existing!.status
-      : sourceEventType === 'tool_finished' && hasAbortedDurableToolOutcome(payload, {
+      : sourceEventType === 'tool_finished' && hasAbortedToolOutcome(payload, {
           sessionId: sourceSessionId, turnId: text(payload.sourceTurnId),
         })
         ? 'aborted'

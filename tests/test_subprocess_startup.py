@@ -5,13 +5,21 @@ import os
 import subprocess
 import time
 from contextlib import ExitStack
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 from tests.subprocess_startup import StartupCapture, StartupDiagnostics
+
+
+def _wait_for_startup_stack(capture, target: Path, deadline: float) -> str:
+    while True:
+        details = capture.failure_details()
+        if ("still waiting for readiness" in details and f'File "{target}"' in details) or time.monotonic() >= deadline:
+            return details
+        time.sleep(0.01)
 
 
 class StartupDiagnosticsTests(unittest.TestCase):
@@ -45,6 +53,17 @@ class StartupDiagnosticsTests(unittest.TestCase):
 
 
 class StartupCaptureTests(unittest.TestCase):
+    def test_waits_for_child_frame_after_partial_sampler_prefix(self):
+        target = Path("/synthetic/owned/synthetic_wait.py")
+        partial = 'startup: still waiting for readiness\nCurrent thread sampler:\n  File "threading.py", line 1032 in '
+        complete = partial + f'_bootstrap\nThread main:\n  File "{target}", line 2 in <module>\n'
+        capture = Mock()
+        capture.failure_details.side_effect = [partial, complete]
+        observed = _wait_for_startup_stack(capture, target, time.monotonic() + 2)
+        self.assertIn(f'File "{target}"', observed)
+        self.assertEqual(capture.failure_details.call_count, 2)
+
+
     def test_isolated_file_preserves_flags_argv_output_and_artifact(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -169,8 +188,7 @@ class StartupCaptureTests(unittest.TestCase):
                         resources.callback(capture.close)
                         process = capture.popen(command, env={"PATH": os.defpath}, stdout=stream, stderr=stream)
                         deadline = time.monotonic() + 2
-                        while "still waiting for readiness" not in capture.failure_details() and time.monotonic() < deadline:
-                            time.sleep(0.01)
+                        _wait_for_startup_stack(capture, target, deadline)
                         if isolated:
                             import select
                             self.assertEqual(select.select([process.stderr], [], [], 0)[0], [],

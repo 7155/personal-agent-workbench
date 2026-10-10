@@ -802,6 +802,8 @@ def durable_tool_history_events(
                 and original[3] == tool_name
                 and raw.get(DURABLE_TURN_ID_KEY, turn_id) == turn_id
                 and raw.get("clientMessageId", current_client_message_id) == current_client_message_id):
+            if raw.get("cancelled") is True and payload["isError"]:
+                payload["cancelled"] = True
             outcome = public_durable_tool_outcome(
                 raw.get("durableToolOutcome"), session_id=session_id,
                 runtime_session_id=runtime_session_id, turn_id=turn_id,

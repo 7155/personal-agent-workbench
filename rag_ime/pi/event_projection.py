@@ -164,6 +164,11 @@ def tool_event_payload(
         reported_is_error=bool(raw.get("isError")),
     )
     payload["isError"] = result_is_error
+    # Only the native execution owner sets this top-level flag. Tool output,
+    # error prose and an aborted parent turn do not establish cancellation.
+    if (event_type == "tool_execution_end" and raw.get("cancelled") is True
+            and result_is_error and payload["toolCallId"] and tool_name):
+        payload["cancelled"] = True
     public_result = public_code_tool_activity(
         tool_name,
         raw_args,
