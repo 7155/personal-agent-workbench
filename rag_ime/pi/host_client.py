@@ -307,6 +307,13 @@ class PiRuntimeHostClient:
         if stderr_thread is not None and stderr_thread is not threading.current_thread():
             stderr_thread.join(timeout=1)
         error = protocol_error or self.diagnostic_error()
+        if protocol_error and self._fatal_error:
+            # Reserve both causes within the existing 500-character public
+            # diagnostic bound; ordinary stderr must not become a fatal cause.
+            error = (
+                f"{redact_runtime_text(protocol_error)[:249]}; "
+                f"{self._fatal_error[:249]}"
+            )
         self.on_exit(exit_code, error)
         self.kill_gate.mark_terminated(self.host_identity, now_ms=int(time.time() * 1000))
         # Wake RPC callers only after the manager and durable process registry
