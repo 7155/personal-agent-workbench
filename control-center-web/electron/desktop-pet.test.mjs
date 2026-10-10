@@ -229,3 +229,29 @@ test('only the first-party workbench can show the companion; its actions reuse e
   h.invoke('hide-from-workbench', undefined, h.source);
   assert.equal(h.manager.isVisible(), false);
 });
+
+
+test('retains exact typed completion identity across hide/show without another dispatch or epoch', async () => {
+  const h = harness();
+  const { producerEpoch, factsVersion } = h.publish('begin', { schemaVersion: 1, sourceId: 'work-directory', scopeId: 'scope' });
+  assert.equal(factsVersion, 1);
+  const counts = { running: 1, attention: 0, error: 0, paused: 0, idle: 0, terminal: 0, unknown: 0 };
+  const base = { schemaVersion: 1, producerEpoch, revision: 1, freshness: 'synced', counts,
+    conversations: [{ id: 'session', label: 'Public task', state: 'running' }], facts: [{ id: 'session', activeTurnId: 'turn:original', waiting: [] }] };
+  h.publish('publish', base);
+  await h.manager.show();
+  const terminal = { ...base, revision: 2, counts: { ...counts, running: 0, terminal: 1 },
+    conversations: [{ id: 'session', label: 'Public task', state: 'terminal' }],
+    facts: [{ id: 'session', activeTurnId: '', terminal: { eventId: 'event:original', turnId: 'turn:original', sequence: 3, outcome: 'completed' } }] };
+  h.publish('publish', terminal);
+  const before = h.invoke('ready'); assert.equal(before.visual.signal, 'done'); assert.ok(before.visual.arrivalKey);
+  h.manager.hide();
+  h.publish('publish', { ...terminal, revision: 3 });
+  await h.manager.show();
+  const reopened = h.invoke('ready');
+  assert.equal(reopened.producerEpoch, producerEpoch);
+  assert.equal(reopened.visual.arrivalKey, before.visual.arrivalKey);
+  assert.equal(reopened.visual.signal, 'done');
+  assert.equal(h.opened(), 0); assert.equal(h.created.length, 2);
+  h.manager.hide();
+});

@@ -50,6 +50,26 @@ describe('existing directory to companion bridge integration', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
     expect(transport.requests).toHaveLength(count);
   });
+  it('carries fresh exact directory facts through the same bounded read owner only after capability ACK', async () => {
+    vi.useFakeTimers(); const host = bridge();
+    host.begin.mockResolvedValue({ producerEpoch: 1, factsVersion: 1 });
+    const presentationFacts = { activeTurnId: 'turn:one', waiting: [{ turnId: 'turn:one', requestId: 'request:one', kind: 'input' }],
+      terminal: { eventId: 'event:old', turnId: 'turn:old', sequence: 3, outcome: 'completed' } };
+    const transport = directoryTransport({ ok: true, items: [{ ...session('Public title'), presentationFacts }] });
+    render(tree(transport)); await flush();
+    expect(host.publish.mock.calls.at(-1)?.[0]).toMatchObject({ facts: [{ id: 'same-session', ...presentationFacts }],
+      counts: { running: 1 }, conversations: [{ id: 'same-session', label: 'Public title', state: 'running' }] });
+    expect(transport.requests).toHaveLength(3);
+    const request = transport.requests.find(call => call.request.pathId === 'agent.sessions.list')!.request;
+    expect(request.query).toMatchObject({ limit: 100, projectionOnly: 1 });
+    expect(transport.activeSubscriptionCount()).toBe(0);
+    await act(async () => { await vi.advanceTimersByTimeAsync(29_999); });
+    expect(transport.requests).toHaveLength(3);
+    expect(JSON.stringify(host.publish.mock.calls)).not.toMatch(/private|Private transcript|workspaceRoots/);
+    act(() => { Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+      document.dispatchEvent(new Event('visibilitychange')); }); await flush();
+    expect(host.publish.mock.calls.at(-1)?.[0]).toMatchObject({ freshness: 'recovering', facts: [] });
+  });
   it('does not republish the old connection under a new producer when ids are reused', async () => {
     vi.useFakeTimers(); const host = bridge(); const a = directoryTransport({ ok: true, items: [session('Connection A')] });
     const nextRead = deferred<unknown>(); const b = directoryTransport(() => nextRead.promise);

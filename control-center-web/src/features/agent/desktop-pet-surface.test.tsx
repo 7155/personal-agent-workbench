@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MotionProvider, useMotionPreference } from '@/design/motion';
 import { DesktopPetSurface } from './desktop-pet-surface';
 import { emptyPetCounts, unavailablePetSnapshot, type PetSnapshot } from './desktop-pet-snapshot';
+import { RoomPlanetAvatar } from '@/features/rooms/RoomPlanetAvatar';
+import petCss from './desktop-pet.css?inline';
 
 beforeEach(() => { vi.spyOn(document, 'hasFocus').mockReturnValue(true); vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible'); localStorage.removeItem('rag-ime-control-motion'); });
 
@@ -33,6 +35,109 @@ function liveSnapshot(): PetSnapshot {
 }
 
 describe('single planet companion', () => {
+  it('keeps a readable small mouth on the expanded pet without changing its face or other avatar consumers', async () => {
+    const neighbors = render(<MotionProvider><style>{petCss}</style>{[0, 1, 4].map(ordinal =>
+      <RoomPlanetAvatar key={ordinal} ordinal={ordinal} variant="sphere" size={64} activity="static" />,
+    )}</MotionProvider>);
+    const neighborMouths = Array.from(neighbors.container.querySelectorAll<SVGPathElement>('[data-mouth]'));
+    const appearance = (mouth: SVGPathElement) => ['d', 'fill', 'stroke', 'stroke-width', 'transform'].map(name => mouth.getAttribute(name));
+    const neighborAppearance = neighborMouths.map(appearance);
+    const stroke = (mouth: SVGPathElement) => Number.parseFloat(getComputedStyle(mouth).getPropertyValue('stroke-width') || mouth.getAttribute('stroke-width')!);
+    const neighborStrokes = neighborMouths.map(stroke);
+    const { button, directory, push, host } = renderPet(); push(liveSnapshot());
+    const avatar = button.querySelector<SVGSVGElement>('[data-avatar-variant="sphere"]')!;
+    const face = avatar.querySelector('[data-face]')!;
+    const eyes = avatar.querySelector('.sphere-eye-rig')!;
+    const mouth = avatar.querySelector<SVGPathElement>('[data-mouth]')!;
+    const original = appearance(mouth), originalStroke = stroke(mouth);
+    expect(Number(avatar.getAttribute('width'))).toBe(112);
+    fireEvent.click(directory); await screen.findByRole('region', { name: '后台对话' });
+    expect(button.querySelector('[data-avatar-variant="sphere"]')).toBe(avatar);
+    expect(avatar.querySelector('[data-face]')).toBe(face);
+    expect(avatar.querySelector('.sphere-eye-rig')).toBe(eyes);
+    expect(avatar.querySelector('[data-mouth]')).toBe(mouth);
+    expect(appearance(mouth)).toEqual(original);
+    // The real local cascade must leave at least a half CSS pixel of outline
+    // at 64px. This is a source sizing check, not a raster/visual verdict.
+    const cssStroke = stroke(mouth) * Number(avatar.getAttribute('width')) / 320;
+    expect(cssStroke).toBeGreaterThanOrEqual(.5);
+    expect(cssStroke).toBeLessThanOrEqual(1);
+    push({ ...liveSnapshot(), revision: 3, counts: { ...emptyPetCounts(), error: 1 } });
+    expect(avatar.querySelector('[data-mouth]')).toBe(mouth);
+    expect(appearance(mouth)).toEqual(original);
+    expect(neighborMouths.map(appearance)).toEqual(neighborAppearance);
+    expect(neighborMouths.map(stroke)).toEqual(neighborStrokes);
+    fireEvent.keyDown(directory, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('region')).toBeNull());
+    expect(Number(avatar.getAttribute('width'))).toBe(112);
+    expect(stroke(mouth)).toBe(originalStroke);
+    expect(appearance(mouth)).toEqual(original);
+    expect(directory).toHaveFocus();
+    expect(host.openAssistant).not.toHaveBeenCalled(); expect(host.openConversation).not.toHaveBeenCalled();
+  });
+
+  it('uses at least caption-sized text for the original status, row state and directory summary', async () => {
+    render(<style>{petCss}</style>);
+    const { directory, push } = renderPet(); push(liveSnapshot());
+    expect(Number.parseFloat(getComputedStyle(screen.getByRole('status')).fontSize)).toBeGreaterThanOrEqual(12);
+    fireEvent.click(directory); await screen.findByRole('region', { name: '后台对话' });
+    const row = screen.getByRole('button', { name: /检查项目/ });
+    expect(Number.parseFloat(getComputedStyle(row.querySelector('small')!).fontSize)).toBeGreaterThanOrEqual(12);
+    expect(Number.parseFloat(getComputedStyle(screen.getByText('当前目录另有 1 个')).fontSize)).toBeGreaterThanOrEqual(12);
+    expect(row).toHaveAccessibleName('检查项目进行中');
+  });
+
+  it('renders accepted waiting and exact completion on one unchanged face, with only one arrival each', () => {
+    const { button, push } = renderPet();
+    const avatar = button.querySelector('[data-avatar-variant="sphere"]')!;
+    const face = avatar.querySelector('[data-face]'), mouth = avatar.querySelector('[data-mouth]');
+    const signal = avatar.querySelector('.sphere-signal');
+    const working: PetSnapshot = { ...liveSnapshot(), visual: { signal: 'working', motion: 'full', label: '2 个对话进行中', arrivalKey: null } };
+    push(working);
+    const waiting: PetSnapshot = { ...working, revision: 3, visual: { signal: 'waiting', motion: 'full', label: '有对话等回复', arrivalKey: '3:3' } };
+    push(waiting); expect(avatar).toHaveAttribute('data-pulse', 'true');
+    expect(screen.getByRole('status')).toHaveTextContent('有对话等回复');
+    // A repeated native key neither replaces the signal node nor starts another motion.
+    push({ ...waiting, revision: 4 }); expect(avatar).toHaveAttribute('data-pulse', 'true');
+    push({ ...working, revision: 5 });
+    const done: PetSnapshot = { ...working, revision: 6, counts: { ...emptyPetCounts(), terminal: 1 },
+      visual: { signal: 'done', motion: 'full', label: '有对话已完成', arrivalKey: '3:6' } };
+    push(done); expect(avatar).toHaveAttribute('data-signal', 'done'); expect(avatar).toHaveAttribute('data-pulse', 'true');
+    expect(screen.getByRole('status')).toHaveTextContent('有对话已完成');
+    expect(avatar.querySelector('[data-face]')).toBe(face); expect(avatar.querySelector('[data-mouth]')).toBe(mouth);
+    expect(avatar.querySelector('.sphere-signal')).toBe(signal);
+  });
+
+  it.each(['waiting', 'done'] as const)('seeds retained %s without replay on remount or producer replacement', async signal => {
+    const snapshot: PetSnapshot = { ...liveSnapshot(), visual: { signal, motion: 'full', label: '原可信状态', arrivalKey: '3:2' } };
+    const first = renderPet(Promise.resolve(snapshot));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('原可信状态'));
+    expect(first.button.querySelector('[data-avatar-variant="sphere"]')).toHaveAttribute('data-pulse', 'false');
+    first.view.unmount();
+    const reopened = renderPet(Promise.resolve(snapshot));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('原可信状态'));
+    const avatar = reopened.button.querySelector('[data-avatar-variant="sphere"]')!;
+    expect(avatar).toHaveAttribute('data-pulse', 'false');
+    reopened.push({ ...snapshot, producerEpoch: 4, revision: 1, visual: { ...snapshot.visual!, arrivalKey: '4:1' } });
+    expect(avatar).toHaveAttribute('data-pulse', 'false');
+  });
+
+  it.each(['waiting', 'done'] as const)('consumes %s arrivals received while hidden or reduced without replay on resume', signal => {
+    const { button, push } = renderPet(undefined, true);
+    const working: PetSnapshot = { ...liveSnapshot(), visual: { signal: 'working', motion: 'full', label: '进行中', arrivalKey: null } };
+    push(working); const avatar = button.querySelector('[data-avatar-variant="sphere"]')!;
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    fireEvent(document, new Event('visibilitychange'));
+    push({ ...working, revision: 3, visual: { signal, motion: 'full', label: '可信状态', arrivalKey: '3:3' } });
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    fireEvent(document, new Event('visibilitychange')); expect(avatar).toHaveAttribute('data-pulse', 'false');
+    push({ ...working, revision: 4 });
+    fireEvent.click(screen.getByRole('button', { name: '减少动态效果' }));
+    push({ ...working, revision: 5, visual: { signal, motion: 'full', label: '可信状态', arrivalKey: '3:5' } });
+    fireEvent.click(screen.getByRole('button', { name: '恢复动态效果' }));
+    expect(avatar).toHaveAttribute('data-pulse', 'false');
+  });
+
   it('uses trusted shared satellites without guessing waiting, completion or offline', () => {
     const { button, push } = renderPet();
     const avatar = button.querySelector('[data-avatar-variant="sphere"]')!;

@@ -44,3 +44,44 @@ describe('read-only companion publisher', () => {
     expect(host.publish).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('optional exact-facts capability', () => {
+  it('uses extended facts only after native begin explicitly advertises the capability', async () => {
+    const host = bridge(); host.begin = vi.fn().mockResolvedValue({ producerEpoch: 4, factsVersion: 1 });
+    const lease = createDesktopPetPublisher(host, identity);
+    const facts = [{ id: 'session-1', activeTurnId: 'turn:one', waiting: [
+      { turnId: 'turn:one', requestId: 'request:one', kind: 'input' as const }] }];
+    lease.update({ ...value(), facts }); await tick();
+    expect(host.publish.mock.calls[0][0]).toMatchObject({ facts });
+    const legacy = bridge(); const oldLease = createDesktopPetPublisher(legacy, identity);
+    oldLease.update({ ...value(), facts }); await tick();
+    expect(legacy.publish.mock.calls[0][0]).not.toHaveProperty('facts');
+  });
+});
+
+describe('atomic native fact budget', () => {
+  it('packs whole facts under 4096 UTF8 bytes, keeps legacy rows/counts and never trims IDs or claims omitted empty requests', async () => {
+    const host = bridge(); host.begin = vi.fn().mockResolvedValue({ producerEpoch: 4, factsVersion: 1 });
+    const lease = createDesktopPetPublisher(host, identity);
+    const conversations = Array.from({ length: 8 }, (_, index) => ({ id: `session-${index}`, label: '公开'.repeat(24), state: 'running' as const }));
+    const facts = conversations.map(({ id }) => ({ id, activeTurnId: 't'.repeat(240), waiting: [
+      { turnId: 't'.repeat(240), requestId: 'r'.repeat(240), kind: 'input' as const }],
+      terminal: { eventId: 'e'.repeat(512), turnId: 'p'.repeat(240), sequence: 1, outcome: 'completed' as const } }));
+    lease.update({ freshness: 'synced', counts: { ...emptyPetCounts(), running: 8 }, conversations, facts }); await tick();
+    const packed = host.publish.mock.calls[0][0];
+    expect(new TextEncoder().encode(JSON.stringify(packed)).byteLength).toBeLessThanOrEqual(4096);
+    expect(packed.conversations).toEqual(conversations); expect(packed.counts.running).toBe(8);
+    expect(packed.facts.length).toBeLessThan(8); expect(packed.facts.length).toBeGreaterThan(0);
+    for (const fact of packed.facts) expect(fact).toEqual(facts.find(source => source.id === fact.id));
+    lease.update({ freshness: 'synced', counts: { ...emptyPetCounts(), running: 8 }, conversations, facts }); await tick();
+    expect(host.publish).toHaveBeenCalledTimes(1);
+  });
+  it('omits unknown extra or foreign facts atomically even if a capability exists', async () => {
+    const host = bridge(); host.begin = vi.fn().mockResolvedValue({ producerEpoch: 4, factsVersion: 1 });
+    const lease = createDesktopPetPublisher(host, identity);
+    lease.update({ ...value(), facts: [{ id: 'session-1', activeTurnId: 'turn:one', prompt: 'private' },
+      { id: 'foreign', activeTurnId: 'turn:one' }] } as never); await tick();
+    expect(host.publish.mock.calls[0][0].facts).toEqual([]);
+    expect(JSON.stringify(host.publish.mock.calls[0][0])).not.toContain('private');
+  });
+});

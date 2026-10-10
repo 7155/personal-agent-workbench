@@ -48,3 +48,17 @@ describe('small conversation directory projection', () => {
     expect(projectPetDirectory([], false, false).freshness).toBe('unavailable');
   });
 });
+
+describe('typed directory evidence', () => {
+  it('cannot borrow another admitted Session identity through extra source fields', () => {
+    const borrowed = { ...session('one', 'busy'), presentationFacts: { id: 'two', activeTurnId: 'turn:one' } } as unknown as SessionSummary;
+    expect(projectPetDirectory([borrowed, session('two')], true, true)).not.toHaveProperty('facts');
+  });
+  it('preserves whole exact facts without carrying request text or inventing diagnostic waiting', () => {
+    const row = { ...session('bound', 'busy'), presentationFacts: { activeTurnId: 'turn:one', waiting: [
+      { turnId: 'turn:one', requestId: 'request:one', kind: 'input' as const }], terminal: {
+      eventId: 'event:previous', turnId: 'turn:previous', sequence: 2, outcome: 'completed' as const } } } as SessionSummary;
+    expect(projectPetDirectory([row], true, true)).toMatchObject({ facts: [{ id: 'bound', ...row.presentationFacts }] });
+    expect(projectPetDirectory([row], false, true)).not.toHaveProperty('facts');
+  });
+});

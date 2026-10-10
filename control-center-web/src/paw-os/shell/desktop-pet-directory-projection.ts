@@ -1,5 +1,5 @@
 import type { SessionSummary } from '@/features/agent/types';
-import { emptyPetCounts, type PetConversation, type PetConversationState, type PetStateValue } from '@/features/agent/desktop-pet-snapshot';
+import { emptyPetCounts, normalizePetFact, type PetConversation, type PetConversationState, type PetStateValue } from '@/features/agent/desktop-pet-snapshot';
 import { projectStellarAgents } from './stellar-agent-projection';
 
 const priority: Record<PetConversationState, number> = { attention: 0, error: 1, running: 2, paused: 3, idle: 4, unknown: 5, terminal: 6 };
@@ -25,5 +25,11 @@ export function projectPetDirectory(sessions: readonly SessionSummary[], fresh: 
   // reshuffle the same admitted list or change a conversation's identity.
   const visible = conversations.sort((a, b) => priority[a.state] - priority[b.state] || a.id.localeCompare(b.id))
     .slice(0, 8).sort((a, b) => a.id.localeCompare(b.id));
-  return { freshness: fresh ? 'synced' : loaded ? 'recovering' : 'unavailable', counts, conversations: visible };
+  const facts = fresh ? visible.flatMap(item => {
+    const source = records.get(item.id)?.presentationFacts;
+    if (!source || Object.hasOwn(source, 'id')) return [];
+    const fact = normalizePetFact({ id: item.id, ...source });
+    return fact ? [fact] : [];
+  }) : [];
+  return { ...(facts.length ? { facts } : {}), freshness: fresh ? 'synced' : loaded ? 'recovering' : 'unavailable', counts, conversations: visible };
 }
