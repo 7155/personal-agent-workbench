@@ -69,6 +69,54 @@ test('short inline code follows its content while long code and its dialog remai
   await expectNoHorizontalPageOverflow(page);
 });
 
+test('narrow inline code captions contain the full copy target without covering the code', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop-1440x900', 'one explicit 375px viewport covers the mobile control token');
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto('/e2e/fixtures/file-previews.html?content-height=1');
+  const content = 'export function roomCommit(post: string) {\n  return { post, committed: true };\n}';
+  for (const [fileName, highlighted] of [['short-plain.code', false], ['short-highlight.ts', true]] as const) {
+    await open(page, fileName);
+    const region = page.getByRole('region', { name: `${fileName} 内联预览` });
+    const code = region.locator('.agent-file-code');
+    if (highlighted) await expect(code.locator('.agent-file-code__highlight pre')).toBeVisible();
+    else await expect(code.locator('.agent-file-code__highlight')).toHaveCount(0);
+    expect(await code.locator('pre').textContent()).toBe(content);
+    const geometry = await region.getByRole('button', { name: '复制代码', exact: true }).evaluate(button => {
+      const figure = button.closest('.agent-file-code')!;
+      const caption = button.closest('figcaption')!;
+      const body = figure.closest('.agent-file-preview-inline__body')!;
+      const pre = figure.querySelector('pre')!;
+      const rect = (element: Element) => {
+        const { left, top, right, bottom, width, height } = element.getBoundingClientRect();
+        return { left, top, right, bottom, width, height };
+      };
+      const b = rect(button);
+      const hits = [.1, .5, .9].flatMap(x => [.1, .5, .9].map(y => {
+        const hit = document.elementFromPoint(b.left + b.width * x, b.top + b.height * y);
+        return hit === button || (hit !== null && button.contains(hit));
+      }));
+      return {
+        button: b, caption: rect(caption), figure: rect(figure), body: rect(body), pre: rect(pre), hits,
+        preHasVerticalOverflow: pre.scrollHeight > pre.clientHeight,
+      };
+    });
+    expect(geometry.button.width).toBeGreaterThanOrEqual(40);
+    expect(geometry.button.height).toBeGreaterThanOrEqual(40);
+    // BCRs retain fractional CSS pixels; integer clientHeight is not a precise clip edge.
+    for (const boundary of [geometry.caption, geometry.figure, geometry.body]) {
+      expect(geometry.button.left).toBeGreaterThanOrEqual(boundary.left - .02);
+      expect(geometry.button.top).toBeGreaterThanOrEqual(boundary.top - .02);
+      expect(geometry.button.right).toBeLessThanOrEqual(boundary.right + .02);
+      expect(geometry.button.bottom).toBeLessThanOrEqual(boundary.bottom + .02);
+    }
+    expect(geometry.caption.bottom).toBeLessThanOrEqual(geometry.pre.top + .02);
+    expect(geometry.preHasVerticalOverflow).toBe(false);
+    expect(geometry.hits).toEqual(Array(9).fill(true));
+    await close(page, fileName);
+  }
+  await expectNoHorizontalPageOverflow(page);
+});
+
 test('managed Markdown, code, Diff, image, and interactive HTML previews stay usable', async ({ page }, testInfo) => {
   test.skip(
     !['desktop-1440x900', 'mobile-390x844'].includes(testInfo.project.name),

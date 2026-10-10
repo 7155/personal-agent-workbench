@@ -189,7 +189,7 @@
    the fallback and highlighted branch intrinsic inside the existing reader. */
 .agent-file-preview-inline__body > .agent-file-code {
   min-height: 0;
-  grid-template-rows: 38px auto;
+  grid-template-rows: minmax(38px, auto) auto;
 }
 .agent-file-preview-inline__body > .agent-file-code > pre,
 .agent-file-preview-inline__body > .agent-file-code > .agent-file-code__highlight,
