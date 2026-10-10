@@ -5,6 +5,13 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Release the model picker's submission guard after a local Home selection is
+  applied so later choices in the same popover remain usable. Keep pending and
+  unacknowledged requests protected from duplicate submission.
+
+- Preserve exact native Tool cancellation as stopped in live and restored
+  activity. Keep genuine errors and unmarked historical results unchanged.
+
 - Include Pillow and NumPy in the default development environment for local
   media regression fixtures without installing model-runtime extras.
 

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -204,6 +205,61 @@ async function openV2() {
   return {trigger,slider};
 }
 describe('v2 transactional reasoning slider', () => {
+  it('accepts another model in the same Home popover after a synchronous local keyboard selection', async () => {
+    const onChange = vi.fn();
+    function HomeSelection() {
+      const [modelReference, setModelReference] = useState('gpt/gpt-5.6-luna');
+      const [thinking, setThinking] = useState<ThinkingLevel>('max');
+      const models = catalog().providers.flatMap(provider => provider.models.map(model => ({
+        provider: provider.id, id: model.id, name: model.name,
+        reference: `${provider.id}/${model.id}`, thinkingLevels: model.thinkingLevels,
+      })));
+      return <ModelPicker options={{models, modelReference, thinking}} disabled={false} pending={false} requestOpen={0}
+        onChange={(provider, modelId, level) => {
+          onChange(provider, modelId, level);
+          setModelReference(`${provider}/${modelId}`); setThinking(level);
+        }}/>;
+    }
+    render(<ChatPresentationProvider ownerKey="test:home-local-selection" defaultVersion="v2"><HomeSelection/></ChatPresentationProvider>);
+    const user = userEvent.setup();
+    const trigger = screen.getByRole('button', {name:/^模型与推理/});
+    await user.click(trigger);
+    const picker = screen.getByRole('dialog', {name:'选择模型与推理强度'});
+    const slider = within(picker).getByRole('slider', {name:'推理强度'});
+    await waitFor(() => expect(slider).toHaveFocus());
+    // JSDOM does not perform native range stepping; dispatch its real keyboard/change/key-up contract.
+    fireEvent.keyDown(slider, {key:'ArrowLeft'});
+    fireEvent.change(slider, {target:{value:'2'}});
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.keyUp(slider, {key:'ArrowLeft'});
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenLastCalledWith('gpt','gpt-5.6-luna','high');
+    expect(trigger).toHaveAttribute('aria-label','模型与推理：GPT-5.6 Luna · gpt · 高');
+    fireEvent.keyUp(slider, {key:'ArrowLeft'});
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('dialog')).toBe(picker);
+    await user.click(within(picker).getByRole('button',{name:/^更换模型/}));
+    await user.type(within(picker).getByRole('searchbox',{name:'搜索模型'}),'flash');
+    await user.click(within(picker).getByRole('option',{name:'选择模型 DeepSeek V4 Flash'}));
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(onChange).toHaveBeenLastCalledWith('deepseek','deepseek-v4-flash','off');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(trigger).toHaveAttribute('aria-label','模型与推理：DeepSeek V4 Flash · deepseek · 不启用推理');
+  });
+  it('does not release an unacknowledged commit on an unrelated nonpending rerender', async () => {
+    const {onChange, view, props} = renderV2();
+    const {slider} = await openV2();
+    fireEvent.keyDown(slider,{key:'End'});fireEvent.change(slider,{target:{value:'3'}});fireEvent.keyUp(slider,{key:'End'});
+    expect(onChange).toHaveBeenCalledTimes(1);
+    view.rerender(<ChatPresentationProvider ownerKey="test:reasoning-slider-v2" defaultVersion="v2"><ModelPicker {...props} className="unrelated-update"/></ChatPresentationProvider>);
+    const user=userEvent.setup();
+    await user.click(screen.getByRole('button',{name:/^更换模型/}));
+    const option=screen.getByRole('option',{name:'选择模型 DeepSeek V4 Flash'});
+    fireEvent.click(option);fireEvent.click(option);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
   it('previews actual catalog levels during drag and commits once only on release', async () => {
     const {onChange}=renderV2();const {slider}=await openV2();
     expect(slider).toHaveAttribute('max','3');expect(slider).toHaveValue('2');
