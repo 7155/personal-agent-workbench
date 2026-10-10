@@ -239,6 +239,95 @@ describe('PAWOS Agent Session structural migration', () => {
     projection.messageOrder = ['public-user', 'public-plan', 'tool-result', 'local:draft', 'streaming'];
     expect(latestPublicSessionMessageId(projection)).toBe('public-plan');
   });
+  it.each(['turn_completed', 'turn_failed'] as const)('keeps current Stop after ACK when an older same-Session %s arrives', async oldTerminalType => {
+    const sessionId = `stop-old-terminal-${oldTerminalType}`; const turnId = 'turn-busy'; const oldTurnId = 'older-turn';
+    const stop = deferred<unknown>();
+    const initial = await busySessionTransport(sessionId).request<{ messages: Record<string, unknown>[]; status: string }>({ pathId: 'agent.session.snapshot' });
+    const originalUser = initial.messages[0]!;
+    const olderUser = { ...originalUser, id: 'older-user', turnId: oldTurnId, createdAtMs: 0 };
+    const olderAnswer = { ...olderUser, id: 'older-answer', role: 'assistant', blocks: [], completedAtMs: 0 };
+    const running = parseAgentEvent({ schemaVersion: 'rag-ime.agent-event.v1', eventId: `${sessionId}:1`, sessionId,
+      turnId, sequence: 1, createdAtMs: 1, eventType: 'tool_started', payload: { toolCallId: 'current-tool', toolName: 'bash' }, resumeToken: `${sessionId}:1` });
+    let snapshot: Record<string, unknown> = { ...initial, messages: [olderUser, olderAnswer, originalUser],
+      liveEvents: [running], lastSequence: 1, resumeToken: `${sessionId}:1` };
+    const transport = new StubControlTransport('mock', { ...idleSessionRoutes(),
+      'agent.session.snapshot': () => snapshot, 'agent.session.abort': () => stop.promise,
+    });
+    const view = render(<ControlTransportProvider transport={transport}><TooltipProvider><PawSessionWorkspace
+      record={{ ...liveSession(), id: sessionId }} recordId={sessionId} initialDraft="当前停止仍需保留"
+      onNewWork={vi.fn()} onSessionCreated={vi.fn()} onSessionUpdated={vi.fn()} /></TooltipProvider></ControlTransportProvider>);
+    const input = await screen.findByRole('textbox', { name: '消息' });
+    await waitFor(() => expect(transport.subscriptionCount('agent.session.events')).toBe(1));
+    fireEvent.click(await screen.findByRole('button', { name: '停止本轮' }));
+    await act(async () => stop.resolve({ ok: true, sessionId, runtimeReceipt: { turnId, lifecycle: { idle: true, drained: true } } }));
+    const oldTerminal = parseAgentEvent({ schemaVersion: 'rag-ime.agent-event.v1', eventId: `${sessionId}:2`, sessionId,
+      turnId: oldTurnId, sequence: 2, createdAtMs: 2, eventType: oldTerminalType,
+      payload: oldTerminalType === 'turn_failed' ? { error: '旧回合具体失败' } : { status: 'completed' }, resumeToken: `${sessionId}:2` });
+    snapshot = { ...snapshot, liveEvents: [running, oldTerminal], lastSequence: 2, resumeToken: `${sessionId}:2` };
+    await act(async () => { transport.emit('agent.session.events', oldTerminal); });
+    expect(screen.getByRole('button', { name: '正在停止本轮' })).toBeDisabled();
+    const current = view.container.querySelector(`[data-agent-turn-id="${turnId}"]`)!;
+    expect(current.querySelector('.agent-assistant-pending')).toHaveTextContent('正在停止');
+    expect(input).toHaveValue('当前停止仍需保留');
+    const terminal = parseAgentEvent({ schemaVersion: 'rag-ime.agent-event.v1', eventId: `${sessionId}:3`, sessionId,
+      turnId, sequence: 3, createdAtMs: 3, eventType: 'turn_completed', payload: { status: 'aborted' }, resumeToken: `${sessionId}:3` });
+    snapshot = { ...snapshot, liveEvents: [running, oldTerminal, terminal], lastSequence: 3, resumeToken: `${sessionId}:3`, status: 'idle' };
+    await act(async () => { transport.emit('agent.session.events', terminal); });
+    expect(screen.queryByRole('button', { name: '正在停止本轮' })).not.toBeInTheDocument();
+    expect(current.querySelector('.agent-assistant-pending')).not.toBeInTheDocument();
+    expect(useAgentLiveStore.getState().projections[agentProjectionKey(agentSessionAddress(transport, sessionId))]?.turnsById[turnId]?.status).toBe('aborted');
+    expect(transport.requests.filter(request => request.pathId === 'agent.session.abort')).toHaveLength(1);
+    expect(transport.requests.filter(request => request.pathId === 'agent.session.prompt')).toHaveLength(0);
+    expect(screen.getByRole('textbox', { name: '消息' })).toBe(input);
+  });
+
+  it.each(['aborted', 'failed', 'unknown-ACK'] as const)('keeps original Stop feedback consistent through provisional failure and %s', async outcome => {
+    const sessionId = `stop-feedback-${outcome}`; const turnId = 'turn-busy'; const stop = deferred<unknown>();
+    const initial = await busySessionTransport(sessionId).request<Record<string, unknown>>({ pathId: 'agent.session.snapshot' });
+    let snapshot = initial;
+    const transport = new StubControlTransport('mock', { ...idleSessionRoutes(),
+      'agent.session.snapshot': () => snapshot, 'agent.session.abort': () => stop.promise,
+    });
+    const tree = <ControlTransportProvider transport={transport}><TooltipProvider><PawSessionWorkspace
+      record={{ ...liveSession(), id: sessionId }} recordId={sessionId} initialDraft="停止期间保留的草稿"
+      onNewWork={vi.fn()} onSessionCreated={vi.fn()} onSessionUpdated={vi.fn()} /></TooltipProvider></ControlTransportProvider>;
+    const view = render(tree);
+    const input = await screen.findByRole('textbox', { name: '消息' });
+    await waitFor(() => expect(transport.subscriptionCount('agent.session.events')).toBe(1));
+    fireEvent.click(await screen.findByRole('button', { name: '停止本轮' }));
+    const message = { schemaVersion: 'rag-ime.agent-message.v1', id: 'provisional-assistant', sessionId, turnId,
+      role: 'assistant', status: 'failed', blocks: [], attachments: [], citations: [], createdAtMs: 2, completedAtMs: 3 };
+    const event = parseAgentEvent({ schemaVersion: 'rag-ime.agent-event.v1', eventId: `${sessionId}:1`, sessionId, turnId,
+      sequence: 1, createdAtMs: 3, eventType: 'message_completed', payload: { message }, resumeToken: `${sessionId}:1` });
+    act(() => { transport.emit('agent.session.events', event); });
+    expect(view.container.querySelector('.agent-assistant-pending')).toHaveTextContent('正在停止');
+    expect(view.container.querySelector('.agent-turn__failure')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Trace Agent|继续对话|切换模型/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: '消息' })).toBe(input);
+    expect(input).toHaveValue('停止期间保留的草稿');
+    if (outcome === 'unknown-ACK') {
+      await act(async () => stop.resolve(Promise.reject(new Error('Stop ACK 未确认'))));
+      expect(screen.getAllByRole('alert').some(alert => alert.textContent?.includes('Stop ACK 未确认'))).toBe(true);
+      expect(view.container.querySelector('.agent-turn__failure')).toHaveTextContent('本轮未完成');
+      expect(screen.queryByText('已停止。')).not.toBeInTheDocument();
+    } else {
+      await act(async () => stop.resolve({ ok: true, sessionId, runtimeReceipt: { turnId, lifecycle: { idle: true, drained: true } } }));
+      // A successful HTTP ACK has not settled the original native turn.
+      expect(view.container.querySelector('.agent-assistant-pending')).toHaveTextContent('正在停止');
+      const terminal = parseAgentEvent({ schemaVersion: 'rag-ime.agent-event.v1', eventId: `${sessionId}:2`, sessionId, turnId,
+        sequence: 2, createdAtMs: 4, eventType: outcome === 'failed' ? 'turn_failed' : 'turn_completed',
+        payload: outcome === 'failed' ? { error: '原工具退出，结果校验失败' } : { status: 'aborted' }, resumeToken: `${sessionId}:2` });
+      snapshot = { ...initial, liveEvents: [event, terminal], lastSequence: 2, resumeToken: `${sessionId}:2`, status: outcome === 'failed' ? 'failed' : 'idle' };
+      await act(async () => { transport.emit('agent.session.events', terminal); });
+      expect(view.container.querySelector('.agent-assistant-pending')).not.toBeInTheDocument();
+      if (outcome === 'failed') expect(view.container.querySelector('.agent-turn__failure')).toHaveTextContent('原工具退出，结果校验失败');
+      else expect(view.container.querySelector('.agent-turn__failure')).not.toBeInTheDocument();
+    }
+    expect(transport.requests.filter(request => request.pathId === 'agent.session.abort')).toHaveLength(1);
+    expect(transport.requests.filter(request => ['agent.session.prompt', 'agent.session.model.select', 'agent.session.thinking.select'].includes(request.pathId))).toHaveLength(0);
+    expect(input).toHaveValue('停止期间保留的草稿');
+  });
+
   it.each([
     ['prompt-first', true], ['stop-first', true], ['prompt-first', false], ['stop-first', false],
   ] as const)('settles a cancelled primary admission without a fabricated turn terminal (%s, drained: %s)', async (order, drained) => {

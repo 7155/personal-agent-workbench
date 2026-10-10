@@ -292,7 +292,7 @@ function PawSessionWorkspaceBody({
   const resumeRequestRef = useRef<{ controller: AbortController; recordId: string; transport: typeof transport; target?: AgentCompactionTarget } | undefined>(undefined);
   const compactionStopRequestRef = useRef<{ controller: AbortController; recordId: string; transport: typeof transport; target: AgentCompactionTarget } | undefined>(undefined);
   const turnStopRequestRef = useRef<{
-    scope: typeof workspaceScope; clientMessageId?: string; acknowledged: boolean; admissionCancelled: boolean;
+    scope: typeof workspaceScope; turnId: string; clientMessageId?: string; acknowledged: boolean; admissionCancelled: boolean; settled: boolean;
   } | undefined>(undefined);
   const resumeOwnerRef = useRef({ recordId, transport });
   resumeOwnerRef.current = { recordId, transport };
@@ -313,6 +313,9 @@ function PawSessionWorkspaceBody({
   }, [recordId, transport]);
   const pendingFeedbackTurnId = useAgentLiveStore(state => initialAgentResponseTurnId(selectAgentProjection(state, address)));
   const [stopping, setStopping] = useState(false);
+  const [stoppingTurn, setStoppingTurn] = useState<{
+    scope: typeof workspaceScope; sessionId: string; turnId: string;
+  }>();
   useEffect(() => {
     // A newer native target may appear before an older control request returns.
     // Release only that stale request's local lock; never retarget its payload.
@@ -647,9 +650,23 @@ function PawSessionWorkspaceBody({
           window.clearTimeout(terminalSnapshotTimerRef.current);
           terminalSnapshotTimerRef.current = undefined;
         }
-        setStopping(false);
-        if (turnStopRequestRef.current?.acknowledged) turnStopRequestRef.current = undefined;
-        setError(current => current === STOP_UNCONFIRMED_TEXT ? current : '');
+        const request = turnStopRequestRef.current;
+        const currentStop = request?.scope === workspaceScope ? request : undefined;
+        // Read the current owner ref, including after HTTP ACK. An older turn
+        // terminal must not retire this request's pending display or warning.
+        // A pending admission can bind to a native turn only by its exact client.
+        const ownsTerminal = !currentStop || currentStop.turnId === event.turnId
+          || Boolean(currentStop.clientMessageId && resolveAgentTurnUserMessage(
+            agentProjection(address), event.turnId,
+          )?.clientMessageId === currentStop.clientMessageId);
+        if (ownsTerminal) {
+          setStopping(false);
+          if (currentStop) {
+            currentStop.settled = true;
+            if (currentStop.acknowledged) turnStopRequestRef.current = undefined;
+          }
+          setError(current => current === STOP_UNCONFIRMED_TEXT ? current : '');
+        }
         void loadAgentSnapshotRef.current({
           preserveAfterSequence: event.sequence,
         });
@@ -1127,6 +1144,7 @@ function PawSessionWorkspaceBody({
     const controller = new AbortController();
     const request = { controller, recordId, transport, target };
     compactionStopRequestRef.current = request;
+    setStoppingTurn(undefined);
     const ownsRequest = () => !controller.signal.aborted && compactionStopRequestRef.current === request
       && resumeOwnerRef.current.recordId === recordId && resumeOwnerRef.current.transport === transport;
     const ownsTarget = () => ownsRequest()
@@ -1166,8 +1184,8 @@ function PawSessionWorkspaceBody({
     const activeTurnId = latestActiveTurnId(projection);
     const pendingAdmission = activeTurnId.startsWith('local-turn:')
       ? resolveAgentTurnUserMessage(projection, activeTurnId) : undefined;
-    const request = { scope: workspaceScope, clientMessageId: pendingAdmission?.clientMessageId,
-      acknowledged: false, admissionCancelled: false };
+    const request = { scope: workspaceScope, turnId: activeTurnId, clientMessageId: pendingAdmission?.clientMessageId,
+      acknowledged: false, admissionCancelled: false, settled: false };
     // Home can still own a browser-side first input while importing files or
     // awaiting configuration. Cancel only that exact unsent client; an idle
     // native Stop ACK cannot cancel a future Prompt on its behalf.
@@ -1180,6 +1198,9 @@ function PawSessionWorkspaceBody({
       recovery.recoverInput(current => ({ ...current, draft: current.draft.trim() ? current.draft : originalText }));
     }
     turnStopRequestRef.current = request;
+    // Capture the original request's target, not a later latest-turn guess.
+    // The existing stopping owner still clears pending only on its own paths.
+    setStoppingTurn({ scope: request.scope, sessionId: recordId, turnId: activeTurnId });
     const ownsRequest = () => turnStopRequestRef.current === request && workspaceScopeRef.current === workspaceScope;
     setStopping(true);
     /* Stopping the turn cancels the intent behind everything held for it, so
@@ -1206,7 +1227,7 @@ function PawSessionWorkspaceBody({
         && runtimeReceipt.pendingAdmission === true && runtimeReceipt.admissionCancelled === true)) {
         turnStopRequestRef.current = undefined;
         setStopping(false);
-      } else if (!request.clientMessageId) turnStopRequestRef.current = undefined;
+      } else if (request.settled) turnStopRequestRef.current = undefined;
       setError('');
     } catch (reason) {
       if (!ownsRequest()) return;
@@ -1973,6 +1994,7 @@ function PawSessionWorkspaceBody({
                 loading={loading}
                 modelSelectionAvailable={!evaluationSnapshot && Boolean(catalog)}
                 turnRecoveryDisabled={busy || sending || stopping || modelChanging}
+                stoppingTurn={stopping && stoppingTurn?.scope === workspaceScope ? stoppingTurn : undefined}
                 forkAvailable={!evaluationSnapshot && !embedded && classicHistoryAvailable && conversationForkAvailable && !busy && !sending && !workspaceRecord.roomParticipant}
                 rewriteAvailable={!evaluationSnapshot && !embedded && classicHistoryAvailable && conversationRewriteAvailable && !busy && !sending && !workspaceRecord.roomParticipant}
                 jumpRequest={jumpRequest}

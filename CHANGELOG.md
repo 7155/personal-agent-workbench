@@ -5,6 +5,9 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Keep the original turn's Stop feedback visible until its terminal arrives.
+  Ignore older turns for local Stop state and retain genuine failure details.
+
 - Keep Tool scan rows concise without hiding concrete results or errors, and
   distinguish local prediction and knowledge readiness from Session model health.
 

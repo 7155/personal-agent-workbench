@@ -491,6 +491,7 @@ export function AgentTimeline({
   loading = false,
   modelSelectionAvailable,
   turnRecoveryDisabled = false,
+  stoppingTurn,
   onRetryTurn,
   onContinueTurn,
   onSwitchModel,
@@ -520,6 +521,7 @@ export function AgentTimeline({
   loading?: boolean;
   modelSelectionAvailable: boolean;
   turnRecoveryDisabled?: boolean;
+  stoppingTurn?: Readonly<{ sessionId: string; turnId: string }>;
   onRetryTurn?: (
     turnId: string,
     onAdmissionRolledBack?: () => void,
@@ -1010,6 +1012,7 @@ export function AgentTimeline({
             persona={persona}
             modelSelectionAvailable={modelSelectionAvailable}
             turnRecoveryDisabled={turnRecoveryDisabled}
+            stoppingTurn={stoppingTurn}
             onRetryTurn={onRetryTurn}
             onContinueTurn={onContinueTurn}
             onSwitchModel={onSwitchModel}
@@ -1135,6 +1138,7 @@ export const AgentTurn = memo(function AgentTurn({
   persona,
   modelSelectionAvailable = false,
   turnRecoveryDisabled = false,
+  stoppingTurn,
   onRetryTurn,
   onContinueTurn,
   onSwitchModel,
@@ -1161,6 +1165,7 @@ export const AgentTurn = memo(function AgentTurn({
   persona?: AgentPersonaV1;
   modelSelectionAvailable?: boolean;
   turnRecoveryDisabled?: boolean;
+  stoppingTurn?: Readonly<{ sessionId: string; turnId: string }>;
   onRetryTurn?: (
     turnId: string,
     onAdmissionRolledBack?: () => void,
@@ -1192,7 +1197,7 @@ export const AgentTurn = memo(function AgentTurn({
     const recovery = selectAgentProjection(state, address)?.durableRecovery;
     return recovery?.paused === true && recovery.activeTurn?.turnId === turnId;
   });
-  const stopping = useAgentLiveStore((state) => {
+  const nativeStopping = useAgentLiveStore((state) => {
     const projection = selectAgentProjection(state, address);
     return projection?.status === 'aborting'
       && projection.turnOrder.at(-1) === turnId;
@@ -1285,13 +1290,19 @@ export const AgentTurn = memo(function AgentTurn({
   /* A later user turn consumes the recovery surface for this failure. Keep the
      failed turn and its evidence in history, but do not present an obsolete
      alert as though it still blocks the current conversation. */
-  const failure = turn.status === 'failed' && latestTurnId === turnId
-    ? publicAgentErrorText(rawFailure)
-    : '';
   const networkInterrupted = turn.status === 'failed' && isAgentNetworkInterruption(rawFailure);
   const terminalFailureActivity = [...activities].reverse().find((activity) => (
     activity.kind === 'turn_failed' && activity.status === 'failed'
   ));
+  // A failed message can precede the owning turn terminal during cancellation.
+  // Keep that evidence; only the exact current Stop intent changes its advice.
+  // Typed terminal failure always wins over a lagging browser control request.
+  const stopping = !paused && latestTurnId === turnId
+    && turn.status !== 'aborted' && turn.status !== 'completed' && !terminalFailureActivity
+    && (nativeStopping || (stoppingTurn?.sessionId === sessionId && stoppingTurn.turnId === turnId));
+  const failure = !stopping && turn.status === 'failed' && latestTurnId === turnId
+    ? publicAgentErrorText(rawFailure)
+    : '';
   const runtimeInterrupted = (
     terminalFailureActivity?.payload.failureKind === 'runtime_host_exit'
     || rawFailure.includes('Agent 运行时中断')
@@ -1332,15 +1343,15 @@ export const AgentTurn = memo(function AgentTurn({
         : '连接在最终回复生成前中断；请继续当前对话，或切换模型后继续。'
       : failure;
   const retryRequested = retryRequestedFor === `${projectionKey}:${turnId}:${turn.status}`;
-  const showWorking = !paused && showWorkingIndicator && workingTurnId === turnId
-    && (turn.status === 'queued' || turn.status === 'running');
-  const turnSettled = turn.status === 'completed' || turn.status === 'failed' || turn.status === 'aborted';
+  const showWorking = !paused && showWorkingIndicator && (stopping || (workingTurnId === turnId
+    && (turn.status === 'queued' || turn.status === 'running')));
+  const turnSettled = !stopping && (turn.status === 'completed' || turn.status === 'failed' || turn.status === 'aborted');
   const timelineEntries = interleavedTurnEntries(
     [...assistantMessages, ...inlineUserMessages],
     activities,
     activityPresentation,
   );
-  const turnWorkModel = buildAgentTurnWorkModel(paused ? 'waiting' : turn.status, timelineEntries);
+  const turnWorkModel = buildAgentTurnWorkModel(paused || stopping ? 'waiting' : turn.status, timelineEntries);
   const streamingMessageId = paused ? '' : activeStreamingMessageId(turn.status, assistantMessages);
   const replyMessages = assistantMessages.filter(message => message.blocks.some(block => (
     block.type === 'text' && Boolean(text(block.data.text).trim())
@@ -1410,7 +1421,7 @@ export const AgentTurn = memo(function AgentTurn({
                 renderEntry={renderTimelineEntry}
                 sessionId={sessionId}
                 turnId={turnId}
-                turnStatus={paused ? 'waiting' : turn.status}
+                turnStatus={paused || stopping ? 'waiting' : turn.status}
                 updatedAtMs={turn.updatedAtMs}
               />
             ) : (
