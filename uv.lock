@@ -957,6 +957,8 @@ tui = [
 [package.dev-dependencies]
 dev = [
     { name = "jsonschema" },
+    { name = "numpy" },
+    { name = "pillow" },
 ]
 
 [package.metadata]
@@ -979,7 +981,11 @@ requires-dist = [
 provides-extras = ["tui", "embedding-local", "embedding-mlx", "rerank-mlx", "knowledge-ann"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "jsonschema", specifier = ">=4.0,<5" }]
+dev = [
+    { name = "jsonschema", specifier = ">=4.0,<5" },
+    { name = "numpy", specifier = ">=2.0,<3" },
+    { name = "pillow", specifier = ">=12.0,<13" },
+]
 
 [[package]]
 name = "pillow"

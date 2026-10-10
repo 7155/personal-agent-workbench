@@ -5,6 +5,9 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Include Pillow and NumPy in the default development environment for local
+  media regression fixtures without installing model-runtime extras.
+
 - Keep the original turn's Stop feedback visible until its terminal arrives.
   Ignore older turns for local Stop state and retain genuine failure details.
 

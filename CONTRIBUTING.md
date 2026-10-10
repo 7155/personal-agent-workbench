@@ -25,6 +25,9 @@ corepack prepare pnpm@11.9.0 --activate
 pnpm --dir control-center-web install --frozen-lockfile
 ```
 
+The default dev group includes Pillow and NumPy for media fixtures; audio and
+video decoding tests also require `ffmpeg` and `ffprobe` on `PATH`.
+
 Do not add local API keys, model weights, personal input history, databases,
 build products, or macOS permission state to fixtures.
 
