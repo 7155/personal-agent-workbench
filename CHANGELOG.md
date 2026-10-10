@@ -5,6 +5,9 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Preserve bounded, redacted fatal Host diagnostics alongside JSONL framing
+  errors at process exit, without replaying uncertain commands.
+
 - Release the model picker's submission guard after a local Home selection is
   applied so later choices in the same popover remain usable. Keep pending and
   unacknowledged requests protected from duplicate submission.

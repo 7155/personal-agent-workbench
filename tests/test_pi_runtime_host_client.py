@@ -17,10 +17,20 @@ import json,sys
 for line in sys.stdin:
     request=json.loads(line)
     method=request['method']
-    if method=='fatal':
+    if method in {'fatal', 'fatal_partial'}:
+        if method=='fatal_partial':
+            sys.stdout.write('{"event":"notice","payload":{"text":"' + 'x'*128000)
+            sys.stdout.flush()
         print('FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory sk-secret123456 /Users/example/private ' + 'x'*700, file=sys.stderr, flush=True)
         for i in range(50):
             print(str(i)+': native stack frame [/usr/lib/dyld]', file=sys.stderr, flush=True)
+        if method=='fatal_partial':
+            sys.exit(17)
+        break
+    if method=='partial_noise':
+        sys.stdout.write('{"event":"notice","payload":{"text":"public partial')
+        sys.stdout.flush()
+        print('ordinary shutdown note sk-secret123456 /Users/example/private', file=sys.stderr, flush=True)
         break
     if method=='drop':
         break
@@ -120,6 +130,38 @@ class PiRuntimeHostClientTests(unittest.TestCase):
         self.client.host_identity = "pi-host:test-restarted-generation"
         self.client.start()
         self.assertEqual(self.client.diagnostic_error(), "")
+
+    def test_partial_json_eof_keeps_fatal_cause_redacted_bounded_and_acceptance_unknown(self):
+        process = self.client._process
+        with self.assertRaises(PiRuntimeCommandAcceptanceUnknown) as uncertain:
+            self.client.send("fatal_partial")
+        exit_code, error = self.exits[-1]
+        self.assertEqual(exit_code, 17)
+        self.assertIn("invalid Pi Runtime Host JSONL", error)
+        self.assertIn("Unterminated string", error)
+        self.assertIn("FATAL ERROR: Reached heap limit", error)
+        self.assertIn("JavaScript heap out of memory", error)
+        self.assertNotIn("sk-secret123456", error)
+        self.assertNotIn("/Users/example/private", error)
+        self.assertLessEqual(len(error), 500)
+        self.assertEqual(str(uncertain.exception), error)
+        self.assertFalse(self.client._pending)
+        self.assertEqual(len(self.exits), 1)
+        self.client.stop()
+        self.assertEqual(process.poll(), 17)
+        self.assertTrue(all(stream.closed for stream in (process.stdin, process.stdout, process.stderr)))
+        self.assertFalse(self.client._stdout_thread.is_alive())
+        self.assertFalse(self.client._stderr_thread.is_alive())
+        self.assertFalse(self.client._event_thread.is_alive())
+
+    def test_partial_json_does_not_promote_ordinary_stderr_to_fatal(self):
+        with self.assertRaises(PiRuntimeCommandAcceptanceUnknown):
+            self.client.send("partial_noise")
+        self.assertIn("invalid Pi Runtime Host JSONL", self.exits[-1][1])
+        self.assertNotIn("ordinary shutdown note", self.exits[-1][1])
+        self.assertNotIn("sk-secret123456", self.exits[-1][1])
+        self.assertEqual(self.client._fatal_error, "")
+        self.assertFalse(self.client._pending)
 
     def test_registry_failure_closes_new_process_and_streams(self):
         self.client.stop()
