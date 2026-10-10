@@ -4,7 +4,7 @@ import { IconButton } from '@/components/primitives';
 import { writeClipboardText } from '@/platform/clipboard';
 import { highlightCode } from './syntax-highlighter';
 
-export function CodePreview({ content, fileName, language }: { content: string; fileName: string; language: string }) {
+export function CodePreview({ content, fileName, language, showHeader = true }: { content: string; fileName: string; language: string; showHeader?: boolean }) {
   const [highlighted, setHighlighted] = useState('');
   const [copied, setCopied] = useState(false);
 
@@ -26,11 +26,11 @@ export function CodePreview({ content, fileName, language }: { content: string; 
   }
 
   return (
-    <figure className="agent-file-code">
-      <figcaption>
+    <figure aria-label={showHeader ? undefined : fileName} className="agent-file-code" data-header={showHeader ? undefined : 'hidden'}>
+      {showHeader ? <figcaption>
         <span><Code2 size={15} />{fileName}</span>
         <IconButton label={copied ? '已复制' : '复制代码'} icon={copied ? <Check size={15} /> : <Clipboard size={15} />} onClick={() => void copy()} size="small" tooltip />
-      </figcaption>
+      </figcaption> : null}
       {highlighted ? (
         // Shiki emits escaped token spans from the verified text receipt; the
         // original file HTML is never inserted through this path.

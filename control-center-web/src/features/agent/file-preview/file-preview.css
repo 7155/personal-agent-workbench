@@ -180,10 +180,15 @@
 .agent-file-preview-inline[data-status='loading'] .agent-file-preview-inline__state > svg {
   animation: agent-status-spin 1.2s linear infinite;
 }
-.agent-file-preview-inline__body > .agent-diff-preview,
 .agent-file-preview-inline__body > .agent-file-image-preview,
 .agent-file-preview-inline__body > .agent-file-markdown {
   min-height: 280px;
+}
+/* A short patch uses its actual rows; the existing body remains the bounded
+   vertical reader for long patches. Dialog panes keep their default height. */
+.agent-file-preview-inline__body > .agent-diff-preview {
+  min-height: 0;
+  grid-template-rows: auto auto;
 }
 /* Short code is a few source lines, not a full-height dialog pane. Keep both
    the fallback and highlighted branch intrinsic inside the existing reader. */
@@ -326,6 +331,7 @@
 .agent-file-markdown__blocked-media { color: var(--color-text-tertiary); font-style: italic; }
 
 .agent-file-code { display: grid; min-width: 0; min-height: 100%; grid-template-rows: 38px minmax(0, 1fr); margin: 0; background: var(--color-code-bg); color: var(--color-code-text); }
+.agent-file-code[data-header='hidden'] { grid-template-rows: auto; }
 .agent-file-code figcaption { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; padding: 0 10px 0 14px; border-bottom: 1px solid var(--color-code-border); color: var(--color-code-muted); font: 13px var(--font-mono); }
 .agent-file-code figcaption > span { display: flex; min-width: 0; align-items: center; gap: 7px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-file-code > pre, .agent-file-code__highlight, .agent-file-code__highlight pre { min-height: 100%; margin: 0; }

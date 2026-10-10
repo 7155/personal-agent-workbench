@@ -5,7 +5,7 @@ import { RoomPlanetAvatar } from '@/features/rooms/RoomPlanetAvatar';
 import { PetStatusSignal } from './desktop-pet-status';
 import { createPetGesture } from './desktop-pet-interaction';
 import './desktop-pet.css';
-import { acceptPetSnapshot, petConversationLabel, petPresentation, unavailablePetSnapshot, type PetConversationTarget, type PetSnapshot } from './desktop-pet-snapshot';
+import { acceptPetVisualSnapshot, petConversationLabel, petPresentation, petVisualSignal, unavailablePetSnapshot, type PetConversationTarget, type PetSnapshot, type PetVisualSnapshot } from './desktop-pet-snapshot';
 
 type PetDirection = 'left' | 'right' | 'up' | 'down';
 const moveKeys: Record<string, PetDirection | undefined> = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
@@ -35,7 +35,7 @@ function DesktopPetBody() {
   const gesture = useRef(createPetGesture());
   const movePending = useRef(false);
   const [error, setError] = useState('');
-  const [snapshot, setSnapshot] = useState(unavailablePetSnapshot);
+  const [{ snapshot, arrivalKey }, setSnapshot] = useState<PetVisualSnapshot>(() => ({ snapshot: unavailablePetSnapshot(), arrivalKey: null }));
   const [expanded, setExpanded] = useState(false);
   const [keyboardMoving, setKeyboardMoving] = useState(false);
   const expansionRequest = useRef(0);
@@ -47,7 +47,7 @@ function DesktopPetBody() {
   useEffect(() => {
     if (!host) return;
     let active = true;
-    const receive = (next: PetSnapshot) => { if (active) setSnapshot(previous => acceptPetSnapshot(previous, next)); };
+    const receive = (next: PetSnapshot) => { if (active) setSnapshot(previous => acceptPetVisualSnapshot(previous, next)); };
     // Subscribe first: a newer pushed revision wins over a delayed ready replay.
     const unsubscribe = host.onSnapshot(receive);
     void host.ready().then(receive).catch(() => { if (active) setError('桌面伙伴未就绪，请重新开启'); });
@@ -65,6 +65,8 @@ function DesktopPetBody() {
     if (document.hasFocus() && (document.activeElement === document.body || document.activeElement === document.documentElement)) directory.current?.focus();
   }, [expanded, snapshot]);
   const presentation = petPresentation(snapshot);
+  const visual = petVisualSignal(snapshot);
+  const sphere = avatarPresentation?.version === 'v2';
   const total = Object.values(snapshot.counts).reduce((sum, count) => sum + count, 0);
   const invoke = (action: Promise<void> | undefined) => { void action?.catch(() => setError('操作未完成，请重试')); };
   const expand = (next: boolean) => {
@@ -113,10 +115,13 @@ function DesktopPetBody() {
     </button>
     <button className="desktop-pet__hide" type="button" aria-label="隐藏桌面伙伴" disabled={!host} onClick={() => invoke(host?.hide())}>×</button>
     <button className="desktop-pet__planet" type="button" aria-label="与星伴对话"
+      data-directory-state={presentation.state}
       aria-describedby="pet-status" disabled={!host} ref={planet} title="与星伴对话 · 拖动上方把手移动"
       onClick={() => { if (gesture.current.canActivate(Date.now())) invoke(host?.openAssistant()); }}>
-      <RoomPlanetAvatar variant={avatarPresentation?.version === 'v2' ? 'sphere' : 'classic'} showSignal={false} signal={presentation.state === 'running' ? 'working' : 'idle'} interactive={Boolean(host)} motion="full" ordinal={0} activity="static" size={expanded ? 64 : 112} decorative />
-      <PetStatusSignal key={presentation.state} state={presentation.state} animate className="desktop-pet__signal" />
+      <RoomPlanetAvatar variant={sphere ? 'sphere' : 'classic'} showSignal={sphere} signal={visual.signal}
+        arrivalKey={arrivalKey} interactive={Boolean(host)} motion={sphere ? visual.motion : 'full'}
+        ordinal={0} activity="static" size={expanded ? 64 : 112} decorative />
+      {!sphere && <PetStatusSignal key={presentation.state} state={presentation.state} animate className="desktop-pet__signal" />}
     </button>
     <span className="desktop-pet__hint" id="pet-status" role="status" aria-live="polite" aria-atomic="true">{keyboardMoving ? '方向键移动，Esc 结束' : host ? presentation.label : '请从 PAW 桌面端开启'}</span>
     <nav className="desktop-pet__actions" aria-label="星伴入口">

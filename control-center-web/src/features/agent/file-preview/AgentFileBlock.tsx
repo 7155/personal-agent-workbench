@@ -163,7 +163,7 @@ export function AgentFileBlock({ data, sessionId = '' }: { data: Record<string, 
                 <Button disabled={!transport} leadingIcon={<RefreshCw size={15} />} onClick={() => transport && retryPreview(transport)} size="small" variant="quiet">重试</Button>
               </div>
             ) : null}
-            {status === 'ready' && preview ? <FilePreviewRenderer preview={preview} /> : null}
+            {status === 'ready' && preview ? <FilePreviewRenderer preview={preview} externalToolbar={typeof preview.content === 'string' && Boolean(preview.content)} /> : null}
           </div>
         </section>
       ) : null}

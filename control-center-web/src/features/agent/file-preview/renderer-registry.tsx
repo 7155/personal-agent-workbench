@@ -9,7 +9,7 @@ import { HtmlArtifactPreview } from './HtmlArtifactPreview';
 import { MarkdownPreview } from './MarkdownPreview';
 
 export type FilePreviewKind = AgentFilePreviewV1['descriptor']['previewKind'];
-export type FilePreviewRenderer = ComponentType<{ preview: AgentFilePreviewV1 }>;
+export type FilePreviewRenderer = ComponentType<{ preview: AgentFilePreviewV1; externalToolbar?: boolean }>;
 
 const renderers = new Map<FilePreviewKind, FilePreviewRenderer>();
 
@@ -17,14 +17,14 @@ export function registerFilePreviewRenderer(kind: FilePreviewKind, renderer: Fil
   renderers.set(kind, renderer);
 }
 
-export function FilePreviewRenderer({ preview }: { preview: AgentFilePreviewV1 }) {
+export function FilePreviewRenderer({ preview, externalToolbar = false }: { preview: AgentFilePreviewV1; externalToolbar?: boolean }) {
   const Renderer = renderers.get(preview.descriptor.previewKind) ?? UnsupportedPreview;
-  return <Renderer preview={preview} />;
+  return <Renderer preview={preview} externalToolbar={externalToolbar} />;
 }
 
 registerFilePreviewRenderer('markdown', ({ preview }) => <MarkdownPreview content={preview.content ?? ''} />);
-registerFilePreviewRenderer('code', ({ preview }) => <CodePreview content={preview.content ?? ''} fileName={preview.descriptor.fileName} language={preview.descriptor.language || 'text'} />);
-registerFilePreviewRenderer('diff', ({ preview }) => <DiffPreview content={preview.content ?? ''} />);
+registerFilePreviewRenderer('code', ({ preview, externalToolbar }) => <CodePreview content={preview.content ?? ''} fileName={preview.descriptor.fileName} language={preview.descriptor.language || 'text'} showHeader={!externalToolbar} />);
+registerFilePreviewRenderer('diff', ({ preview, externalToolbar }) => <DiffPreview content={preview.content ?? ''} showCopy={!externalToolbar} />);
 registerFilePreviewRenderer('html', HtmlArtifactPreview);
 registerFilePreviewRenderer('image', ManagedImagePreview);
 registerFilePreviewRenderer('unsupported', UnsupportedPreview);

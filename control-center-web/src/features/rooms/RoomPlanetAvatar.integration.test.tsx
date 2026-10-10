@@ -22,6 +22,31 @@ function Hosted({ signal = 'working', active = true, expression = 'happy', mode 
   </MotionActivityBoundary></MotionProvider>;
 }
 describe('explicit sphere avatar integration', () => {
+  it('accepts an explicit local arrival once while seeds and quiet recovery stay static', () => {
+    // Only the notice timeout belongs to this check; retain the real surface clock.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const tree = (signal: PlanetSignalState, arrivalKey: string | null, active = true) => <MotionProvider><MotionActivityBoundary active={active}>
+      <RoomPlanetAvatar ordinal={0} variant="sphere" signal={signal} motion="full" arrivalKey={arrivalKey}/>
+    </MotionActivityBoundary></MotionProvider>;
+    const view = render(tree('idle', null)), avatar = view.container.querySelector('svg')!;
+    view.rerender(tree('error', null));
+    expect(avatar).toHaveAttribute('data-pulse', 'false');
+    view.rerender(tree('working', null));
+    view.rerender(tree('error', 'public:1'));
+    expect(avatar).toHaveAttribute('data-pulse', 'true');
+    view.rerender(tree('error', 'public:1'));
+    expect(avatar).toHaveAttribute('data-pulse', 'true');
+    act(() => { vi.advanceTimersByTime(400); });
+    expect(avatar).toHaveAttribute('data-pulse', 'false');
+    view.rerender(tree('error', 'public:1'));
+    expect(avatar).toHaveAttribute('data-pulse', 'false');
+    view.rerender(tree('working', null, false));
+    view.rerender(tree('error', 'public:2', false));
+    view.rerender(tree('error', 'public:2'));
+    expect(avatar).toHaveAttribute('data-pulse', 'false');
+    expect(view.container.querySelector('svg')).toBe(avatar);
+  });
+
   it('opts in only the three supported ordinal identities and keeps a real classic rollback', () => {
     const avatars = (variant: 'classic' | 'sphere') => <MotionProvider>{[0, 1, 2, 4].map(ordinal => <RoomPlanetAvatar key={ordinal} ordinal={ordinal} variant={variant}/>)}</MotionProvider>;
     const view = render(avatars('sphere'));
