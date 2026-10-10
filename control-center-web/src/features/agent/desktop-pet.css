@@ -33,10 +33,13 @@ html:has(.desktop-pet), body:has(.desktop-pet), #root:has(.desktop-pet) {
 }
 .desktop-pet__planet > svg:not(.desktop-pet__signal) { width: 112px; max-width: 100%; height: auto; }
 .desktop-pet[data-expanded='true'] .desktop-pet__planet > svg:not(.desktop-pet__signal) { width: 64px; }
+/* The 320-unit artwork needs a readable outline at 64px. Keep its original
+   mouth path and transform; ordinary avatars and the 112px pet stay unchanged. */
+.desktop-pet[data-expanded='true'] .desktop-pet__planet > .sphere-planet-avatar [data-mouth] { stroke-width: 4; }
 .desktop-pet__planet:hover { filter: drop-shadow(0 8px 8px rgb(30 54 74 / .24)); }
 .desktop-pet__hint {
   max-width: 100%; border-radius: 8px; padding: 4px 6px; text-align: center;
-  background: var(--color-surface); font-size: 11px; line-height: 1.35;
+  background: var(--color-surface); font-size: 12px; line-height: 1.35;
 }
 .desktop-pet__actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; max-width: 100%; gap: 1px; padding: 3px; border: 1px solid var(--color-border); border-radius: 24px; background: var(--color-surface); box-shadow: 0 2px 10px rgb(30 54 74 / .07); }
 .desktop-pet__actions button { display: grid; place-items: center; min-width: 44px; min-height: 44px; border: 0; border-radius: 20px; background: transparent; color: var(--color-text); cursor: pointer; }
@@ -61,9 +64,9 @@ html:has(.desktop-pet), body:has(.desktop-pet), #root:has(.desktop-pet) {
 }
 .desktop-pet__conversation:hover { background: var(--color-accent-soft); }
 .desktop-pet__conversation > span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.desktop-pet__conversation > small { flex: 0 0 auto; color: var(--color-text-muted); font-size: 10px; }
+.desktop-pet__conversation > small { flex: 0 0 auto; color: var(--color-text-muted); font-size: 12px; }
 .desktop-pet__panel > footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; min-height: 30px; border-top: 1px solid var(--color-border); }
-.desktop-pet__panel > footer > span { font-size: 10px; color: var(--color-text-muted); }
+.desktop-pet__panel > footer > span { font-size: 12px; color: var(--color-text-muted); }
 .desktop-pet__error { flex: 0 0 auto; max-width: 100%; padding: 5px; border-radius: 6px; background: var(--color-surface); color: var(--color-danger); font-size: 11px; text-align: center; }
 @media (max-width: 120px) {
   .desktop-pet__drag { left: 3px; min-width: 32px; padding: 0; }

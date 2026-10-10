@@ -1,9 +1,25 @@
-import { emptyPetCounts, type PetSourceIdentity, type PetStatePublisherBridge, type PetStateValue } from './desktop-pet-snapshot';
+import { emptyPetCounts, normalizePetFact, type PetSourceIdentity, type PetStatePublisherBridge, type PetStateValue } from './desktop-pet-snapshot';
 
 /** A view publisher only: no transport, Session subscription, polling, or history. */
 export function createDesktopPetPublisher(bridge: PetStatePublisherBridge, identity: PetSourceIdentity) {
   let active = true;
   let epoch: number | undefined;
+  let factsSupported = false;
+  const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).byteLength;
+  function envelope(value: PetStateValue, producerEpoch: number, revision: number) {
+    const { facts, ...legacy } = value;
+    const result = { ...legacy, schemaVersion: 1 as const, producerEpoch, revision,
+      ...(factsSupported ? { facts: [] as NonNullable<PetStateValue['facts']> } : {}) };
+    // Reserve the native wrapper keys and its bounded generated visual label.
+    const fits = () => bytes(factsSupported ? { ...result, sourceId: identity.sourceId, scopeId: identity.scopeId,
+      visual: { signal: 'waiting', motion: 'static', label: '界'.repeat(48), arrivalKey: '9999999999999999:9999999999999999' } } : result) <= 4096;
+    if (!fits()) throw new Error('Desktop pet base exceeds IPC budget');
+    if (factsSupported) for (const fact of facts ?? []) {
+      result.facts!.push(fact);
+      if (!fits()) result.facts!.pop();
+    }
+    return result;
+  }
   let revision = 0;
   let pending: PetStateValue | undefined;
   let sending = false;
@@ -16,10 +32,12 @@ export function createDesktopPetPublisher(bridge: PetStatePublisherBridge, ident
     try {
       while (active && pending) {
         const value = pending; pending = undefined;
-        const signature = JSON.stringify(value);
+        const packed = envelope(value, producerEpoch, revision + 1);
+        const signature = JSON.stringify({ ...packed, revision: 0 });
         if (signature === last) continue;
         last = signature;
-        const accepted = await bridge.publish({ ...value, schemaVersion: 1, producerEpoch, revision: ++revision });
+        revision += 1;
+        const accepted = await bridge.publish(packed);
         if (!accepted) { active = false; pending = undefined; }
       }
     } catch {
@@ -29,7 +47,7 @@ export function createDesktopPetPublisher(bridge: PetStatePublisherBridge, ident
   }
   void bridge.begin(identity).then(result => {
     if (!active) { releaseEpoch(result.producerEpoch); return; }
-    epoch = result.producerEpoch; void flush();
+    epoch = result.producerEpoch; factsSupported = result.factsVersion === 1; void flush();
   }).catch(() => { active = false; pending = undefined; });
   return {
     update(value: PetStateValue) {
@@ -37,7 +55,13 @@ export function createDesktopPetPublisher(bridge: PetStatePublisherBridge, ident
       // Explicit allowlist: consumers may never forward extra object fields.
       const counts = emptyPetCounts();
       for (const key of Object.keys(counts) as (keyof typeof counts)[]) counts[key] = value.counts[key];
-      pending = { freshness: value.freshness, counts, conversations: value.conversations.slice(0, 8).map(({ id, label, state }) => ({ id, label, state })) };
+      const conversations = value.conversations.slice(0, 8).map(({ id, label, state }) => ({ id, label, state }));
+      const ids = new Set(conversations.map(row => row.id));
+      const facts = value.facts?.slice(0, 8).flatMap(row => {
+        const fact = normalizePetFact(row);
+        return fact && ids.has(fact.id) ? [fact] : [];
+      });
+      pending = { freshness: value.freshness, counts, conversations, ...(facts ? { facts } : {}) };
       void flush();
     },
     release() {

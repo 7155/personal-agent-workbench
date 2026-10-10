@@ -126,3 +126,135 @@ test('retains explicit error separately from attention and clears both when stal
   assert.equal(h.state.snapshot().counts.unknown, 1);
   assert.equal(h.state.snapshot().conversations[0].state, 'unknown');
 });
+
+const activeFact = { id: 'session-one', activeTurnId: 'turn:one', waiting: [] };
+const doneFact = { id: 'session-one', activeTurnId: '', waiting: [], terminal: {
+  eventId: 'event:done', turnId: 'turn:one', sequence: 3, outcome: 'completed' } };
+const idleValue = (epoch, revision, facts) => ({ ...value(epoch, revision), counts: { ...emptyTestCounts(), idle: 1 },
+  conversations: [{ id: 'session-one', label: 'Conversation one', state: 'idle' }], facts });
+function emptyTestCounts() { return { running: 0, attention: 0, error: 0, paused: 0, idle: 0, terminal: 0, unknown: 0 }; }
+test('advertises optional facts and seeds historical success without global completion', () => {
+  const h = harness(); const begin = h.invoke('begin', identity);
+  assert.equal(begin.factsVersion, 1);
+  h.invoke('publish', idleValue(begin.producerEpoch, 1, [doneFact]));
+  assert.equal(h.state.snapshot().visual.signal, 'idle');
+  assert.equal(h.state.snapshot().visual.arrivalKey, null);
+});
+test('observes exact original running turn before done and retains consumed identity', () => {
+  const h = harness(); const { producerEpoch } = h.invoke('begin', identity);
+  h.invoke('publish', { ...value(producerEpoch), facts: [activeFact] });
+  h.invoke('publish', idleValue(producerEpoch, 2, [doneFact]));
+  assert.equal(h.state.snapshot().visual.signal, 'done');
+  const key = h.state.snapshot().visual.arrivalKey;
+  assert.ok(key);
+  h.invoke('publish', idleValue(producerEpoch, 3, [doneFact]));
+  assert.equal(h.state.snapshot().visual.arrivalKey, key);
+});
+
+test('keeps legacy publish exact and does not upgrade generic diagnostics into waiting or done', () => {
+  const h = harness(); const { producerEpoch } = h.invoke('begin', identity);
+  h.invoke('publish', value(producerEpoch));
+  assert.equal(Object.hasOwn(h.state.snapshot(), 'facts'), false);
+  assert.equal(Object.hasOwn(h.state.snapshot(), 'visual'), false);
+  h.invoke('publish', { ...idleValue(producerEpoch, 2, []), counts: { ...emptyTestCounts(), attention: 1 },
+    conversations: [{ id: 'session-one', label: 'Conversation one', state: 'attention' }] });
+  assert.equal(h.state.snapshot().visual.signal, 'idle');
+});
+test('only exact bound input becomes waiting, seed static then one new transition', () => {
+  const h = harness(); const { producerEpoch } = h.invoke('begin', identity);
+  const request = { turnId: 'turn:one', requestId: 'request:one', kind: 'input' };
+  h.invoke('publish', { ...value(producerEpoch), facts: [activeFact] });
+  h.invoke('publish', { ...value(producerEpoch, 2), facts: [{ ...activeFact, waiting: [request] }] });
+  assert.equal(h.state.snapshot().visual.signal, 'waiting');
+  const key = h.state.snapshot().visual.arrivalKey; assert.ok(key);
+  h.invoke('publish', { ...value(producerEpoch, 3), facts: [{ ...activeFact, waiting: [request] }] });
+  assert.equal(h.state.snapshot().visual.arrivalKey, key);
+  h.invoke('publish', { ...value(producerEpoch, 4), facts: [activeFact] });
+  assert.equal(h.state.snapshot().visual.signal, 'working');
+  assert.throws(() => h.invoke('publish', { ...value(producerEpoch, 5), facts: [{ ...activeFact,
+    waiting: [{ ...request, turnId: 'turn:foreign' }] }] }), /Invalid/);
+  const other = harness(); const epoch = other.invoke('begin', identity).producerEpoch;
+  other.invoke('publish', { ...value(epoch), facts: [{ ...activeFact, waiting: [request] }] });
+  assert.equal(other.state.snapshot().visual.signal, 'waiting');
+  assert.equal(other.state.snapshot().visual.arrivalKey, null);
+});
+test('Stop, failed, foreign turn and newer work cannot be celebrated', () => {
+  for (const outcome of ['aborted', 'failed']) {
+    const h = harness(); const { producerEpoch } = h.invoke('begin', identity);
+    h.invoke('publish', { ...value(producerEpoch), facts: [activeFact] });
+    h.invoke('publish', idleValue(producerEpoch, 2, [{ ...doneFact, terminal: { ...doneFact.terminal, outcome } }]));
+    assert.equal(h.state.snapshot().visual.signal, 'idle');
+    assert.equal(h.state.snapshot().visual.arrivalKey, null);
+  }
+  const h = harness(); const { producerEpoch } = h.invoke('begin', identity);
+  h.invoke('publish', { ...value(producerEpoch), facts: [activeFact] });
+  h.invoke('publish', idleValue(producerEpoch, 2, [{ ...doneFact, terminal: { ...doneFact.terminal, turnId: 'turn:other' } }]));
+  assert.equal(h.state.snapshot().visual.signal, 'idle');
+  h.invoke('publish', { ...value(producerEpoch, 3), facts: [{ ...doneFact, activeTurnId: 'turn:successor', terminal: { ...doneFact.terminal, turnId: 'turn:other' } }] });
+  assert.equal(h.state.snapshot().visual.signal, 'working');
+});
+test('recovery and new epoch seed successful history and preserve unknown offline', () => {
+  const h = harness(); const epoch = h.invoke('begin', identity).producerEpoch;
+  h.invoke('publish', { ...value(epoch), facts: [activeFact] });
+  h.invoke('publish', { ...value(epoch, 2), freshness: 'recovering', facts: [activeFact] });
+  assert.equal(h.state.snapshot().visual.signal, 'idle');
+  assert.equal(h.state.snapshot().visual.motion, 'static');
+  h.invoke('publish', idleValue(epoch, 3, [doneFact]));
+  assert.equal(h.state.snapshot().visual.signal, 'idle');
+  const next = h.invoke('begin', identity).producerEpoch;
+  h.invoke('publish', idleValue(next, 1, [doneFact]));
+  assert.equal(h.state.snapshot().visual.signal, 'idle');
+  assert.equal(h.invoke('publish', { ...value(epoch, 99), facts: [activeFact] }), false);
+});
+test('new waiting/error/running take precedence over an old completion', () => {
+  const h = harness(); const { producerEpoch } = h.invoke('begin', identity);
+  h.invoke('publish', { ...value(producerEpoch), facts: [activeFact] });
+  h.invoke('publish', idleValue(producerEpoch, 2, [doneFact]));
+  assert.equal(h.state.snapshot().visual.signal, 'done');
+  h.invoke('publish', { ...value(producerEpoch, 3), facts: [{ ...activeFact, activeTurnId: 'turn:new', waiting: [
+    { requestId: 'request:new', turnId: 'turn:new', kind: 'review' }] }] });
+  assert.equal(h.state.snapshot().visual.signal, 'waiting');
+  h.invoke('publish', { ...value(producerEpoch, 4), counts: { ...emptyTestCounts(), error: 1 },
+    conversations: [{ id: 'session-one', label: 'Conversation one', state: 'error' }], facts: [doneFact] });
+  assert.equal(h.state.snapshot().visual.signal, 'error');
+});
+test('rejects content, unbound rows, duplicate or oversized facts and regressing exact terminal', () => {
+  const h = harness(); const epoch = h.invoke('begin', identity).producerEpoch;
+  for (const facts of [[{ ...activeFact, prompt: 'private' }], [{ ...activeFact, id: 'foreign' }],
+    [activeFact, activeFact], [{ ...activeFact, waiting: [{ turnId: 'turn:one', requestId: 'request:one', kind: 'attention' }] }],
+    [{ ...doneFact, terminal: { ...doneFact.terminal, eventId: 'x'.repeat(513) } }]]) {
+    assert.throws(() => h.invoke('publish', { ...value(epoch), facts }), /Invalid/);
+  }
+  h.invoke('publish', idleValue(epoch, 1, [doneFact]));
+  assert.throws(() => h.invoke('publish', idleValue(epoch, 2, [{ ...doneFact, terminal: { ...doneFact.terminal, sequence: 2 } }])), /Regressing/);
+  assert.equal(h.state.snapshot().revision, 1);
+  assert.throws(() => h.invoke('publish', { ...value(epoch, 2), history: 'x'.repeat(4096) }), /Invalid/);
+  assert.equal(h.state.snapshot().revision, 1);
+});
+
+
+test('waits for the current running count to clear before consuming a successful exact turn', () => {
+  const h = harness(); const epoch = h.invoke('begin', identity).producerEpoch;
+  h.invoke('publish', { ...value(epoch), facts: [activeFact] });
+  h.invoke('publish', { ...value(epoch, 2), facts: [doneFact] });
+  assert.equal(h.state.snapshot().visual.signal, 'working');
+  h.invoke('publish', idleValue(epoch, 3, [doneFact]));
+  assert.equal(h.state.snapshot().visual.signal, 'done');
+  const key = h.state.snapshot().visual.arrivalKey;
+  h.invoke('publish', idleValue(epoch, 4, [doneFact]));
+  assert.equal(h.state.snapshot().visual.arrivalKey, key);
+  h.invoke('publish', idleValue(epoch, 5, [{ ...doneFact, activeTurnId: 'turn:new' }]));
+  assert.equal(h.state.snapshot().visual.signal, 'idle');
+});
+
+
+test('an exact active waiting turn observed by this owner may complete, but seed history cannot', () => {
+  const h = harness(); const epoch = h.invoke('begin', identity).producerEpoch;
+  h.invoke('publish', { ...value(epoch), counts: { ...emptyTestCounts(), attention: 1 },
+    conversations: [{ id: 'session-one', label: 'Conversation one', state: 'attention' }],
+    facts: [{ ...activeFact, waiting: [{ turnId: activeFact.activeTurnId, requestId: 'request:one', kind: 'input' }] }] });
+  assert.equal(h.state.snapshot().visual.signal, 'waiting');
+  assert.equal(h.state.snapshot().visual.arrivalKey, null);
+  h.invoke('publish', idleValue(epoch, 2, [doneFact]));
+  assert.equal(h.state.snapshot().visual.signal, 'done'); assert.ok(h.state.snapshot().visual.arrivalKey);
+});

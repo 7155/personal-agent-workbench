@@ -123,7 +123,7 @@ function DesktopPetBody() {
         ordinal={0} activity="static" size={expanded ? 64 : 112} decorative />
       {!sphere && <PetStatusSignal key={presentation.state} state={presentation.state} animate className="desktop-pet__signal" />}
     </button>
-    <span className="desktop-pet__hint" id="pet-status" role="status" aria-live="polite" aria-atomic="true">{keyboardMoving ? '方向键移动，Esc 结束' : host ? presentation.label : '请从 PAW 桌面端开启'}</span>
+    <span className="desktop-pet__hint" id="pet-status" role="status" aria-live="polite" aria-atomic="true">{keyboardMoving ? '方向键移动，Esc 结束' : host ? sphere && snapshot.visual ? snapshot.visual.label : presentation.label : '请从 PAW 桌面端开启'}</span>
     <nav className="desktop-pet__actions" aria-label="星伴入口">
       <button aria-label="查看后台对话" title="查看后台对话" type="button" aria-expanded={expanded} aria-controls="pet-conversations" ref={directory} disabled={!host} onClick={() => { if (gesture.current.canActivate(Date.now())) expand(!expanded); }}><MessageSquare size={19} aria-hidden="true" /><span>对话近况</span></button>
       {host?.openVoiceSettings ? <button aria-label="语音输入设置" title="语音输入设置" type="button" onClick={() => invoke(host.openVoiceSettings?.())}><Mic size={19} aria-hidden="true" /></button> : null}

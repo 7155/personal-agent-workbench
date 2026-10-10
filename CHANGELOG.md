@@ -5,6 +5,10 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Display exact pending-input and successful-completion satellite signals through
+  the existing desktop companion, without replaying historical arrivals. Improve
+  the expanded planet mouth and caption readability.
+
 - Publish content-free pending request and typed terminal identities in the
   existing Session directory. Preserve unknown legacy facts and distinguish
   successful completion from Stop and failure without loading full histories.
