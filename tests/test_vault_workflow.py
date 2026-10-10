@@ -3,6 +3,7 @@ from tempfile import TemporaryDirectory
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 import os
+import sqlite3
 import unittest
 from unittest.mock import patch
 from rag_ime.knowledge_library.store import KnowledgeStore
@@ -505,6 +506,75 @@ class WorkflowTests(unittest.TestCase):
         with self.assertRaises(OSError):
             self.saved()
         self.assertEqual(list(outside.iterdir()), [])
+
+
+class VaultBackupExportTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.database = Path(self.temp.name) / "knowledge.sqlite"
+
+    def tracked_export(self, *, has_vault=True, fail_read=False):
+        from rag_ime.knowledge_library.vault_backup import export_records
+
+        with sqlite3.connect(self.database) as db:
+            if has_vault:
+                db.execute("CREATE TABLE knowledge_vaults (id TEXT, title TEXT)")
+                db.execute("INSERT INTO knowledge_vaults VALUES ('original', '原笔记')")
+        db.close()
+        original_connect = sqlite3.connect
+        connections = []
+        close_calls = []
+        statements = []
+
+        class TrackedConnection(sqlite3.Connection):
+            def close(self):
+                close_calls.append(self)
+                super().close()
+
+        def connect(*args, **kwargs):
+            connection = original_connect(*args, **kwargs, factory=TrackedConnection)
+            connections.append(connection)
+            self.addCleanup(sqlite3.Connection.close, connection)
+            connection.set_trace_callback(statements.append)
+            if fail_read:
+                connection.set_authorizer(
+                    lambda action, table, *_: sqlite3.SQLITE_DENY
+                    if action == sqlite3.SQLITE_READ and table == "knowledge_vaults"
+                    else sqlite3.SQLITE_OK
+                )
+            return connection
+
+        with patch("sqlite3.connect", side_effect=connect) as connector:
+            if fail_read:
+                with self.assertRaises(sqlite3.DatabaseError):
+                    export_records(self.database)
+                packet = None
+            else:
+                packet = export_records(self.database)
+        connector.assert_called_once_with(self.database.as_uri() + "?mode=ro", uri=True)
+        self.assertEqual(len(connections), 1)
+        self.assertEqual(close_calls, connections)
+        with self.assertRaises(sqlite3.ProgrammingError):
+            connections[0].execute("SELECT 1")
+        self.assertIn("BEGIN", statements)
+        return packet
+
+    def test_export_closes_original_readonly_connection_and_keeps_packet(self):
+        self.assertEqual(
+            self.tracked_export(),
+            {
+                "schemaVersion": "paw.vault-control-backup.v1",
+                "tables": {"knowledge_vaults": [{"id": "original", "title": "原笔记"}]},
+                "restoresAuthority": False,
+            },
+        )
+
+    def test_export_without_vault_table_closes_connection_before_return(self):
+        self.assertIsNone(self.tracked_export(has_vault=False))
+
+    def test_export_read_failure_closes_connection_and_propagates_error(self):
+        self.tracked_export(fail_read=True)
 
 
 if __name__ == "__main__":

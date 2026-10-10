@@ -4,6 +4,7 @@ Restoration carries history, not authority: scopes pause, remote processing is
 off, pairings are revoked and old approvals must be reviewed anew.
 """
 
+from contextlib import closing
 import json
 from pathlib import Path
 from .store import KnowledgeStore
@@ -29,7 +30,7 @@ def export_records(database: Path):
         return None
     import sqlite3
 
-    with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as db:
+    with closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)) as db, db:
         db.row_factory = sqlite3.Row
         db.execute("BEGIN")
         present = {
