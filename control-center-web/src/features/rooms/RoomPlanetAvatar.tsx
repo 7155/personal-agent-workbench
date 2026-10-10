@@ -28,6 +28,8 @@ export type RoomPlanetAvatarProps = {
   ordinal: number; size?: number; className?: string; decorative?: boolean; activity?: RoomPlanetActivity;
   variant?: 'classic' | 'sphere'; expression?: PlanetExpression; signal?: PlanetSignalState;
   motion?: PlanetMotionMode; interactive?: boolean; showSignal?: boolean;
+  /** undefined keeps ordinary signal transitions; null seeds retained history. */
+  arrivalKey?: string | null;
 };
 /** Explicit display opt-in; unsupported identities retain their classic body. */
 export function RoomPlanetAvatar(props: RoomPlanetAvatarProps) {
@@ -38,7 +40,7 @@ export function RoomPlanetAvatar(props: RoomPlanetAvatarProps) {
     size={props.size} className={props.className} decorative={props.decorative} label={roomPlanetName(index)}
     expression={props.expression} signal={props.signal ?? PLANET_ACTIVITY_SIGNAL[activity]}
     mode={props.motion ?? (activity === 'static' || activity === 'stopped' ? 'static' : 'full')}
-    activity={activity} interactive={props.interactive} showSignal={props.showSignal}/>;
+    activity={activity} interactive={props.interactive} showSignal={props.showSignal} arrivalKey={props.arrivalKey}/>;
   return <ClassicRoomPlanetAvatar {...props}/>;
 }
 

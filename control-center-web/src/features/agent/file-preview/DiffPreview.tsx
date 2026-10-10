@@ -9,11 +9,13 @@ export function DiffPreview({
   disclosureRegionId,
   disclosureRegionLabel,
   fileName = '',
+  showCopy = true,
 }: {
   content: string;
   disclosureRegionId?: string;
   disclosureRegionLabel?: string;
   fileName?: string;
+  showCopy?: boolean;
 }) {
   const [mode, setMode] = useState<'unified' | 'split'>('unified');
   const files = useMemo(() => {
@@ -50,7 +52,7 @@ export function DiffPreview({
       <header>
         <small>{files.length} 个文件 · +{totals.added} −{totals.removed}</small>
         <span className="agent-diff-preview__actions">
-          <CopyTextButton label="补丁原文" value={content} />
+          {showCopy ? <CopyTextButton label="补丁原文" value={content} /> : null}
           <SegmentedControl
             aria-label="Diff 展示方式"
             className="agent-diff-preview__mode"

@@ -33,6 +33,54 @@ function liveSnapshot(): PetSnapshot {
 }
 
 describe('single planet companion', () => {
+  it('uses trusted shared satellites without guessing waiting, completion or offline', () => {
+    const { button, push } = renderPet();
+    const avatar = button.querySelector('[data-avatar-variant="sphere"]')!;
+    const face = avatar.querySelector('[data-face]');
+    const mouth = avatar.querySelector('[data-mouth]');
+    const satellite = avatar.querySelector('.sphere-signal');
+    expect(satellite).toBeTruthy();
+    expect(button.querySelector('.desktop-pet-status')).toBeNull();
+    push(liveSnapshot());
+    expect(avatar).toHaveAttribute('data-signal', 'working');
+    expect(avatar.querySelector('.sphere-signal')).toBe(satellite);
+    push({ ...liveSnapshot(), revision: 3, counts: { ...emptyPetCounts(), error: 1 } });
+    expect(avatar).toHaveAttribute('data-signal', 'error');
+    expect(avatar).toHaveAttribute('data-pulse', 'true');
+    expect(avatar.querySelector('.sphere-signal')).toBe(satellite);
+    push({ ...liveSnapshot(), revision: 4, counts: { ...emptyPetCounts(), error: 2 } });
+    expect(avatar).toHaveAttribute('data-pulse', 'true');
+    for (const [state, text] of [['attention', '待查看'], ['paused', '已暂停'], ['terminal', '没有运行中的对话'], ['unknown', '未同步']] as const) {
+      push({ ...liveSnapshot(), revision: 5 + ['attention', 'paused', 'terminal', 'unknown'].indexOf(state), counts: { ...emptyPetCounts(), [state]: 1 } });
+      expect(avatar).toHaveAttribute('data-signal', 'idle');
+      expect(avatar).toHaveAttribute('data-motion', 'static');
+      expect(avatar).toHaveAttribute('data-pulse', 'false');
+      expect(screen.getByRole('status')).toHaveTextContent(text);
+    }
+    expect(avatar.querySelector('[data-face]')).toBe(face);
+    expect(avatar.querySelector('[data-mouth]')).toBe(mouth);
+    expect(button.querySelector('[data-avatar-variant="sphere"]')).toBe(avatar);
+  });
+
+  it('seeds historical errors and recovering epochs without replaying shared arrivals', async () => {
+    const error: PetSnapshot = { ...liveSnapshot(), counts: { ...emptyPetCounts(), error: 1 } };
+    const { button, push, view } = renderPet(Promise.resolve(error));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('出错'));
+    const avatar = button.querySelector('[data-avatar-variant="sphere"]')!;
+    expect(avatar).toHaveAttribute('data-signal', 'error');
+    expect(avatar).toHaveAttribute('data-pulse', 'false');
+    push({ ...error, revision: 3, freshness: 'recovering' });
+    expect(screen.getByRole('status')).toHaveTextContent('正在重新同步');
+    push({ ...error, revision: 4 });
+    expect(avatar).toHaveAttribute('data-pulse', 'false');
+    push({ ...error, producerEpoch: 4, revision: 1 });
+    expect(avatar).toHaveAttribute('data-pulse', 'false');
+    view.unmount();
+    const reopened = renderPet(Promise.resolve(error));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('出错'));
+    expect(reopened.button.querySelector('[data-avatar-variant="sphere"]')).toHaveAttribute('data-pulse', 'false');
+  });
+
   it('opens the same persistent assistant and the existing voice settings without dispatching a conversation', async () => {
     const { host } = renderPet();
     const user = userEvent.setup();
@@ -44,18 +92,18 @@ describe('single planet companion', () => {
     expect(host.setExpanded).not.toHaveBeenCalled();
   });
 
-  it('rolls back only its body while retaining the authoritative seven-state signal and native keyboard action', async () => {
+  it('rolls back to the original seven-state signal and preserves the native keyboard action', async () => {
     const { button, push, host } = renderPet(); push(liveSnapshot());
     expect(button.querySelector('[data-avatar-variant="sphere"]')).toBeTruthy();
-    expect(button.querySelector('.sphere-signal')).toBeNull();
+    expect(button.querySelector('.sphere-signal')).toBeTruthy();
     expect(button.querySelector('[data-avatar-variant="sphere"]')).toHaveAttribute('data-signal', 'working');
-    const signal = button.querySelector('.desktop-pet-status');
+    expect(button.querySelector('.desktop-pet-status')).toBeNull();
     act(() => {
       localStorage.setItem('paw:chat-presentation:v1', JSON.stringify({ 'builtin:desktop-pet': { version: 'v1' } }));
       window.dispatchEvent(new StorageEvent('storage', { key: 'paw:chat-presentation:v1' }));
     });
     expect(button.querySelector('image')).toBeTruthy();
-    expect(button.querySelector('.desktop-pet-status')).toBe(signal);
+    const signal = button.querySelector('.desktop-pet-status');
     expect(signal).toHaveAttribute('data-state', 'running');
     button.focus(); await userEvent.setup().keyboard('{Enter}');
     expect(host.openAssistant).toHaveBeenCalledOnce();
@@ -82,7 +130,7 @@ describe('single planet companion', () => {
     const { host, button, directory, push, view } = renderPet(); push(liveSnapshot());
     expect(view.container.querySelector('[data-room-planet="0"]')).toBeTruthy();
     expect(view.container.querySelector('[data-activity="static"]')).toBeTruthy();
-    expect(button.querySelector('.desktop-pet-status')).toHaveAttribute('data-state', 'running');
+    expect(button.querySelector('.sphere-signal')).toHaveAttribute('data-state', 'working');
     expect(button).toHaveAccessibleDescription('2 个对话进行中');
     expect(host.ready).toHaveBeenCalledTimes(1);
     fireEvent.click(directory);
@@ -103,17 +151,18 @@ describe('single planet companion', () => {
     push(snapshot);
     expect(button.querySelector('[data-room-planet="0"]')).toBe(avatar);
     expect(avatar).toHaveAttribute('data-expression', expression);
-    expect(button.querySelector('.desktop-pet-status')).toHaveAttribute('data-state', 'attention');
+    expect(button).toHaveAttribute('data-directory-state', 'attention');
+    expect(avatar).toHaveAttribute('data-signal', 'idle');
     expect(screen.getByRole('status')).toHaveTextContent('1 个对话待查看 · 1 个进行中');
     push({ ...snapshot, revision: 4, counts: { ...snapshot.counts, attention: 0 },
       conversations: snapshot.conversations.filter(item => item.state !== 'attention') });
-    const signal = button.querySelector('.desktop-pet-status');
+    const signal = button.querySelector('.sphere-signal');
     expect(signal).toHaveAttribute('data-state', 'error');
-    expect(avatar).toHaveAttribute('data-signal', 'idle');
+    expect(avatar).toHaveAttribute('data-signal', 'error');
     expect(avatar).toHaveAttribute('data-expression', expression);
     push({ ...snapshot, revision: 5, counts: { ...snapshot.counts, attention: 0 },
       conversations: snapshot.conversations.filter(item => item.state !== 'attention') });
-    expect(button.querySelector('.desktop-pet-status')).toBe(signal);
+    expect(button.querySelector('.sphere-signal')).toBe(signal);
     push({ ...snapshot, revision: 6 });
     fireEvent.click(directory); await screen.findByRole('region', { name: '后台对话' });
     expect(view.container.querySelectorAll('[data-room-planet]')).toHaveLength(1);
@@ -221,12 +270,12 @@ describe('single planet companion', () => {
     const { button, push, host } = renderPet(); push(liveSnapshot());
     const avatar = button.querySelector('[data-avatar-variant="sphere"]')!;
     const surface = button.querySelector<SVGGElement>('.sphere-surface')!;
-    const signal = button.querySelector('.desktop-pet-status')!;
+    const signal = button.querySelector('.sphere-signal')!;
     await waitFor(() => expect(Number(surface.dataset.longitude)).toBeGreaterThan(0));
     vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
     fireEvent(document, new Event('visibilitychange'));
     expect(avatar).toHaveAttribute('data-motion', 'static');
-    expect(signal).toHaveAttribute('data-motion-active', 'false');
+    expect(avatar).toHaveAttribute('data-motion-active', 'false');
     const paused = Number(surface.dataset.longitude);
     push({ ...liveSnapshot(), revision: 3 });
     expect(Number(surface.dataset.longitude)).toBe(paused);
@@ -235,7 +284,8 @@ describe('single planet companion', () => {
     expect(button.querySelector('[data-avatar-variant="sphere"]')).toBe(avatar);
     expect(button.querySelector('.sphere-surface')).toBe(surface);
     expect(avatar).toHaveAttribute('data-motion', 'full');
-    expect(signal).toHaveAttribute('data-motion-active', 'true');
+    expect(button.querySelector('.sphere-signal')).toBe(signal);
+    expect(avatar).toHaveAttribute('data-motion-active', 'true');
     await waitFor(() => expect(Number(surface.dataset.longitude)).toBeGreaterThan(paused));
     expect(host.ready).toHaveBeenCalledOnce();
     expect(host.openAssistant).not.toHaveBeenCalled();
@@ -247,15 +297,16 @@ describe('single planet companion', () => {
     const { button, push, host } = renderPet(); push(liveSnapshot());
     const avatar = button.querySelector('[data-avatar-variant="sphere"]')!;
     const surface = button.querySelector<SVGGElement>('.sphere-surface')!;
-    const signal = button.querySelector('.desktop-pet-status')!;
+    const signal = button.querySelector('.sphere-signal')!;
     expect(avatar).toHaveAttribute('data-motion', 'full');
-    expect(signal).toHaveAttribute('data-motion-active', 'true');
+    expect(avatar).toHaveAttribute('data-motion-active', 'true');
     await waitFor(() => expect(Number(surface.dataset.longitude)).toBeGreaterThan(0));
     fireEvent(window, new Event('blur'));
     const continued = Number(surface.dataset.longitude);
     await waitFor(() => expect(Number(surface.dataset.longitude)).toBeGreaterThan(continued));
     expect(avatar).toHaveAttribute('data-motion', 'full');
-    expect(signal).toHaveAttribute('data-motion-active', 'true');
+    expect(button.querySelector('.sphere-signal')).toBe(signal);
+    expect(avatar).toHaveAttribute('data-motion-active', 'true');
     expect(screen.getByRole('status')).toHaveTextContent('2 个对话进行中');
     expect(focus).not.toHaveBeenCalled();
     expect(host.ready).toHaveBeenCalledOnce();
@@ -290,18 +341,32 @@ describe('single planet companion', () => {
 
   it.each(['attention', 'error'] as const)('does not replay the original %s directory arrival after hidden/visible recovery', state => {
     const { button, push } = renderPet();
+    push(liveSnapshot());
     const next: PetSnapshot = { ...liveSnapshot(), counts: { ...emptyPetCounts(), [state]: 1 }, conversations: [{ id: 'session-one', label: '检查项目', state }] };
-    push(next); const signal = button.querySelector('.desktop-pet-status')!;
-    expect(signal).toHaveAttribute('data-arrival-active', 'true');
+    push({ ...next, revision: 3 }); const signal = button.querySelector('.sphere-signal')!;
+    const avatar = button.querySelector('[data-avatar-variant="sphere"]')!;
+    expect(avatar).toHaveAttribute('data-pulse', state === 'error' ? 'true' : 'false');
     vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
     fireEvent(document, new Event('visibilitychange'));
-    expect(signal).toHaveAttribute('data-arrival-active', 'false');
-    push({ ...next, revision: 3 });
+    expect(avatar).toHaveAttribute('data-pulse', 'false');
+    push({ ...next, revision: 4 });
     vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
     fireEvent(document, new Event('visibilitychange'));
-    expect(button.querySelector('.desktop-pet-status')).toBe(signal);
-    expect(signal).toHaveAttribute('data-state', state);
-    expect(signal).toHaveAttribute('data-arrival-active', 'false');
+    expect(button.querySelector('.sphere-signal')).toBe(signal);
+    expect(signal).toHaveAttribute('data-state', state === 'error' ? 'error' : 'idle');
+    expect(button).toHaveAttribute('data-directory-state', state);
+    expect(avatar).toHaveAttribute('data-pulse', 'false');
+  });
+
+  it('does not replay an error received during user-reduced motion', () => {
+    const { button, push } = renderPet(undefined, true); push(liveSnapshot());
+    const avatar = button.querySelector('[data-avatar-variant="sphere"]')!;
+    fireEvent.click(screen.getByRole('button', { name: '减少动态效果' }));
+    push({ ...liveSnapshot(), revision: 3, counts: { ...emptyPetCounts(), error: 1 } });
+    expect(avatar).toHaveAttribute('data-signal', 'error');
+    expect(avatar).toHaveAttribute('data-pulse', 'false');
+    fireEvent.click(screen.getByRole('button', { name: '恢复动态效果' }));
+    expect(avatar).toHaveAttribute('data-pulse', 'false');
   });
 
   it('pauses user-reduced motion and resumes the original working phase without opening work', async () => {

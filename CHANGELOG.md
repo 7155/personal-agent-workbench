@@ -5,6 +5,13 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Use one copy action for inline code and diff results, and size short patches
+  to their content while retaining file opening, diff layouts and long readers.
+
+- Reuse the planet satellite for trusted desktop companion activity and errors.
+  Keep directory diagnostics and the original face, and do not replay error
+  arrivals when loading history or recovering the connection.
+
 - Show complete file paths in diff previews with naturally wrapping headers;
   keep change counts readable beside long paths and retain the original hunk reader.
 

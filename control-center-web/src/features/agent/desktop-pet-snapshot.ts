@@ -1,3 +1,5 @@
+import type { PlanetMotionMode, PlanetSignalState } from '@/features/rooms/sphere-avatar/sphere-avatar-protocol';
+
 export type PetConversationState = 'running' | 'attention' | 'error' | 'paused' | 'idle' | 'terminal' | 'unknown';
 export type PetTaskCounts = Record<PetConversationState, number>;
 export type PetConversation = { id: string; label: string; state: PetConversationState };
@@ -37,6 +39,31 @@ export function petPresentation(snapshot: PetSnapshot): { state: PetConversation
 export const petConversationLabel: Record<PetConversationState, string> = {
   running: '进行中', attention: '待查看', error: '出错', paused: '已暂停', idle: '空闲', terminal: '已结束', unknown: '未同步',
 };
+
+/** Directory diagnostics do not prove waiting, successful completion or offline. */
+export function petVisualSignal(snapshot: PetSnapshot): { signal: PlanetSignalState; motion: PlanetMotionMode } {
+  const { state } = petPresentation(snapshot);
+  if (state === 'running') return { signal: 'working', motion: 'full' };
+  if (state === 'error') return { signal: 'error', motion: 'full' };
+  const historicalOnly = snapshot.counts.terminal > 0 && snapshot.counts.idle === 0;
+  return { signal: 'idle', motion: state === 'idle' && !historicalOnly ? 'full' : 'static' };
+}
+
+export type PetVisualSnapshot = { snapshot: PetSnapshot; arrivalKey: string | null };
+/** Accepted, continuous local transitions only; loading/recovery is a static seed. */
+export function acceptPetVisualSnapshot(previous: PetVisualSnapshot, received: PetSnapshot): PetVisualSnapshot {
+  const snapshot = acceptPetSnapshot(previous.snapshot, received);
+  if (snapshot === previous.snapshot) return previous;
+  const before = petPresentation(previous.snapshot).state;
+  const after = petPresentation(snapshot).state;
+  const continuous = previous.snapshot.freshness === 'synced' && snapshot.freshness === 'synced'
+    && snapshot.producerEpoch === previous.snapshot.producerEpoch
+    && snapshot.sourceId === previous.snapshot.sourceId && snapshot.scopeId === previous.snapshot.scopeId;
+  const newError = continuous && before !== 'unknown' && before !== 'error' && after === 'error';
+  const arrivalKey = newError ? `${snapshot.producerEpoch}:${snapshot.scopeId}:${snapshot.revision}`
+    : continuous && before === 'error' && after === 'error' ? previous.arrivalKey : null;
+  return { snapshot, arrivalKey };
+}
 
 export interface PetStatePublisherBridge {
   begin(identity: PetSourceIdentity): Promise<{ producerEpoch: number }>;

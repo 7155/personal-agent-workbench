@@ -104,6 +104,75 @@ describe('file preview interaction', () => {
     expect(screen.queryByRole('region', { name: 'acceptance.md 内联预览' })).not.toBeInTheDocument();
   });
 
+  it.each(['code', 'diff'] as const)('keeps one copy action for an inline %s while retaining original content, file opening and diff layout', async (kind) => {
+    const fileName = kind === 'diff' ? 'sample.txt.diff' : 'sample.txt';
+    const content = kind === 'diff' ? '--- a/workspace/sample.txt\n+++ b/workspace/sample.txt\n@@ -1 +1 @@\n-before\n+after\n' : 'original source text\n';
+    const result = { ...preview(content), descriptor: { ...preview(content).descriptor,
+      fileName, mimeType: kind === 'diff' ? 'text/x-diff' : 'text/plain', previewKind: kind, language: 'text' } };
+    const transport = new StubControlTransport('mock', { 'agent.media.preview': result });
+    const user = userEvent.setup();
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    render(<TooltipProvider><ControlTransportProvider transport={transport}>
+      <AgentFileBlock data={{ mediaId: MEDIA_ID, fileName, mimeType: result.descriptor.mimeType, sha256: SHA256 }} sessionId={SESSION_ID} />
+    </ControlTransportProvider></TooltipProvider>);
+    expect(transport.requests).toHaveLength(0);
+    await user.click(screen.getByRole('button', { name: `展开 ${fileName}` }));
+    const region = await screen.findByRole('region', { name: `${fileName} 内联预览` });
+    await waitFor(() => expect(region).toHaveAttribute('data-status', 'ready'));
+    expect(within(region).getAllByRole('button', { name: /复制/u })).toHaveLength(1);
+    await user.click(within(region).getByRole('button', { name: `复制${fileName} 内容` }));
+    await expect(navigator.clipboard.readText()).resolves.toBe(content);
+    await user.click(within(region).getByRole('button', { name: `打开原文件 ${fileName}` }));
+    expect(open).toHaveBeenCalledWith(result.descriptor.contentUrl, '_blank', 'noopener,noreferrer');
+    if (kind === 'diff') {
+      await user.click(within(region).getByRole('radio', { name: '并排' }));
+      expect(within(region).getByRole('region', { name: 'workspace/sample.txt 变更内容' })).toHaveTextContent('after');
+      expect(within(region).getByText('workspace/sample.txt')).toBeInTheDocument();
+      await user.click(within(region).getByRole('radio', { name: '单栏' }));
+      expect(within(region).getByText('after')).toBeInTheDocument();
+    } else {
+      expect(region.querySelector('figcaption')).not.toBeInTheDocument();
+      expect(region).toHaveTextContent('original source text');
+    }
+    expect(transport.requests).toHaveLength(1);
+    expect(transport.requests[0]).toMatchObject({ pathId: 'agent.media.preview', params: { mediaId: MEDIA_ID }, query: { sessionId: SESSION_ID, sha256: SHA256 } });
+    await user.click(screen.getByRole('button', { name: `收起 ${fileName}` }));
+    expect(screen.queryByRole('region', { name: `${fileName} 内联预览` })).not.toBeInTheDocument();
+  });
+
+  it('retains the code copy action when an empty inline file has no outer copy button', async () => {
+    const result = { ...preview(''), descriptor: { ...preview('').descriptor,
+      fileName: 'empty.txt', mimeType: 'text/plain', previewKind: 'code' as const, language: 'text' } };
+    const transport = new StubControlTransport('mock', { 'agent.media.preview': result });
+    const user = userEvent.setup();
+    render(<TooltipProvider><ControlTransportProvider transport={transport}>
+      <AgentFileBlock data={{ mediaId: MEDIA_ID, fileName: 'empty.txt', mimeType: 'text/plain', sha256: SHA256 }} sessionId={SESSION_ID} />
+    </ControlTransportProvider></TooltipProvider>);
+    await user.click(screen.getByRole('button', { name: '展开 empty.txt' }));
+    const region = await screen.findByRole('region', { name: 'empty.txt 内联预览' });
+    await waitFor(() => expect(region).toHaveAttribute('data-status', 'ready'));
+    expect(within(region).getAllByRole('button', { name: /复制/u })).toHaveLength(1);
+    await navigator.clipboard.writeText('prior clipboard');
+    await user.click(within(region).getByRole('button', { name: '复制代码' }));
+    await expect(navigator.clipboard.readText()).resolves.toBe('prior clipboard');
+  });
+
+  it.each(['code', 'diff'] as const)('keeps standalone %s dialog renderer controls by default', async (kind) => {
+    const fileName = kind === 'diff' ? 'sample.txt.diff' : 'sample.txt';
+    const content = kind === 'diff' ? '--- a/workspace/sample.txt\n+++ b/workspace/sample.txt\n@@ -1 +1 @@\n-before\n+after\n' : 'source text';
+    const result = { ...preview(content), descriptor: { ...preview(content).descriptor,
+      fileName, mimeType: kind === 'diff' ? 'text/x-diff' : 'text/plain', previewKind: kind, language: 'text' } };
+    const transport = new StubControlTransport('mock', { 'agent.media.preview': result });
+    render(<TooltipProvider><ControlTransportProvider transport={transport}><FilePreviewHost /></ControlTransportProvider></TooltipProvider>);
+    await act(async () => useFilePreviewStore.getState().openPreview({ mediaId: MEDIA_ID, sessionId: SESSION_ID, expectedSha256: SHA256, fileNameHint: fileName, mimeTypeHint: result.descriptor.mimeType, byteSizeHint: result.descriptor.byteSize }, transport, 'dialog'));
+    const dialog = await screen.findByRole('dialog');
+    await waitFor(() => expect(dialog.querySelector('[data-status="ready"]')).toBeInTheDocument());
+    expect(within(dialog).getAllByRole('button', { name: /复制/u })).toHaveLength(2);
+    expect(within(dialog).getByRole('button', { name: kind === 'code' ? '复制代码' : '复制补丁原文' })).toBeInTheDocument();
+    if (kind === 'code') expect(dialog.querySelector('figcaption')).toHaveTextContent(fileName);
+    else expect(within(dialog).getByRole('radio', { name: '并排' })).toBeInTheDocument();
+  });
+
   it('keeps same-name receipts separate and opens each original snapshot with its exact byte size', async () => {
     const blocks: UiAgentBlock[] = Array.from({ length: 6 }, (_, index) => ({
       id: `file-result-${index}`, type: 'file', status: 'completed', presentationKind: 'file.v1',

@@ -14,10 +14,11 @@ export type SpherePlanetAvatarProps = {
   identity: Identity; ordinal: number; size?: number; className?: string; decorative?: boolean; label?: string;
   expression?: PlanetExpression; signal?: PlanetSignalState; mode?: PlanetMotionMode;
   activity?: PlanetActivity; interactive?: boolean; showSignal?: boolean;
+  arrivalKey?: string | null;
 };
 /** SVG body only: the surrounding consumer keeps its native action and focus. */
 export function SpherePlanetAvatar({ identity, ordinal, size = 32, className, decorative = false, label,
-  expression = 'neutral', signal = 'idle', mode = 'full', activity = 'static', interactive = false, showSignal = true,
+  expression = 'neutral', signal = 'idle', mode = 'full', activity = 'static', interactive = false, showSignal = true, arrivalKey,
 }: SpherePlanetAvatarProps) {
   const motionActive = useMotionActivity();
   const id = 'sphere-' + useId().replace(/[^\w-]/g, ''), face = pose(expression);
@@ -25,6 +26,7 @@ export function SpherePlanetAvatar({ identity, ordinal, size = 32, className, de
   const quiet = !motionActive || mode === 'static' || signal === 'offline';
   const canInteract = interactive && mode === 'full' && !quiet;
   const previous = useRef(signal);
+  const previousArrival = useRef(arrivalKey);
   // A loaded completion is history. Only a locally observed active-to-done
   // transition may celebrate; reconnecting from unknown/idle never does.
   const completionEligible = useRef(signal === 'working' || signal === 'waiting');
@@ -34,12 +36,15 @@ export function SpherePlanetAvatar({ identity, ordinal, size = 32, className, de
   useEffect(() => {
     const entered = previous.current !== signal;
     previous.current = signal;
+    const newArrival = previousArrival.current !== arrivalKey;
+    previousArrival.current = arrivalKey;
     const completion = signal === 'done' && completionEligible.current;
     completionEligible.current = signal === 'working' || signal === 'waiting';
-    const go = !quiet && entered && (signal === 'waiting' || signal === 'error' || completion);
+    const trustedArrival = arrivalKey === undefined || (arrivalKey !== null && newArrival);
+    const go = !quiet && entered && trustedArrival && (signal === 'waiting' || signal === 'error' || completion);
     setPulse(go);
     if (go) { const timer = setTimeout(() => setPulse(false), motionTokens.duration.slow * 1000); return () => clearTimeout(timer); }
-  }, [signal, quiet]);
+  }, [signal, quiet, arrivalKey]);
   useEffect(() => {
     if (!canInteract) { animation.current?.cancel(); animation.current = null; setBlinkActive(false); setGaze({ x: 0, y: 0 }); }
   }, [canInteract]);

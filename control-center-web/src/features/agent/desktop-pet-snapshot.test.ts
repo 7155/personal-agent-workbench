@@ -1,7 +1,37 @@
 import { describe, expect, it } from 'vitest';
-import { acceptPetSnapshot, emptyPetCounts, petPresentation, unavailablePetSnapshot } from './desktop-pet-snapshot';
+import { acceptPetSnapshot, acceptPetVisualSnapshot, emptyPetCounts, petPresentation, petVisualSignal, unavailablePetSnapshot, type PetSnapshot } from './desktop-pet-snapshot';
 
 describe('companion retained presentation', () => {
+  it('maps only known directory facts and never infers the missing three signals', () => {
+    const snapshot: PetSnapshot = { ...unavailablePetSnapshot(), producerEpoch: 1, revision: 1, sourceId: 'work-directory', scopeId: 'public', freshness: 'synced' };
+    expect(petVisualSignal({ ...snapshot, counts: { ...emptyPetCounts(), running: 1 } })).toEqual({ signal: 'working', motion: 'full' });
+    expect(petVisualSignal({ ...snapshot, counts: { ...emptyPetCounts(), error: 1 } })).toEqual({ signal: 'error', motion: 'full' });
+    expect(petVisualSignal(snapshot)).toEqual({ signal: 'idle', motion: 'full' });
+    for (const state of ['attention', 'paused', 'unknown', 'terminal'] as const) {
+      expect(petVisualSignal({ ...snapshot, counts: { ...emptyPetCounts(), [state]: 1 } })).toEqual({ signal: 'idle', motion: 'static' });
+    }
+    for (const freshness of ['unavailable', 'recovering'] as const) {
+      expect(petVisualSignal({ ...snapshot, freshness, counts: { ...emptyPetCounts(), running: 1, error: 1 } })).toEqual({ signal: 'idle', motion: 'static' });
+    }
+  });
+
+  it('binds one error arrival to a continuous accepted epoch and rejects stale or foreign replay', () => {
+    const running: PetSnapshot = { ...unavailablePetSnapshot(), producerEpoch: 1, revision: 1, sourceId: 'work-directory', scopeId: 'public', freshness: 'synced', counts: { ...emptyPetCounts(), running: 1 } };
+    const error = { ...running, revision: 2, counts: { ...emptyPetCounts(), error: 1 } };
+    const seed = acceptPetVisualSnapshot({ snapshot: unavailablePetSnapshot(), arrivalKey: null }, running);
+    expect(seed.arrivalKey).toBeNull();
+    const notice = acceptPetVisualSnapshot(seed, error);
+    expect(notice.arrivalKey).toBeTruthy();
+    const refresh = acceptPetVisualSnapshot(notice, { ...error, revision: 3, counts: { ...emptyPetCounts(), error: 2 } });
+    expect(refresh.arrivalKey).toBe(notice.arrivalKey);
+    expect(acceptPetVisualSnapshot(refresh, error)).toBe(refresh);
+    expect(acceptPetVisualSnapshot(refresh, { ...error, revision: 4, scopeId: 'foreign' })).toBe(refresh);
+    const recovering = acceptPetVisualSnapshot(refresh, { ...error, revision: 4, freshness: 'recovering' });
+    expect(acceptPetVisualSnapshot(recovering, { ...error, revision: 5 }).arrivalKey).toBeNull();
+    expect(acceptPetVisualSnapshot(refresh, { ...error, producerEpoch: 2, revision: 1 }).arrivalKey).toBeNull();
+    expect(acceptPetVisualSnapshot({ snapshot: unavailablePetSnapshot(), arrivalKey: null }, error).arrivalKey).toBeNull();
+  });
+
   it('does not promote historical completion counts into just-completed activity', () => {
     expect(petPresentation({ ...unavailablePetSnapshot(), freshness: 'synced', counts: { ...emptyPetCounts(), terminal: 40 } }))
       .toEqual({ state: 'idle', label: '当前没有运行中的对话' });
