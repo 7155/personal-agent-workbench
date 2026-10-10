@@ -3017,6 +3017,9 @@ class PiRuntimeHostManager:
             result.append(
                 payload
             )
+        # Keep native authority separate from PAW-only Stop display receipts.
+        # This internal whitelist is captured before adding those receipts.
+        durable_projection_ids = [str(message["id"]) for message in result] if durable_engine else None
         result = self._restore_aborted_history_messages(session_id, result)
         telemetry = snapshot.get("telemetry")
         raw_queue = as_mapping(snapshot.get("messageQueue"))
@@ -3043,7 +3046,8 @@ class PiRuntimeHostManager:
             "toolHistoryEvents": tool_history_events,
             "telemetry": dict(telemetry) if isinstance(telemetry, Mapping) else None,
             "messageQueue": message_queue,
-            **({"runtimeEngine": "durable", "recoverable": snapshot.get("recoverable") is True,
+            **({"runtimeEngine": "durable", "durableProjectionMessageIds": durable_projection_ids,
+                "recoverable": snapshot.get("recoverable") is True,
                 "paused": snapshot.get("paused") is True,
                 "activeTurn": dict(as_mapping(snapshot.get("activeTurn"))) or None,
                 "compactionTarget": (validate_compaction_target(snapshot["compactionTarget"])

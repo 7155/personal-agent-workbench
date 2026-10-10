@@ -319,10 +319,10 @@ class AgentMessageSnapshotService:
         messages = [message for message in messages if isinstance(message, Mapping)]
         binding_after = self.sessions.runtime_binding(session_id)
         native_identity = _snapshot_native_identity(runtime_snapshot, binding_before, binding_after)
-        durable_snapshot = _verified_durable_message_snapshot(session_id, session, runtime_snapshot, binding_before, binding_after)
+        durable_message_ids = _verified_durable_message_ids(session_id, session, runtime_snapshot, binding_before, binding_after)
         messages = self.agent_blocks.hydrate_messages(
             session_id, messages, native_pi_session_id=native_identity,
-            **({"durable_message_ids": [str(message["id"]) for message in messages] if durable_snapshot else []}
+            **({"durable_message_ids": durable_message_ids or []}
                if session.get("runtimeEngine") == "durable" else {}),
         )
         messages = _recover_managed_html_links(
@@ -618,11 +618,11 @@ class AgentMessageSnapshotService:
         )
         binding_after = self.sessions.runtime_binding(session_id)
         native_identity = _snapshot_native_identity(runtime_snapshot, binding_before, binding_after)
-        durable_snapshot = _verified_durable_message_snapshot(session_id, session, runtime_snapshot, binding_before, binding_after)
+        durable_message_ids = _verified_durable_message_ids(session_id, session, runtime_snapshot, binding_before, binding_after)
         if native_identity is not None:
             messages = self.agent_blocks.hydrate_recent_messages(
                 session_id, messages, native_pi_session_id=native_identity,
-                **({"durable_message_ids": [str(message["id"]) for message in messages] if durable_snapshot else []}
+                **({"durable_message_ids": durable_message_ids or []}
                    if session.get("runtimeEngine") == "durable" else {}),
             )
         last_sequence = self.sessions.max_event_sequence(session_id)
@@ -1451,20 +1451,20 @@ def _snapshot_native_identity(
     return str((before or {}).get("externalSessionId") or "")
 
 
-def _verified_durable_message_snapshot(
+def _verified_durable_message_ids(
     session_id: str, session: Mapping[str, object], snapshot: object,
     before: Mapping[str, object] | None, after: Mapping[str, object] | None,
-) -> bool:
+) -> list[str] | None:
     if session.get("runtimeEngine") != "durable" or not isinstance(snapshot, Mapping):
-        return False
+        return None
     if snapshot.get("runtimeEngine") != "durable" or snapshot.get("projectionCurrent") is not True:
-        return False
+        return None
     identity = snapshot.get("nativePiSessionId")
     if not isinstance(identity, str) or not identity or not before or not after:
-        return False
+        return None
     keys = ("driverId", "runtimeKind", "externalSessionId", "transcriptRef", "generation")
     if tuple(before.get(key) for key in keys) != tuple(after.get(key) for key in keys):
-        return False
+        return None
     metadata = after.get("metadata")
     generation = after.get("generation")
     if (before.get("sessionId") != session_id or after.get("sessionId") != session_id
@@ -1474,19 +1474,43 @@ def _verified_durable_message_snapshot(
         or not isinstance(generation, int) or isinstance(generation, bool) or generation < 1
         or not isinstance(metadata, Mapping) or metadata.get("runtimeEngine") != "durable"
         or not str(metadata.get("durableConversationId") or "")):
-        return False
+        return None
     messages = snapshot.get("messages")
     if not isinstance(messages, list):
-        return False
-    return all(
+        return None
+    # Native IDs are emitted by PiRuntime before PAW adds Stop display rows.
+    # A legacy internal provider without this field must still verify every row.
+    ids = snapshot.get("durableProjectionMessageIds") if "durableProjectionMessageIds" in snapshot else [message.get("id") for message in messages if isinstance(message, Mapping)]
+    if (not isinstance(ids, list) or any(not isinstance(value, str) or not value for value in ids)
+        or len(ids) != len(set(ids))):
+        return None
+    native_ids = set(ids)
+    native_messages = [message for message in messages if isinstance(message, Mapping) and isinstance(message.get("id"), str) and message["id"] in native_ids]
+    if len(native_messages) != len(ids):
+        return None
+    for message in messages:
+        if isinstance(message, Mapping) and isinstance(message.get("id"), str) and message["id"] in native_ids:
+            continue
+        # Only the exact PAW display receipt shape may sit outside native authority.
+        # It can never receive sidecars or replace a native entry in the whitelist.
+        turn_id = message.get("turnId") if isinstance(message, Mapping) else None
+        if (not isinstance(turn_id, str) or not turn_id or message.get("sessionId") != session_id
+            or message.get("id") != f"paw-stop:{turn_id}" or message.get("role") != "assistant"
+            or message.get("status") != "aborted" or message.get("clientMessageId") is not None
+            or message.get("attachments") != [] or message.get("citations") != []
+            or message.get("blocks") != [{"id": f"{turn_id}:stop-receipt:0", "type": "text", "status": "aborted",
+                                         "presentationKind": "markdown", "data": {"text": "已停止。"}}]):
+            return None
+    verified = all(
         isinstance(message, Mapping) and message.get("sessionId") == session_id
         and isinstance(message.get("turnId"), str) and bool(message["turnId"])
         and isinstance(message.get("clientMessageId"), str) and bool(message["clientMessageId"])
         and isinstance(message.get("id"), str) and (
             (message.get("role") == "assistant" and re.fullmatch(r"durable:task:[1-9][0-9]*:assistant", message["id"]) is not None)
             or (message.get("role") == "user" and re.fullmatch(r"durable:[1-9][0-9]*:[0-9]+", message["id"]) is not None)
-        ) for message in messages
+        ) for message in native_messages
     )
+    return list(ids) if verified else None
 
 
 def _verified_codemode_mode(value: object) -> str | None:
