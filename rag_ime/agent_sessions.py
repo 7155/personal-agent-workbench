@@ -2166,6 +2166,40 @@ class AgentSessionStore:
                 result[key] = (pair[0][2], pair[1][2])
         return result
 
+    def directory_terminal_facts(self, session_ids: Sequence[str]) -> dict[str, dict[str, object]]:
+        """One bounded read of the latest terminal for the admitted directory IDs."""
+        admitted = list(dict.fromkeys(session_ids))[:100]
+        if not admitted:
+            return {}
+        with self._read_connect() as conn:
+            rows = conn.execute(
+                "WITH admitted(session_id) AS (VALUES "
+                + ",".join("(?)" for _ in admitted)
+                + ") SELECT a.session_id, e.event_id, e.turn_id, e.sequence, e.event_type, e.metrics_json "
+                "FROM admitted a JOIN agent_runtime_events e ON e.rowid = ("
+                "SELECT rowid FROM agent_runtime_events WHERE session_id=a.session_id "
+                "AND event_type IN ('turn_completed','turn_failed') ORDER BY sequence DESC LIMIT 1)",
+                admitted,
+            ).fetchall()
+        result: dict[str, dict[str, object]] = {}
+        for row in rows:
+            try:
+                metrics = json.loads(str(row["metrics_json"] or "{}"))
+            except (TypeError, ValueError):
+                continue
+            outcome = metrics.get("terminalOutcome") if isinstance(metrics, Mapping) else None
+            valid_outcomes = {"failed"} if row["event_type"] == "turn_failed" else {"completed", "aborted"}
+            if (not isinstance(outcome, str) or outcome not in valid_outcomes
+                    or not row["turn_id"] or len(str(row["turn_id"])) > 240
+                    or not row["event_id"] or len(str(row["event_id"])) > 512
+                    or int(row["sequence"]) < 1):
+                continue
+            result[str(row["session_id"])] = {
+                "eventId": str(row["event_id"]), "turnId": str(row["turn_id"]),
+                "sequence": int(row["sequence"]), "outcome": outcome,
+            }
+        return result
+
     def runtime_turn_terminal_event(
         self,
         session_id: str,

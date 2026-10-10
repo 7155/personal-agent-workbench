@@ -22,6 +22,7 @@ export type SessionSummary = Pick<
     AgentSessionV1,
     | 'lastMessagePreview'
     | 'lastTerminalTurnId'
+    | 'presentationFacts'
     | 'messageCount'
     | 'modelProfile'
     | 'toolProfileVersion'

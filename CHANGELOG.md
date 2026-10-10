@@ -5,6 +5,10 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Publish content-free pending request and typed terminal identities in the
+  existing Session directory. Preserve unknown legacy facts and distinguish
+  successful completion from Stop and failure without loading full histories.
+
 - Use one copy action for inline code and diff results, and size short patches
   to their content while retaining file opening, diff layouts and long readers.
 

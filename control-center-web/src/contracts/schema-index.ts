@@ -10023,6 +10023,83 @@ export const contractSchemas = {
         "type": "string",
         "maxLength": 240
       },
+      "presentationFacts": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "activeTurnId": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "waiting": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "turnId",
+                "requestId",
+                "kind"
+              ],
+              "properties": {
+                "turnId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 240
+                },
+                "requestId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 240
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "input",
+                    "approval",
+                    "review"
+                  ]
+                }
+              }
+            }
+          },
+          "terminal": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "eventId",
+              "turnId",
+              "sequence",
+              "outcome"
+            ],
+            "properties": {
+              "eventId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "turnId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 240
+              },
+              "sequence": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "completed",
+                  "aborted",
+                  "failed"
+                ]
+              }
+            }
+          }
+        }
+      },
       "workspaceRoots": {
         "type": "array",
         "items": {

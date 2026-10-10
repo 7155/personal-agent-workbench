@@ -5132,6 +5132,44 @@ class PiRuntimeHostManager:
         with self._lock:
             return run_id in self._states.get(session_id, _HostedSessionState()).pending_reviews
 
+    def directory_waiting_facts(self, session_ids: list[str]) -> dict[str, dict[str, object]]:
+        """Read current, exact-turn request identities; never contact/open Host."""
+        admitted = list(dict.fromkeys(session_ids))[:100]
+        result: dict[str, dict[str, object]] = {}
+        with self._lock:
+            for session_id in admitted:
+                state = self._states.get(session_id)
+                if state is None or state.recoverable:
+                    # Absent/recovering resident authority is not proof of no input.
+                    continue
+                turn_id = state.turn_id
+                if len(turn_id) > 240 or turn_id in state.retired_turn_ids:
+                    continue
+                waiting: list[dict[str, str]] = []
+                seen: set[str] = set()
+
+                if turn_id and state.abort_requested_turn_id != turn_id:
+                    candidates = [
+                        (request_id, "input") for request_id, request in state.pending_ui_requests.items()
+                        if (request.get("_turnId") == turn_id
+                            and request.get("requestId") == request_id
+                            and request.get("sessionId", session_id) == session_id
+                            and request.get("resolutionState") not in ("resolved", "cancelled")
+                            and not request.get("_resolving"))
+                    ]
+                    # These maps are owned/cleared with this exact resident turn.
+                    candidates.extend((request_id, "review") for request_id in state.pending_reviews.values())
+                    candidates.extend((request_id, "approval") for request_id in state.pending_approvals.values())
+                    for request_id, kind in candidates:
+                        if (isinstance(request_id, str) and request_id and len(request_id) <= 240
+                                and request_id not in seen):
+                            seen.add(request_id)
+                            waiting.append({"turnId": turn_id, "requestId": request_id, "kind": kind})
+                            if len(waiting) == 8:
+                                break
+                result[session_id] = {"activeTurnId": turn_id, "waiting": waiting}
+        return result
+
     def pending_ui_requests(self, session_id: str) -> list[dict[str, object]]:
         with self._lock:
             state = self._states.get(session_id)
@@ -6170,6 +6208,7 @@ class PiRuntimeHostManager:
                 session_id,
                 "turn_completed",
                 {
+                    "status": "completed",
                     "messageCount": public_message_count,
                     "terminalEvent": "agent_settled",
                 },

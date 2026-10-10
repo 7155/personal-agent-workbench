@@ -80,6 +80,216 @@ export type AgentSessionV1 = {
   messageCount: number;
   lastMessagePreview?: string;
   lastTerminalTurnId?: string;
+  presentationFacts?: {
+    activeTurnId?: string;
+    /**
+     * @maxItems 8
+     */
+    waiting?:
+      | []
+      | [
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+        ]
+      | [
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+        ]
+      | [
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+        ]
+      | [
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+        ]
+      | [
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+        ]
+      | [
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+        ]
+      | [
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+        ]
+      | [
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+          {
+            turnId: string;
+            requestId: string;
+            kind: 'input' | 'approval' | 'review';
+          },
+        ];
+    terminal?: {
+      eventId: string;
+      turnId: string;
+      sequence: number;
+      outcome: 'completed' | 'aborted' | 'failed';
+    };
+  };
   workspaceRoots: string[];
   shellPolicyVersion?: string;
   [k: string]: unknown;

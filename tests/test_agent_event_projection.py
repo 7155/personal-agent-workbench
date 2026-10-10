@@ -352,6 +352,7 @@ class AgentEventProjectionTests(unittest.TestCase):
         self.assertEqual(
             metrics,
             {
+                "terminalOutcome": "failed",
                 "failureKind": "runtime_host_exit",
                 "reasonCode": "runtime_host_exit",
                 "exitCode": -6,
@@ -376,7 +377,7 @@ class AgentEventProjectionTests(unittest.TestCase):
                 },
                 resume_token="event:invalid-runtime-failure",
             )),
-            {},
+            {"terminalOutcome": "failed"},
         )
 
         service, sessions, _room_events = self._service()
@@ -400,6 +401,7 @@ class AgentEventProjectionTests(unittest.TestCase):
         self.assertEqual(
             sessions.runtime_events[0]["metrics"],
             {
+                "terminalOutcome": "failed",
                 "failureKind": "runtime_host_exit",
                 "reasonCode": "runtime_host_exit",
                 "exitCode": -6,
