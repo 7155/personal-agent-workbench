@@ -168,9 +168,25 @@ class AgentSessionApplicationService:
             ],
             active_only=False,
         )
+        presentation_facts: dict[str, dict[str, object]] = {}
+        if _bool(value.get("projectionOnly")):
+            admitted = [str(session.get("id") or "") for session in sessions[:100]]
+            # Persisted terminal read first; current Runtime pending read last.
+            terminals = self.sessions.directory_terminal_facts(admitted)
+            pending_provider = getattr(self.runtime, "directory_waiting_facts", None)
+            pending = pending_provider(admitted) if callable(pending_provider) else {}
+            for session_id in admitted:
+                facts = dict(pending.get(session_id, {}))
+                if session_id in terminals:
+                    facts["terminal"] = terminals[session_id]
+                if facts:
+                    presentation_facts[session_id] = facts
         projected_sessions: list[dict[str, object]] = []
         for session in sessions:
             projected = dict(session)
+            facts = presentation_facts.get(str(session.get("id") or ""))
+            if facts is not None:
+                projected["presentationFacts"] = facts
             participant = room_participants.get(str(session.get("id") or ""))
             if participant is not None:
                 projected["roomParticipant"] = {

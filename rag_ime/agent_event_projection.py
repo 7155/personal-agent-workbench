@@ -637,6 +637,15 @@ def runtime_event_metrics(
         return 0
 
     metrics: dict[str, object] = {}
+    # Append typed outcome to existing metrics; old absent values stay unknown.
+    if event.turn_id:
+        if event.event_type == "turn_failed":
+            metrics["terminalOutcome"] = "failed"
+        elif event.event_type == "turn_completed":
+            if payload.get("aborted") is True or payload.get("status") == "aborted":
+                metrics["terminalOutcome"] = "aborted"
+            elif payload.get("status") == "completed" and (payload.get("aborted") is None or payload.get("aborted") is False):
+                metrics["terminalOutcome"] = "completed"
     normalized_usage = {
         "inputTokens": metric("inputTokens", "input"),
         "outputTokens": metric("outputTokens", "output"),
