@@ -8,6 +8,80 @@ import { publicToolResultView } from './public-tool-result';
 
 afterEach(cleanup);
 describe('tool receipts on authoritative turn cancellation', () => {
+  it('renders the exact Classic execution cancellation before turn settlement and after cold replay', () => {
+    const events = [
+      agentEventFixture(1, 'tool_started', { toolCallId: 'original-call', toolName: 'bash' }),
+      agentEventFixture(2, 'status_changed', { status: 'aborting' }),
+      agentEventFixture(3, 'tool_finished', { toolCallId: 'original-call', toolName: 'bash', isError: true, cancelled: true,
+        result: { content: [{ type: 'text', text: 'This operation was aborted' }], details: {} } }),
+      agentEventFixture(4, 'tool_finished', { toolCallId: 'genuine-error', toolName: 'bash', isError: true,
+        result: { content: [{ type: 'text', text: 'aborted by an external script' }] } }),
+    ];
+    const live = reduceAgentEvents(createAgentProjection('session-1'), events);
+    const cold = applyAgentSnapshot(createAgentProjection('session-1'), { sessionId: 'session-1', runtimeEngine: 'classic',
+      status: 'idle', messages: [], liveEvents: [...events, agentEventFixture(5, 'turn_completed', { status: 'aborted' })], lastSequence: 5, resumeToken: 'session-1:5' });
+    for (const state of [live, cold]) {
+      expect(state.activitiesById['original-call'].status).toBe('aborted');
+      expect(state.activitiesById['genuine-error'].status).toBe('failed');
+      expect(state.activitiesById['original-call'].payload.result).toEqual(events[2].payload.result);
+      expect(publicToolResultView(state.activitiesById['original-call']).error).toBeUndefined();
+    }
+    const view = render(<FxActivityStack activities={[live.activitiesById['original-call']]} />);
+    fireEvent.click(screen.getByRole('button', { name: /已停止/ }));
+    expect(view.container.querySelector('.ccui-execution-mark')).toHaveAttribute('data-state', 'cancelled');
+    expect(screen.queryByText('失败')).not.toBeInTheDocument();
+  });
+
+  it.each([undefined, false, 'true'])('does not infer Classic cancellation from output or an aborted parent (%s)', (cancelled) => {
+    const state = reduceAgentEvents(createAgentProjection('session-1'), [
+      agentEventFixture(1, 'tool_finished', { toolCallId: 'genuine-error', toolName: 'bash', isError: true, cancelled,
+        result: { cancelled: true, details: { cancelled: true }, content: [{ type: 'text', text: 'This operation was aborted' }] } }),
+      agentEventFixture(2, 'turn_completed', { status: 'aborted' }),
+    ]);
+    expect(state.activitiesById['genuine-error'].status).toBe('failed');
+  });
+
+  it('requires the original error call identity and the Room participant turn', () => {
+    const successful = reduceAgentEvents(createAgentProjection('session-1'), [agentEventFixture(1, 'tool_finished', {
+      toolCallId: 'successful-read', toolName: 'read', cancelled: true, isError: false,
+    })]);
+    expect(successful.activitiesById['successful-read'].status).toBe('completed');
+    const missingOwner = reduceRoomEvents(createRoomProjection('room-1'), [roomEventFixture(1, 'participant_activity', {
+      sourceEventType: 'tool_finished', toolCallId: 'original-call', toolName: 'bash', cancelled: true, isError: true,
+    })]);
+    expect(Object.values(missingOwner.activitiesById)[0].status).toBe('failed');
+  });
+
+  it('retains the original Classic Room cancellation after late progress and keeps a new turn admissible', () => {
+    const base = { sourceTurnId: 'original-participant-turn', toolCallId: 'original-call', toolName: 'bash' };
+    const state = reduceRoomEvents(createRoomProjection('room-1'), [roomEventFixture(1, 'participant_activity', {
+      ...base, sourceEventType: 'tool_finished', isError: true, cancelled: true,
+    })]);
+    const original = Object.values(state.activitiesById)[0];
+    expect(original.status).toBe('aborted');
+    const later = reduceRoomEvents(state, [roomEventFixture(2, 'participant_activity', { ...base, sourceEventType: 'tool_progress' })]);
+    expect(later.activitiesById).toEqual(state.activitiesById);
+    const newRoot = reduceRoomEvents(later, [{ ...roomEventFixture(3, 'participant_activity', {
+      ...base, sourceTurnId: 'new-participant-turn', sourceEventType: 'tool_started',
+    }), turnId: 'new-root' }]);
+    expect(Object.values(newRoot.activitiesById).find(activity => activity.turnId === 'new-root')?.status).toBe('running');
+  });
+
+  it.each(['tool_started', 'tool_progress', 'tool_finished'])('keeps a Classic receipt after late %s but admits the next original turn', (eventType) => {
+    const stopped = reduceAgentEvents(createAgentProjection('session-1'), [agentEventFixture(1, 'tool_finished', {
+      toolCallId: 'original-call', toolName: 'bash', cancelled: true, isError: true,
+    })]);
+    const later = reduceAgentEvents(stopped, [agentEventFixture(2, eventType, { toolCallId: 'original-call', toolName: 'bash' })]);
+    expect(later.activitiesById['original-call']).toEqual(stopped.activitiesById['original-call']);
+    const next = reduceAgentEvents(later, [{ ...agentEventFixture(3, 'tool_started', {
+      toolCallId: 'original-call', toolName: 'bash',
+    }), turnId: 'next-turn' }]);
+    expect(next.activitiesById['original-call'].status).toBe('running');
+    const foreign = reduceAgentEvents(stopped, [{ ...agentEventFixture(4, 'tool_finished', {
+      toolCallId: 'foreign-call', toolName: 'bash', cancelled: true, isError: true,
+    }), sessionId: 'other-session' }]);
+    expect(foreign.activitiesById).toEqual(stopped.activitiesById);
+  });
   // https://github.com/7155/personal-agent-workbench/issues/144
   it('uses the exact Durable tool outcome in live and cold UI without rewriting other terminal tools', () => {
     const events = [

@@ -14,3 +14,16 @@ export function hasAbortedDurableToolOutcome(
     && outcome.toolCallId === payload.toolCallId
     && outcome.toolName === payload.toolName;
 }
+
+/** Classic's native execution owner emits this flag only for an AbortError
+ * thrown with that execution's aborted signal. Nested Tool output has no authority. */
+export function hasAbortedToolOutcome(
+  payload: Record<string, unknown>,
+  owner: { sessionId: string; turnId: string },
+): boolean {
+  return hasAbortedDurableToolOutcome(payload, owner)
+    || (Boolean(owner.sessionId && owner.turnId)
+      && payload.cancelled === true && payload.isError === true
+      && typeof payload.toolCallId === 'string' && Boolean(payload.toolCallId)
+      && typeof payload.toolName === 'string' && Boolean(payload.toolName));
+}

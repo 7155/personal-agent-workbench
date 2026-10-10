@@ -7,6 +7,8 @@ import unittest
 from copy import deepcopy
 from pathlib import Path
 
+from rag_ime.pi.event_projection import tool_event_payload
+
 from rag_ime.pi.transcript import (
     DURABLE_TURN_ID_KEY,
     durable_branch_messages,
@@ -21,6 +23,50 @@ from rag_ime.pi.transcript import (
 
 
 class PiRuntimeTranscriptTests(unittest.TestCase):
+    def test_classic_execution_cancellation_is_preserved_live_and_cold_without_rewriting_output(self):
+        raw = {"type": "tool_execution_end", "toolCallId": "original-call", "toolName": "bash",
+               "isError": True, "cancelled": True,
+               "result": {"content": [{"type": "text", "text": "This operation was aborted"}], "details": {}}}
+        _, live = tool_event_payload(raw, event_type="tool_execution_end", source_loop_id="original-assistant")
+        self.assertIs(live.get("cancelled"), True)
+        self.assertIs(live["isError"], True)
+        self.assertEqual(live["result"]["content"], raw["result"]["content"])
+        messages = [
+            {"role": "user", DURABLE_TURN_ID_KEY: "original-turn", "content": "public fixture"},
+            {"role": "assistant", "content": [{"type": "toolCall", "id": "original-call", "name": "bash", "arguments": {}}]},
+            {"role": "toolResult", "toolCallId": "original-call", "toolName": "bash", "isError": True,
+             "cancelled": True, **raw["result"]},
+        ]
+        before = deepcopy(messages)
+        events = durable_tool_history_events(messages, session_id="public-session")
+        cold = next(e for e in events if e["eventType"] == "tool_finished")
+        self.assertEqual((cold["sessionId"], cold["turnId"]), ("public-session", "original-turn"))
+        self.assertIs(cold["payload"].get("cancelled"), True)
+        self.assertIs(cold["payload"]["isError"], True)
+        self.assertEqual(messages, before)
+
+    def test_classic_cancellation_cannot_be_inferred_from_result_text_or_foreign_cold_lineage(self):
+        for marker in (None, False, "true"):
+            with self.subTest(marker=marker):
+                _, payload = tool_event_payload({"toolCallId": "call", "toolName": "bash", "isError": True,
+                    "cancelled": marker, "result": {"cancelled": True, "details": {"cancelled": True},
+                    "content": [{"type": "text", "text": "This operation was aborted"}]}},
+                    event_type="tool_execution_end", source_loop_id="")
+                self.assertNotIn("cancelled", payload)
+                self.assertIs(payload["isError"], True)
+        for call, name, extra in (
+            ("foreign-call", "bash", {}), ("original-call", "foreign-tool", {}),
+            ("original-call", "bash", {"clientMessageId": "foreign-client"}),
+            ("original-call", "bash", {DURABLE_TURN_ID_KEY: "foreign-turn"}),
+        ):
+            with self.subTest(call=call, name=name, extra=extra):
+                messages = [{"role": "user", DURABLE_TURN_ID_KEY: "original-turn", "content": "public fixture"},
+                    {"role": "assistant", "content": [{"type": "toolCall", "id": "original-call", "name": "bash", "arguments": {}}]},
+                    {"role": "toolResult", "toolCallId": call, "toolName": name, "isError": True, "cancelled": True,
+                     "content": [{"type": "text", "text": "cancelled output"}], **extra}]
+                events = durable_tool_history_events(messages, session_id="public-session")
+                finished = next(e for e in events if e["eventType"] == "tool_finished")
+                self.assertNotIn("cancelled", finished["payload"])
     def test_bound_evidence_keeps_full_arguments_without_expanding_public_history(self):
         script = "const steps = " + json.dumps(["公开操作" * 100] * 80) + "; console.log(steps.length)"
         messages = []
