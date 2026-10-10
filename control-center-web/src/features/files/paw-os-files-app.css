@@ -2074,3 +2074,27 @@ i.paw-files-tree__disclosure {
 .paw-files-tools-popover[data-motion-active='false'] .ui-spin { animation: none; }
 
 .paw-files-tools-popover[data-motion-active='false'] .paw-files-preview__action { transition-property: color, background-color, border-color, box-shadow; transform: none; }
+
+/* In a deliberately short read-only window the App can scroll its metadata
+   away, while the live reader retains a usable band. Size containment keeps
+   loaded text and directory entries from expanding that intrinsic minimum.
+   Editing retains its existing fixed-height and focus/selection contract. */
+.paw-files-app:not([data-editing]):has(.paw-files-app__workspace[data-file-open]) {
+  overflow-y: auto;
+}
+.paw-files-app:not([data-editing]) > .paw-files-app__workspace[data-file-open] {
+  flex: 1 0 auto;
+  min-height: min-content;
+  grid-template-rows: minmax(min-content, 1fr);
+  overflow: visible;
+}
+.paw-files-app:not([data-editing]) .paw-files-preview {
+  min-height: min-content;
+}
+.paw-files-app:not([data-editing]) .paw-files-preview__body {
+  contain: size;
+  min-height: 120px;
+}
+.paw-files-app:not([data-editing]) .paw-files-tree {
+  contain: size;
+}
