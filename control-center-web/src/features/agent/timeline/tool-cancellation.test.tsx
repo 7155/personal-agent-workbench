@@ -8,6 +8,87 @@ import { publicToolResultView } from './public-tool-result';
 
 afterEach(cleanup);
 describe('tool receipts on authoritative turn cancellation', () => {
+  it.each(['classic', 'durable'] as const)('keeps the %s execution stopped when its later approval resolves as failed', runtimeEngine => {
+    const result = { content: [{ type: 'text', text: 'This operation was aborted' }], details: {} };
+    const events = [
+      agentEventFixture(1, 'tool_started', { toolCallId: 'stopped-call', toolName: 'bash' }),
+      agentEventFixture(2, 'status_changed', { status: 'aborting' }),
+      agentEventFixture(3, 'tool_finished', { toolCallId: 'stopped-call', toolName: 'bash', isError: true, result,
+        ...(runtimeEngine === 'classic' ? { cancelled: true } : { durableToolOutcome: abortedOutcome() }) }),
+      agentEventFixture(4, 'approval_resolved', { toolCallId: 'stopped-call', approvalId: 'original-approval',
+        state: 'failed', automatic: true, decisionMode: 'policy' }),
+    ];
+    const live = reduceAgentEvents(createAgentProjection('session-1'), events);
+    const cold = applyAgentSnapshot(createAgentProjection('session-1'), { sessionId: 'session-1', runtimeEngine,
+      status: 'idle', messages: [], liveEvents: events, lastSequence: 4, resumeToken: 'session-1:4' });
+    for (const state of [live, cold]) {
+      const activity = state.activitiesById['stopped-call'];
+      expect(activity.status).toBe('aborted');
+      expect(activity.kind).toBe('tool_finished');
+      expect(activity.payload.result).toEqual(result);
+      expect(activity.payload).toMatchObject({ toolCallId: 'stopped-call', toolName: 'bash', isError: true,
+        approvalId: 'original-approval', state: 'failed', automatic: true, decisionMode: 'policy' });
+      expect(publicToolResultView(activity).error).toBeUndefined();
+      const settled = reduceAgentEvents(state, [agentEventFixture(5, 'turn_completed', { status: 'aborted' })]);
+      expect(settled.activitiesById['stopped-call'].status).toBe('aborted');
+    }
+    const view = render(<FxActivityStack activities={[live.activitiesById['stopped-call']]} />);
+    expect(screen.getByRole('button', { name: /已停止/ })).toHaveAttribute('data-state', 'aborted');
+    expect(view.container.querySelector('.ccui-execution-mark')).toHaveAttribute('data-state', 'cancelled');
+    expect(screen.queryByText('失败')).not.toBeInTheDocument();
+  });
+
+  it.each([undefined, false, 'true'])('keeps genuine Tool failure visible after an approval receipt (%s)', cancelled => {
+    const state = reduceAgentEvents(createAgentProjection('session-1'), [
+      agentEventFixture(1, 'status_changed', { status: 'aborting' }),
+      agentEventFixture(2, 'tool_finished', { toolCallId: 'failed-call', toolName: 'bash', isError: true, cancelled,
+        result: { cancelled: true, content: [{ type: 'text', text: 'This operation was aborted' }] } }),
+      agentEventFixture(3, 'approval_resolved', { toolCallId: 'failed-call', approvalId: 'failed-approval', state: 'failed' }),
+    ]);
+    const activity = state.activitiesById['failed-call'];
+    expect(activity.status).toBe('failed');
+    expect(publicToolResultView(activity).error).toContain('This operation was aborted');
+    const view = render(<FxActivityStack activities={[activity]} />);
+    expect(screen.getByRole('button', { name: /失败/ })).toHaveAttribute('data-state', 'failed');
+    expect(view.container.querySelector('.ccui-execution-mark')).toHaveAttribute('data-state', 'error');
+  });
+
+  it.each(['turn', 'toolName'] as const)('does not borrow cancellation for a mismatched approval %s', mismatch => {
+    const stopped = reduceAgentEvents(createAgentProjection('session-1'), [agentEventFixture(1, 'tool_finished', {
+      toolCallId: 'stopped-call', toolName: 'bash', cancelled: true, isError: true,
+    })]);
+    const event = agentEventFixture(2, 'approval_resolved', { toolCallId: 'stopped-call', state: 'failed',
+      ...(mismatch === 'toolName' ? { toolName: 'read' } : {}) });
+    const state = reduceAgentEvents(stopped, [{ ...event, ...(mismatch === 'turn' ? { turnId: 'other-turn' } : {}) }]);
+    expect(state.activitiesById['stopped-call'].status).toBe('failed');
+  });
+
+  it('keeps foreign call and Session receipts separate from the original cancellation', () => {
+    const stopped = reduceAgentEvents(createAgentProjection('session-1'), [agentEventFixture(1, 'tool_finished', {
+      toolCallId: 'stopped-call', toolName: 'bash', cancelled: true, isError: true,
+    })]);
+    const foreign = reduceAgentEvents(stopped, [agentEventFixture(2, 'approval_resolved', { toolCallId: 'other-call', state: 'failed' })]);
+    expect(foreign.activitiesById['stopped-call']).toEqual(stopped.activitiesById['stopped-call']);
+    expect(foreign.activitiesById['other-call'].status).toBe('failed');
+    const otherSession = reduceAgentEvents(stopped, [{ ...agentEventFixture(3, 'approval_resolved', {
+      toolCallId: 'stopped-call', state: 'failed',
+    }), sessionId: 'other-session' }]);
+    expect(otherSession.activitiesById).toEqual(stopped.activitiesById);
+  });
+
+  it('keeps automatic Room-root authorization on the existing in-flight Tool owner', () => {
+    const state = reduceAgentEvents(createAgentProjection('session-1'), [
+      agentEventFixture(1, 'tool_started', { toolCallId: 'room-call', toolName: 'bash',
+        causalMetadata: { roomBound: true, roomId: 'room-1', rootId: 'root-1', dispatchId: 'dispatch-1' } }),
+      { ...agentEventFixture(2, 'approval_resolved', { toolCallId: 'room-call', approvalId: 'room-approval',
+        state: 'approved', automatic: true, decisionMode: 'policy' }), turnId: 'room-root' },
+    ]);
+    expect(state.activitiesById['room-call'].status).toBe('running');
+    expect(state.activitiesById['room-call'].turnId).toBe('turn-1');
+    expect(state.turnsById['turn-1'].status).toBe('running');
+    expect(state.status).toBe('working');
+  });
+
   it('renders the exact Classic execution cancellation before turn settlement and after cold replay', () => {
     const events = [
       agentEventFixture(1, 'tool_started', { toolCallId: 'original-call', toolName: 'bash' }),

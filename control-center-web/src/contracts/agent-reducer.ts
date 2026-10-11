@@ -2362,6 +2362,15 @@ function upsertApprovalActivity(
     return;
   }
   const owner = state.activitiesById[toolCallId];
+  // An approval's terminal state is metadata, not a new execution outcome.
+  // Preserve only the exact Tool owner's typed cancellation, never Stop intent
+  // or error prose. Room-root authorization and unmarked failures stay separate.
+  const stoppedExecution = owner?.kind.startsWith('tool_')
+    && owner.status === 'aborted'
+    && event.sessionId === state.sessionId && event.turnId === owner.turnId
+    && owner.payload.toolCallId === toolCallId
+    && (!('toolName' in payload) || payload.toolName === owner.payload.toolName)
+    && hasAbortedToolOutcome(owner.payload, { sessionId: state.sessionId, turnId: owner.turnId });
   if (
     !owner
     && payload.automatic === true
@@ -2381,7 +2390,7 @@ function upsertApprovalActivity(
       payload: { ...payload, toolCallId },
     },
     payload,
-    status,
+    stoppedExecution ? owner.status : status,
   );
   if (owner?.kind.startsWith('tool_')) {
     const correlated = state.activitiesById[toolCallId];
@@ -2389,6 +2398,7 @@ function upsertApprovalActivity(
       state.activitiesById[toolCallId] = {
         ...correlated,
         kind: owner.kind,
+        ...(stoppedExecution ? { updatedAtMs: owner.updatedAtMs } : {}),
       };
     }
   }
