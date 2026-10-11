@@ -5,6 +5,9 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Preserve the first Guide budget edit and unsaved budget fields across native
+  Goal updates; keep untouched fields aligned with the latest budget receipt.
+
 - Keep an exact cancelled Tool stopped when its later approval resolves as
   failed. Retain approval metadata and genuine Tool errors.
 
