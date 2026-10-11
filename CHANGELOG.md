@@ -5,6 +5,12 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Keep an exact cancelled Tool stopped when its later approval resolves as
+  failed. Retain approval metadata and genuine Tool errors.
+
+- Preserve a foreground App reopen while its earlier close or minimize
+  animation settles.
+
 - Preserve bounded, redacted fatal Host diagnostics alongside JSONL framing
   errors at process exit, without replaying uncertain commands.
 
