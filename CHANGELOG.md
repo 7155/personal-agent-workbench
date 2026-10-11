@@ -11,6 +11,10 @@ source checkpoint is not a signed and notarized macOS binary release.
 - Preserve a foreground App reopen while its earlier close or minimize
   animation settles.
 
+- Show the selected Knowledge image or sampled video frame beside its source
+  action, keep retrieval details collapsed without hiding failures, and restore
+  focus to the selected result when returning from its reader.
+
 - Preserve bounded, redacted fatal Host diagnostics alongside JSONL framing
   errors at process exit, without replaying uncertain commands.
 
