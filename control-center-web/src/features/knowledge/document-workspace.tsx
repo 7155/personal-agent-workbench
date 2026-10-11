@@ -755,6 +755,21 @@ function KnowledgeAudioContent({ asset, document, label, transport }: { asset: K
   </div>;
 }
 
+/** A selected hit uses the same bound binary owner as the document reader. */
+export function KnowledgeHitImagePreview({ asset, document, label, transport }: { asset: KnowledgeAsset; document: KnowledgeDocument; label: string; transport: ControlTransport }) {
+  const binary = useKnowledgeAsset(document, asset, transport);
+  const [decodeFailed, setDecodeFailed] = useState(false);
+  const [hasFailed, setHasFailed] = useState(false);
+  useEffect(() => { if (binary.error) setHasFailed(true); }, [binary.error]);
+  useEffect(() => setDecodeFailed(false), [binary.url]);
+  return <div className="knowledge-hit-preview">
+    {binary.loading ? <p role="status">正在读取来源图片…</p>
+      : binary.error || decodeFailed || !binary.url ? <p role="alert">来源图片暂不可用，可以打开来源核对。</p>
+        : <img alt={label} src={binary.url} onError={() => { setDecodeFailed(true); setHasFailed(true); }} />}
+    {hasFailed || binary.error || decodeFailed ? <Button loading={binary.loading} onClick={() => { setDecodeFailed(false); binary.retry(); }} preserveFocusWhileLoading size="small" variant="quiet">重新读取图片</Button> : null}
+  </div>;
+}
+
 function InlineImageContent({ asset, document, transport }: { asset: KnowledgeAsset; document: KnowledgeDocument; transport: ControlTransport }) {
   const binary = useKnowledgeAsset(document, asset, transport);
   if (binary.error) return <span role={binary.loading ? 'status' : 'alert'}>{binary.loading ? '正在重新读取图片…' : '图片暂不可用。'}<Button loading={binary.loading} onClick={binary.retry} preserveFocusWhileLoading size="small" variant="quiet">重新读取图片</Button></span>;

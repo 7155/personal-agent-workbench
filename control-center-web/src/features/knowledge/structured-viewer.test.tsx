@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@/components/primitives';
 import { MockControlTransport } from '@/test/mock-transport';
-import { DocumentSource, KnowledgeDocumentViewer } from './document-workspace';
+import { DocumentSource, KnowledgeDocumentViewer, KnowledgeHitImagePreview } from './document-workspace';
 import type { KnowledgeDocumentDetail, KnowledgeSearchHit } from './api';
 import type { KnowledgeAssetPayload } from '@/platform/transport';
 vi.mock('@/features/evidence-echo/EvidenceEchoUsage', () => ({ EvidenceEchoUsage: () => null }));
@@ -229,4 +229,49 @@ it('rereads the original media source when its known original hash changes and r
   expect(transport.knowledgeDocumentSourceCalls).toHaveLength(2);
   expect(transport.knowledgeDocumentSourceCalls[0].signal?.aborted).toBe(true);
   expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:old-media');
+});
+
+
+it('renders a selected image using the original binary identity and revokes its URL on unmount', async () => {
+  const source = mediaDetail('frame'); const asset = source.assets[0];
+  const transport = new MockControlTransport({ knowledgeAsset: input => ({ ...input, mimeType: 'image/png', byteSize: 4, sha256: asset.sha256, blob: new Blob(['image'], { type: 'image/png' }) }) });
+  const view = render(<KnowledgeHitImagePreview asset={asset} document={source.document} label="original frame 10" transport={transport} />);
+  expect(await screen.findByRole('img', { name: 'original frame 10' })).toHaveAttribute('src', 'blob:structured-image');
+  expect(transport.knowledgeAssetCalls).toHaveLength(1);
+  expect(transport.knowledgeAssetCalls[0]).toMatchObject({ kbId: 'base', fileId: 'paper', assetId: asset.id });
+  view.unmount(); expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:structured-image');
+});
+
+it.each(['kbId', 'fileId', 'assetId', 'sha256', 'mimeType'] as const)('rejects a selected thumbnail with foreign %s without creating an image URL', async field => {
+  const source = mediaDetail('frame'); const asset = source.assets[0];
+  const transport = new MockControlTransport({ knowledgeAsset: input => ({ ...input, mimeType: 'image/png', byteSize: 4, sha256: asset.sha256, blob: new Blob(['image'], { type: 'image/png' }), [field]: field === 'mimeType' ? 'image/jpeg' : 'foreign' }) });
+  render(<KnowledgeHitImagePreview asset={asset} document={source.document} label="original frame 10" transport={transport} />);
+  expect(await screen.findByRole('alert')).toHaveTextContent('来源图片暂不可用');
+  expect(screen.queryByRole('img')).not.toBeInTheDocument();
+  expect(URL.createObjectURL).not.toHaveBeenCalled();
+});
+
+it('aborts an unmounted selected preview and rejects its late original response', async () => {
+  const source = mediaDetail('frame'); let resolve!: (payload: KnowledgeAssetPayload) => void;
+  const transport = new MockControlTransport({ knowledgeAsset: () => new Promise(value => { resolve = value; }) });
+  const view = render(<KnowledgeHitImagePreview asset={source.assets[0]} document={source.document} label="frame" transport={transport} />);
+  await waitFor(() => expect(transport.knowledgeAssetCalls).toHaveLength(1));
+  const signal = transport.knowledgeAssetCalls[0].signal!;
+  view.unmount(); expect(signal.aborted).toBe(true);
+  await act(async () => resolve({ kbId: 'base', fileId: 'paper', assetId: source.assets[0].id, sha256: source.assets[0].sha256, mimeType: 'image/png', byteSize: 4, blob: new Blob(['image'], { type: 'image/png' }) }));
+  expect(URL.createObjectURL).not.toHaveBeenCalled();
+});
+
+it('retries only the failed original thumbnail read and guards double submission while retaining focus', async () => {
+  const user = userEvent.setup(); const source = mediaDetail('frame'); let resolve!: (payload: KnowledgeAssetPayload) => void;
+  const reader = vi.fn().mockRejectedValueOnce(new Error('offline')).mockImplementationOnce(() => new Promise(value => { resolve = value; }));
+  const transport = new MockControlTransport({ knowledgeAsset: reader });
+  render(<KnowledgeHitImagePreview asset={source.assets[0]} document={source.document} label="frame" transport={transport} />);
+  const retry = await screen.findByRole('button', { name: '重新读取图片' }); retry.focus(); await user.keyboard('{Enter}');
+  await waitFor(() => expect(retry).toHaveAttribute('aria-busy', 'true'));
+  expect(retry).toHaveFocus(); await user.click(retry); expect(reader).toHaveBeenCalledTimes(2);
+  await act(async () => resolve({ kbId: 'base', fileId: 'paper', assetId: source.assets[0].id, sha256: source.assets[0].sha256, mimeType: 'image/png', byteSize: 4, blob: new Blob(['image'], { type: 'image/png' }) }));
+  expect(await screen.findByRole('img', { name: 'frame' })).toBeInTheDocument();
+  expect(retry).toHaveFocus(); expect(retry).not.toHaveAttribute('aria-busy', 'true');
+  expect(transport.requests).toHaveLength(0);
 });

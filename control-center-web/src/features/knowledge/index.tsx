@@ -102,7 +102,7 @@ import {
   type KnowledgeSearchRetrieval,
   knowledgeIndexRuntimeStatus,
 } from './api';
-import { KnowledgeDocumentViewer, KnowledgeJobsPanel, KnowledgeMaterialsPanel, type KnowledgeUploadItem } from './document-workspace';
+import { KnowledgeDocumentViewer, KnowledgeHitImagePreview, KnowledgeJobsPanel, KnowledgeMaterialsPanel, type KnowledgeUploadItem } from './document-workspace';
 import { KnowledgeGraphPanel } from './knowledge-graph';
 import { knowledgeBlockKindLabel, publicKnowledgeText } from './public-copy';
 import { knowledgeMediaKind, knowledgeMediaLocationLabel, knowledgeMediaPositionLabel } from './structured-reading';
@@ -911,7 +911,7 @@ function KnowledgeSearchPanel({ base, reading, onOpenHit, transport }: { base: D
   readingRef.current = reading;
   const resultRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const backRef = useRef<HTMLButtonElement>(null);
-  const returnFocusRef = useRef(false);
+  const returnFocusRef = useRef(Boolean(reading.context.readerOrigin === 'search' && reading.context.focusHit?.id === snapshot.selectedId));
   const setDraft = (value: string) => {
     setLocalDraft(value);
     reading.update((current) => ({ ...current, search: { ...current.search, draft: value } }));
@@ -1054,8 +1054,12 @@ function KnowledgeSearchPanel({ base, reading, onOpenHit, transport }: { base: D
           <Button onClick={() => cancelSearch()} size="small" variant="quiet">取消</Button>
         </div>
       ) : null}
-      {snapshot.status === 'success' ? <p className="knowledge-search__result-summary" role="status">“{snapshot.query}” · {hits.length} 条结果</p> : null}
-      {retrieval ? <KnowledgeRetrievalSummary retrieval={retrieval} /> : null}
+      {snapshot.status === 'success' ? <div className="knowledge-search__result-band"><p className="knowledge-search__result-summary" role="status">“{snapshot.query}” · {hits.length} 条结果</p>{retrieval ? <KnowledgeRetrievalSummary retrieval={retrieval} /> : null}</div> : null}
+      {retrieval ? <>
+        {retrieval.dense.degraded === true || retrieval.dense.available === false && ['dense', 'hybrid'].includes(retrieval.mode) ? <p className="knowledge-search__notice" role="status">部分检索能力不可用，本次结果来自可用来源。可展开检索详情核对。</p> : null}
+        {retrieval.reranker.error ? <p className="knowledge-search__notice" role="status">本次重排未完成。可展开检索详情核对原因。</p> : null}
+        {retrieval.libraries.some((library) => library.config?.graphEnabled && ['failed', 'stale', 'unavailable'].includes(library.graphStatus)) ? <p className="knowledge-search__notice" role="status">图谱来源未能参与本次检索。可展开检索详情核对。</p> : null}
+      </> : null}
       {hits.length ? (
         <div className="knowledge-search__results" data-detail-open={detailOpen || undefined}>
           <div className="knowledge-search__list" role="listbox" aria-label="检索结果" onKeyDown={(event) => {
@@ -1095,6 +1099,7 @@ function KnowledgeRetrievalSummary({ retrieval }: { retrieval: KnowledgeSearchRe
   const rerankState = library?.rerankApplied === true ? '本次已重排' : library?.rerankApplied === false ? '本次未重排' : '本次是否重排未报告';
   const count = (value: number | null | undefined) => value ?? '未报告';
   return (
+    <Disclosure className="knowledge-search__diagnostics" summary="本次检索详情">
     <section aria-label="本次召回诊断" className="knowledge-search__retrieval-summary">
       <header><strong>本次召回诊断</strong><span>{retrievalModeLabelValue(retrieval.effectiveMode)} · {library?.returned != null ? `${library.returned} 条返回` : '返回数量未报告'}</span></header>
       <dl>
@@ -1104,8 +1109,10 @@ function KnowledgeRetrievalSummary({ retrieval }: { retrieval: KnowledgeSearchRe
         <div><dt>RAG 参数</dt><dd>{config ? `topK ${config.topK} · RRF ${config.rrfK} · 候选 ×${config.candidateMultiplier}` : '未报告'}</dd></div>
         <div><dt>Reranker</dt><dd>{rerankState}{retrieval.reranker.provider && retrieval.reranker.provider !== 'none' ? ` · ${retrieval.reranker.provider}` : ''}{library?.rerankApplied === true ? ` · ${count(library.rerankCandidates)} 个候选` : ''}</dd></div>
         <div><dt>向量模型</dt><dd>{[retrieval.dense.provider, retrieval.dense.model].filter(Boolean).join(' / ') || '未报告'}{retrieval.dense.degraded === true ? ' · 已降级' : ''}</dd></div>
+        {retrieval.reranker.error ? <div><dt>重排问题</dt><dd>{publicErrorText(new Error(retrieval.reranker.error), '本次重排未完成。')}</dd></div> : null}
       </dl>
     </section>
+    </Disclosure>
   );
 }
 
@@ -1123,18 +1130,19 @@ function KnowledgeHitDetail({ baseId, hit, onOpen, rank, transport }: { baseId: 
   const visibleGraphPaths = graphPaths.slice(0, 2);
   return (
     <article className="knowledge-search__detail">
-      <span>{hit.documentName}</span>
-      <h3>{hit.title}</h3>
+      <div className="knowledge-search__detail-heading"><div><h3>{hit.documentName}</h3><span>{hit.title} · {citationLabel(hit)}</span></div><Button leadingIcon={<ExternalLink size={14} />} loading={openMutation.isPending} onClick={() => openMutation.mutate()} preserveFocusWhileLoading size="small" variant="primary">打开来源</Button></div>
+      {openMutation.error ? <p className="knowledge-inline-error">当前无法打开来源。</p> : null}
+      <KnowledgeSelectedHitPreview baseId={baseId} hit={hit} transport={transport} />
       <p>{mediaHitDescription(hit) ?? (hit.excerpt || '这个段落没有可显示的摘录。')}</p>
       {mediaHitDescription(hit) ? <Disclosure summary="检索片段原文"><p>{hit.excerpt || '这个段落没有可显示的摘录。'}</p></Disclosure> : null}
       <dl>
         <div><dt>位置</dt><dd>{citationLabel(hit)}</dd></div>
-        <div><dt>最终排名</dt><dd>第 {rank} 条</dd></div>
         <div><dt>相关程度</dt><dd>{relevanceLabel(hit.score, false)}</dd></div>
-        <div><dt>标题路径</dt><dd>{hit.heading || '未提供'}</dd></div>
       </dl>
       <Disclosure className="knowledge-search__advanced" summary="高级：检索详情">
         <dl>
+          <div><dt>最终排名</dt><dd>第 {rank} 条</dd></div>
+          <div><dt>标题路径</dt><dd>{hit.heading || '未提供'}</dd></div>
           {hit.provenance ? <><div><dt>解析结构</dt><dd>{knowledgeMediaKind(hit.provenance) === 'video-frame' ? '采样画面' : knowledgeBlockKindLabel(hit.provenance.kind)}{hit.provenance.split ? ' · 超长内容已分段' : ''}</dd></div><div><dt>来源位置</dt><dd>{hit.provenance.sourceBlocks.slice(0, 8).map((block, index) => <p key={index}>{knowledgeMediaPositionLabel(block) ?? (block.page === null ? '页码未提供' : `第 ${block.page} 页`)}{block.bbox ? ` · 区域 ${block.bbox.join(', ')}（${block.coordinateSystem === 'normalized-1000' ? '归一化坐标 0–1000' : '坐标单位未统一'}）` : knowledgeMediaPositionLabel(block) ? '' : ' · 无页内坐标'}</p>)}{hit.provenance.sourceBlocks.length > 8 ? <p>共 {hit.provenance.sourceBlocks.length} 个来源块，显示前 8 个</p> : null}</dd></div></> : null}
           <div><dt>相关度分数</dt><dd>{scorePoints(hit.score)} / 100</dd></div>
           <div><dt>命中方式</dt><dd>{retrievalEvidenceLabel(hit)}</dd></div>
@@ -1163,10 +1171,22 @@ function KnowledgeHitDetail({ baseId, hit, onOpen, rank, transport }: { baseId: 
           ) : null}
         </dl>
       </Disclosure>
-      <Button leadingIcon={<ExternalLink size={14} />} loading={openMutation.isPending} onClick={() => openMutation.mutate()} preserveFocusWhileLoading size="small" variant="primary">打开来源</Button>
-      {openMutation.error ? <p className="knowledge-inline-error">当前无法打开来源。</p> : null}
     </article>
   );
+}
+
+function KnowledgeSelectedHitPreview({ baseId, hit, transport }: { baseId: string; hit: KnowledgeSearchHit; transport: ReturnType<typeof useKnowledgeLibraryQueries>['transport'] }) {
+  const hashes = hit.provenance?.sourceBlocks.map((block) => block.assetSha256).filter((hash): hash is string => Boolean(hash && /^[a-f0-9]{64}$/u.test(hash))) ?? [];
+  const imageHit = hit.provenance?.modality === 'image' || ['image', 'figure'].includes(hit.provenance?.kind ?? '');
+  const eligible = imageHit && hashes.length > 0;
+  const detail = useKnowledgeDocumentDetail(baseId, hit.documentId, eligible);
+  if (!imageHit) return null;
+  if (!hashes.length) return <div className="knowledge-hit-preview"><p role="alert">来源图片暂不可用，可以打开来源核对。</p></div>;
+  if (detail.isPending) return <div className="knowledge-hit-preview"><p role="status">正在读取来源图片…</p></div>;
+  const source = detail.data;
+  const asset = source?.assets.find((item) => hashes.includes(item.sha256) && item.mimeType.startsWith('image/'));
+  if (detail.error || !source || source.document.baseId !== baseId || source.document.id !== hit.documentId || !asset) return <div className="knowledge-hit-preview"><p role="alert">来源图片暂不可用，可以打开来源核对。</p></div>;
+  return <KnowledgeHitImagePreview asset={asset} document={source.document} key={JSON.stringify([baseId, hit.documentId, asset.id, asset.sha256])} label={`${hit.documentName} · ${citationLabel(hit)}`} transport={transport} />;
 }
 
 function hitRankLabel(hit: KnowledgeSearchHit, index: number): string {

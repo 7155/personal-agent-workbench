@@ -31,6 +31,65 @@ afterEach(() => {
 });
 
 describe('document knowledge library', () => {
+  it('keeps real degradation and reranker errors visible while technical details remain closed', async () => {
+    const user = userEvent.setup(); const transport = createTransport(); const original = transport.request.bind(transport);
+    vi.spyOn(transport, 'request').mockImplementation(async input => {
+      const response = await original(input);
+      const row = response as Record<string, unknown>;
+      return input.pathId === 'knowledgeBases.search' ? { ...row, retrieval: { ...(row.retrieval as Record<string, unknown>),
+        dense: { available: false, degraded: true, provider: 'none', model: '' },
+        reranker: { error: 'original reranker unavailable', provider: 'local', configured: true },
+      } } : response;
+    });
+    renderKnowledge(transport, '/knowledge?tab=search', true);
+    await user.type(await screen.findByRole('textbox', { name: '搜索知识库' }), '工具');
+    await user.click(screen.getByRole('button', { name: '搜索' })); await screen.findByRole('listbox');
+    expect(screen.getByText(/部分检索能力不可用/)).toBeVisible();
+    expect(screen.getByText(/本次重排未完成/)).toBeVisible();
+    expect(screen.queryByRole('region', { name: '本次召回诊断' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '打开来源' })).toBeEnabled();
+  });
+
+
+  it('keeps technical retrieval diagnostics collapsed while preserving them on explicit disclosure', async () => {
+    const user = userEvent.setup(); const transport = createTransport();
+    renderKnowledge(transport, '/knowledge?tab=search', true);
+    await user.type(await screen.findByRole('textbox', { name: '搜索知识库' }), '工具');
+    await user.click(screen.getByRole('button', { name: '搜索' }));
+    await screen.findByRole('listbox', { name: '检索结果' });
+    expect(screen.queryByRole('region', { name: '本次召回诊断' })).not.toBeInTheDocument();
+    expect(screen.queryByText('每路候选上限')).not.toBeInTheDocument();
+    const searchCount = transport.requests.filter(call => call.request.pathId === 'knowledgeBases.search').length;
+    await user.click(screen.getByText('本次检索详情', { selector: 'summary' }));
+    expect(screen.getByRole('region', { name: '本次召回诊断' })).toHaveTextContent('每路候选上限40');
+    expect(transport.requests.filter(call => call.request.pathId === 'knowledgeBases.search')).toHaveLength(searchCount);
+    expect(screen.getByRole('textbox', { name: '搜索知识库' })).toHaveValue('工具');
+  });
+
+  it('shows only the selected native frame preview through the original bound asset read', async () => {
+    const user = userEvent.setup(); const transport = createTransport();
+    const original = transport.request.bind(transport);
+    vi.spyOn(transport, 'request').mockImplementation(async input => input.pathId === 'knowledgeBases.search' ? { hits: [{
+      chunkId: 'frame-ten', documentId: 'file-runtime', documentName: 'public-clip.mp4', title: '采样画面', score: .9,
+      content: '[video-frame: 10s]', citation: { kind: 'image', modality: 'image', startSeconds: 10, endSeconds: 10,
+        sourceBlocks: [{ order: 0, metadata: { assetSha256: 'd'.repeat(64), sourcePart: 'video-frame', startSeconds: 10, endSeconds: 10, timestampKind: 'seek-offset' } }],
+      },
+    }, { chunkId: 'text', documentId: 'file-runtime', documentName: 'runtime.pdf', title: '正文', content: '正常文字', score: .8 }] } as never : original(input));
+    const read = vi.spyOn(transport, 'readKnowledgeAsset');
+    renderKnowledge(transport, '/knowledge?tab=search', true);
+    await user.type(await screen.findByRole('textbox', { name: '搜索知识库' }), 'blue');
+    await user.click(screen.getByRole('button', { name: '搜索' }));
+    const image = await screen.findByRole('img', { name: 'public-clip.mp4 · 采样画面 · 00:10（采样偏移）' });
+    expect(image).toHaveAttribute('src', 'blob:knowledge-asset');
+    expect(read).toHaveBeenCalledOnce();
+    expect(read.mock.calls[0][0]).toMatchObject({ kbId: 'kb-runtime', fileId: 'file-runtime', assetId: 'd'.repeat(64) });
+    await user.click(screen.getByRole('option', { name: /正常文字/ }));
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    expect(read).toHaveBeenCalledOnce();
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:knowledge-asset');
+    expect(vi.mocked(transport.request).mock.calls.filter(([input]) => input.pathId === 'knowledgeBases.search')).toHaveLength(1);
+  });
+
   it('restores an unsent search draft after recreating the App and QueryClient without searching', async () => {
     const transport = createTransport();
     const client = renderKnowledge(transport, '/knowledge?base=kb-runtime&tab=search', true);
@@ -236,6 +295,7 @@ describe('document knowledge library', () => {
     const restoredResults = await screen.findByRole('listbox', { name: '检索结果' });
     const selected = within(restoredResults).getByRole('option', { selected: true });
     expect(selected).toHaveTextContent('Tool 注册');
+    expect(selected).toHaveFocus();
     expect(within(restoredResults).getAllByRole('option')).toHaveLength(2);
     expect(transport.requests.filter(({ request }) => request.pathId === 'knowledgeBases.search')).toHaveLength(1);
     expect(request(transport, 'knowledgeBases.search')?.body).toMatchObject({ query: '工具如何注册' });
@@ -329,6 +389,7 @@ describe('document knowledge library', () => {
     expect(await screen.findByRole('option', { name: /Tool 注册/ })).toBeInTheDocument();
     expect(screen.getByText('“工具如何注册” · 1 条结果')).toBeInTheDocument();
     expect(screen.getByText('高相关')).toHaveAttribute('data-level', 'high');
+    await user.click(screen.getByText('本次检索详情', { selector: 'summary' }));
     expect(screen.getByRole('region', { name: '本次召回诊断' })).toHaveTextContent('Reranker本次未重排');
     expect(screen.getByRole('region', { name: '本次召回诊断' })).toHaveTextContent('每路候选上限40');
     await user.click(screen.getByText('高级：检索详情', { selector: 'summary' }));
