@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { useControlTransport } from '@/app/control-transport';
 import { Button, Input } from '@/components/primitives';
@@ -33,7 +33,20 @@ type BudgetMutationInput = {
 function GuideBudget({ sessionId, goal }: { sessionId: string; goal: Goal }) {
   const transport = useControlTransport(); const client = useQueryClient();
   const [tokens, setTokens] = useState(goal.budget.tokenLimit === null ? '' : String(goal.budget.tokenLimit)); const [minutes, setMinutes] = useState(goal.budget.timeLimitMs === null ? '' : String(goal.budget.timeLimitMs / 60000));
-  useEffect(() => { setTokens(goal.budget.tokenLimit === null ? '' : String(goal.budget.tokenLimit)); setMinutes(goal.budget.timeLimitMs === null ? '' : String(goal.budget.timeLimitMs / 60000)); }, [goal.revision, goal.budget.tokenLimit, goal.budget.timeLimitMs]);
+  const previousBudget = useRef({ ...goal.budget });
+  useEffect(() => {
+    const previous = previousBudget.current;
+    // State already has the initial budget; a late mount effect must not replay
+    // that snapshot over an edit. Later receipts sync only untouched fields.
+    if (previous.tokenLimit === goal.budget.tokenLimit && previous.timeLimitMs === goal.budget.timeLimitMs) return;
+    previousBudget.current = { ...goal.budget };
+    const previousTokens = previous.tokenLimit === null ? '' : String(previous.tokenLimit);
+    const previousMinutes = previous.timeLimitMs === null ? '' : String(previous.timeLimitMs / 60000);
+    const nextTokens = goal.budget.tokenLimit === null ? '' : String(goal.budget.tokenLimit);
+    const nextMinutes = goal.budget.timeLimitMs === null ? '' : String(goal.budget.timeLimitMs / 60000);
+    setTokens((value) => value === previousTokens ? nextTokens : value);
+    setMinutes((value) => value === previousMinutes ? nextMinutes : value);
+  }, [goal.budget.tokenLimit, goal.budget.timeLimitMs]);
   const tokenBudget = tokens.trim() ? Number(tokens) : null;
   const timeBudgetMs = minutes.trim() ? Math.round(Number(minutes) * 60000) : null;
   const valid = (tokenBudget === null || (Number.isSafeInteger(tokenBudget) && tokenBudget > 0 && tokenBudget <= 100000000))
