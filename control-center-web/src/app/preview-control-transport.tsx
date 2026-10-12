@@ -392,6 +392,13 @@ export function createPreviewTransport(): MockControlTransport {
   routes['browser.tabs'] = () => ({ ok: true, items: browserTabs.map(tab => ({ ...tab })) });
   routes['browser.command'] = (request: ControlRequest) => {
     const body = record(request.body);
+    // Replay the built-in synthetic fixture only. No real screenshot or
+    // navigation is performed, including for a newly created blank tab.
+    if (body.action === 'screenshot' && Number(body.tabId) === 23
+      && (body.deviceId === undefined || body.deviceId === 'paw-browser')
+      && body.url === undefined && browserTabs.some(tab => tab.tabId === 23)) {
+      return { ok: true, preview: true, result: { tabId: 23, snapshotId: 'snap-preview-runtime', source: 'synthetic_fixture', captured: false } };
+    }
     if (body.action === 'new_tab' && body.url === 'about:blank') {
       const tab = { deviceId: 'paw-browser', tabId: nextBrowserTabId++, title: '新标签页', url: 'about:blank', active: true };
       browserTabs = [...browserTabs.map(tab => ({ ...tab, active: false })), tab];
@@ -2260,9 +2267,10 @@ function previewBrowserSnapshot(): Record<string, unknown> {
     tabId: 23,
     url: 'https://docs.example.com/browser-guide',
     title: '浏览器协作指南',
-    summary: '3 个页面区域 · 18 个可交互元素',
+    summary: '合成演示 · 3 个页面区域 · 18 个可交互元素',
     markdown: [
       '# 浏览器协作指南',
+      '这是内置合成演示，没有访问或捕获真实网页。',
       '网址：https://docs.example.com/browser-guide',
       '当前页面说明如何安全地共享页面内容与操作。',
       '## 页面操作',

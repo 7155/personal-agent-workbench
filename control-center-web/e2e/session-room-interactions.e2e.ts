@@ -32,5 +32,11 @@ test('Room preserves its draft across another App and publishes it once', async 
   await expect(composer).toHaveValue(probe);
   await page.getByRole('button', { name: '发送消息', exact: true }).click();
   await expect(composer).toHaveValue('');
-  await expect(page.locator('.ccui-user-text', { hasText: probe })).toHaveCount(1);
+  // Returning from another App restores the reader's position. A new turn
+  // can be outside the virtualized viewport until the reader opens "latest".
+  const latest = page.getByRole('button', { name: '回到最新消息', exact: true });
+  if (await latest.isVisible()) await latest.click();
+  const message = page.locator('.ccui-user-text', { hasText: probe });
+  await expect(message).toHaveCount(1);
+  await expect(message).toBeInViewport();
 });
