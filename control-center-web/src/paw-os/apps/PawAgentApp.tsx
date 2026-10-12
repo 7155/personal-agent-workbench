@@ -98,6 +98,11 @@ function PawAgentAppBody({
   const organizationToggleRef = useRef<HTMLButtonElement>(null);
   const directoryNeeded = railOpen || (interfaceMode === 'jev' && organizationOpen);
   const [query, setQuery] = useState('');
+  const homeDraftRef = useRef<{ seed?: string; value: string }>({ value: '' });
+  if (selection.kind === 'new' && selection.draft !== undefined && selection.draft !== homeDraftRef.current.seed) {
+    homeDraftRef.current = { seed: selection.draft, value: selection.draft };
+  }
+  const retainHomeDraft = useCallback((value: string) => { homeDraftRef.current.value = value; }, []);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [actionError, setActionError] = useState('');
@@ -519,7 +524,8 @@ function PawAgentAppBody({
             modelError={modelError}
             defaultModel={defaultModel}
             durableAvailable={durableAvailable}
-            initialDraft={selection.draft}
+            initialDraft={homeDraftRef.current.value}
+            onDraftChange={retainHomeDraft}
             key={`new:${selection.draft ?? ''}`}
             models={models}
             onOpenRoom={(id) => setSelection({ kind: 'room', id })}
@@ -531,6 +537,7 @@ function PawAgentAppBody({
             sessions={visibleSessions}
             showRecents={false}
             onCreated={(next, created, createdRoom) => {
+              if (!(next.kind === 'room' && next.error)) homeDraftRef.current.value = '';
               if (created) {
                 optimisticSessionsRef.current[created.id] = created;
                 setSessions((current) => [created, ...current.filter((item) => item.id !== created.id)]);

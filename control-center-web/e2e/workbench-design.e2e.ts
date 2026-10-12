@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test('Jev task rail is interactive in the React fixture at desktop and mobile sizes', async ({ page }) => {
   await page.goto('/e2e/fixtures/jev-execution.html?scene=parallel');
+  await page.getByRole('button', { name: '查看 Room 任务', exact: true }).click();
   const expand = page.getByRole('button', { name: '展开任务栏' });
   if (await expand.isVisible()) await expand.click();
   const tasks = page.getByRole('tab', { name: /任务/ });

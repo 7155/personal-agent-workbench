@@ -7,12 +7,12 @@ test('the canonical Wayfinder keeps its navigation reachable in compact viewport
     await page.setViewportSize(viewport);
     await page.goto('/?controlTransport=mock#/project-field');
     await expect(page.locator('.paw-wayfinder')).toBeVisible();
-    const launch = page.getByRole('button', { name: '全部 App', exact: true });
+    const launch = page.getByRole('button', { name: '打开全部 App', exact: true });
     await expect(launch).toBeVisible();
     await launch.click();
     const dialog = page.getByRole('dialog', { name: '全部 App' });
     await expect(dialog).toBeVisible();
-    await dialog.getByRole('button', { name: /^Agent / }).first().click();
+    await dialog.locator('button[data-app="agent"]').click();
     await expect(page.locator('.paw-window-shell[data-app="agent"]')).toBeVisible();
     await expectNoHorizontalPageOverflow(page);
   }

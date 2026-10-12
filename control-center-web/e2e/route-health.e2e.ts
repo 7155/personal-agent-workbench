@@ -17,7 +17,7 @@ test('all product deep links render inside their single PAWOS owner', async ({ p
     expect(bounds!.width).toBeGreaterThan(300);
     expect(bounds!.height).toBeGreaterThan(120);
     const controls = surface.locator('button:visible, input:visible, textarea:visible, a:visible, summary:visible');
-    expect(await controls.count()).toBeGreaterThan(0);
+    await expect.poll(() => controls.count(), { message: `${route.id} finishes opening with usable controls` }).toBeGreaterThan(0);
     evidence.push({ route: route.id, width: bounds!.width, height: bounds!.height, controls: await controls.count() });
   }
   await info.attach('single-owner-routes.json', { body: JSON.stringify(evidence, null, 2), contentType: 'application/json' });

@@ -138,6 +138,7 @@
 
 .ui-button__label {
   min-width: 0;
+  line-height: var(--line-height-compact);
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -589,6 +590,7 @@ input[type='radio']:focus-visible {
 
 .ui-select__trigger > span:first-child {
   min-width: 0;
+  line-height: var(--line-height-ui);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

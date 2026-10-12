@@ -55,6 +55,7 @@ test('Room and Session retain visible context names without sacrificing actions 
   const expand = room.getByRole('button', { name: '展开 Room 控件' });
   if (await expand.isVisible()) await expand.click();
   const roomExpanded = await expectWindowContext(room, composer, page);
+  await room.getByRole('button', { name: '执行记录', exact: true }).click();
   const mars = room.getByRole('region', { name: 'Mars 伙伴结果' });
   await mars.getByText('查看结果', { exact: true }).click();
   await mars.getByRole('button', { name: '打开 Mars Session', exact: true }).click();

@@ -68,6 +68,7 @@ test('V4 twelve scenes retain truthful terminal, offline and empty states', asyn
 
 test('production Room host reuses one Dialog for panorama and original task operations', async ({ page }) => {
   await page.goto('/e2e/fixtures/jev-execution.html?scene=parallel');
+  await page.getByRole('button', { name: '查看 Room 任务', exact: true }).click();
   const expand = page.getByRole('button', { name: '展开任务栏' });
   if (await expand.isVisible()) await expand.click();
   await page.getByRole('button', { name: '打开多 Agent 协作全景' }).click();

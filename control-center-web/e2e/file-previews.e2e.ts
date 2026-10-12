@@ -20,7 +20,6 @@ test('short inline code follows its content while long code and its dialog remai
     expect(await code.locator('pre').textContent()).toBe(content);
     const measure = await code.evaluate(figure => {
       const pre = figure.querySelector('pre')!;
-      const caption = figure.querySelector('figcaption')!;
       const style = getComputedStyle(pre);
       const pixels = (value: string) => Number.parseFloat(value);
       const reader = figure.querySelector<HTMLElement>('.agent-file-code__highlight') ?? pre;
@@ -30,8 +29,7 @@ test('short inline code follows its content while long code and its dialog remai
       return {
         height: figure.getBoundingClientRect().height,
         whiteSpace: style.whiteSpace,
-        naturalHeight: caption.getBoundingClientRect().height
-          + pre.textContent!.split('\n').length * pixels(style.lineHeight)
+        naturalHeight: pre.textContent!.split('\n').length * pixels(style.lineHeight)
           + pixels(style.paddingTop) + pixels(style.paddingBottom)
           + pixels(style.borderTopWidth) + pixels(style.borderBottomWidth) + scrollbar,
       };
@@ -39,7 +37,10 @@ test('short inline code follows its content while long code and its dialog remai
     expect(measure.whiteSpace).toBe('pre');
     expect(Number.isFinite(measure.naturalHeight)).toBe(true);
     expect(measure.height).toBeLessThanOrEqual(measure.naturalHeight + .02);
-    await expect(region.getByRole('button', { name: '复制代码', exact: true })).toBeVisible();
+    const copy = region.getByRole('button', { name: `复制${fileName} 内容`, exact: true });
+    await expect(copy).toBeVisible();
+    await copy.click();
+    await expect(region.getByRole('button', { name: `复制${fileName} 内容：已复制`, exact: true })).toBeVisible();
     await close(page, fileName);
   }
 
@@ -69,7 +70,7 @@ test('short inline code follows its content while long code and its dialog remai
   await expectNoHorizontalPageOverflow(page);
 });
 
-test('narrow inline code captions contain the full copy target without covering the code', async ({ page }, testInfo) => {
+test('narrow inline code toolbars contain the full copy target without covering the code', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop-1440x900', 'one explicit 375px viewport covers the mobile control token');
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto('/e2e/fixtures/file-previews.html?content-height=1');
@@ -81,11 +82,11 @@ test('narrow inline code captions contain the full copy target without covering 
     if (highlighted) await expect(code.locator('.agent-file-code__highlight pre')).toBeVisible();
     else await expect(code.locator('.agent-file-code__highlight')).toHaveCount(0);
     expect(await code.locator('pre').textContent()).toBe(content);
-    const geometry = await region.getByRole('button', { name: '复制代码', exact: true }).evaluate(button => {
-      const figure = button.closest('.agent-file-code')!;
-      const caption = button.closest('figcaption')!;
-      const body = figure.closest('.agent-file-preview-inline__body')!;
-      const pre = figure.querySelector('pre')!;
+    const geometry = await region.getByRole('button', { name: `复制${fileName} 内容`, exact: true }).evaluate(button => {
+      const figure = button.closest('.agent-file-preview-inline')!;
+      const caption = button.closest('header')!;
+      const body = figure.closest('.agent-file-block-shell')!;
+      const pre = figure.querySelector('.agent-file-code pre')!;
       const rect = (element: Element) => {
         const { left, top, right, bottom, width, height } = element.getBoundingClientRect();
         return { left, top, right, bottom, width, height };

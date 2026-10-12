@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test('home, conversation and Room keep the same Chinese input typography', async ({page}) => {
   const styles: unknown[] = [];
-  for (const route of ['/agent', '/agent?session=session-preview', '/rooms?room=room-preview']) {
+  for (const route of ['/agent-controller', '/agent?session=session-preview', '/rooms?room=room-preview']) {
     await page.goto('/?controlTransport=mock#' + route);
     const composer = page.locator('[data-composer-design="workbench"]').first();
     const input = composer.locator('textarea');

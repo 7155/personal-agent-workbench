@@ -24,6 +24,8 @@ for (const width of [768,1440]) test(`citation actions and conversation navigati
   expect(Math.abs(geometry.citationInset-geometry.fileInset)).toBeLessThanOrEqual(2);
   expect(geometry.navGap).toBeGreaterThanOrEqual(12);
   if (width === 768) expect(Math.abs(geometry.leftAlignment)).toBeLessThanOrEqual(4);
+  await save.scrollIntoViewIfNeeded();
+  await expect(save).toBeInViewport();
   expect(await save.evaluate(element=>{
     const rect=element.getBoundingClientRect();
     return element.contains(document.elementFromPoint(rect.right-2,rect.top+2));
