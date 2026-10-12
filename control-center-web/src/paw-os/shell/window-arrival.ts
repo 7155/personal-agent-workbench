@@ -25,7 +25,7 @@ export function animateWindowArrival(surface: HTMLElement): (() => void) | undef
     arrival.cancel();
     dust.cancel();
     particles.remove();
-    surface.removeEventListener('pointerdown', finish);
+    surface.removeEventListener('pointerdown', pointerDown, true);
     document.removeEventListener('keydown', finish);
     document.removeEventListener('visibilitychange', visibilityChanged);
     preference?.removeEventListener?.('change', motionChanged);
@@ -33,9 +33,20 @@ export function animateWindowArrival(surface: HTMLElement): (() => void) | undef
   };
   const visibilityChanged = () => { if (document.hidden) finish(); };
   const motionChanged = () => { if (still()) finish(); };
+  const pointerDown = (event: PointerEvent) => {
+    // The opening transform must stop before a control handles input. Keep
+    // its release on the same control when cancelling moves its hit target;
+    // otherwise an immediate traffic-light click can lose its pointerup.
+    const control = event.target instanceof Element
+      ? event.target.closest<HTMLElement>('button, a, input, textarea, select, summary') : null;
+    if (control && surface.contains(control) && typeof control.setPointerCapture === 'function') {
+      control.setPointerCapture(event.pointerId);
+    }
+    finish();
+  };
   const settings = new MutationObserver(motionChanged);
   settings.observe(document.documentElement, { attributes: true, attributeFilter: ['data-reduce-motion'] });
-  surface.addEventListener('pointerdown', finish, { once: true });
+  surface.addEventListener('pointerdown', pointerDown, { once: true, capture: true });
   document.addEventListener('keydown', finish, { once: true });
   document.addEventListener('visibilitychange', visibilityChanged);
   preference?.addEventListener?.('change', motionChanged);

@@ -56,8 +56,8 @@ test('Room titlebar keeps every expanded view control reachable in a narrow wind
       widthOk: true, heightOk: true, reachable: true, insideHeader: true,
     });
   }
-  await chrome.getByRole('button', { name: '完整记录', exact: true }).click();
-  await expect(chrome.getByRole('button', { name: '完整记录', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await chrome.getByRole('button', { name: '对话与结果', exact: true }).click();
-  await expect(page.getByRole('region', { name: 'Room 行星任务表' })).toBeVisible();
+  await chrome.getByRole('button', { name: '执行记录', exact: true }).click();
+  await expect(chrome.getByRole('button', { name: '执行记录', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await chrome.getByRole('button', { name: '对话', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Room 公开对话' })).toBeVisible();
 });

@@ -133,6 +133,7 @@ export function PawAgentHome({
   defaultModel,
   durableAvailable = false,
   initialDraft,
+  onDraftChange,
   models,
   onCreated,
   onOpenRoom,
@@ -153,6 +154,7 @@ export function PawAgentHome({
   defaultModel: string;
   durableAvailable?: boolean;
   initialDraft?: string;
+  onDraftChange?: (draft: string) => void;
   models: PiModelOption[];
   onCreated: (selection: Selection, created?: SessionSummary, createdRoom?: RoomSummary) => void;
   onOpenRoom: (id: string) => void;
@@ -648,7 +650,7 @@ export function PawAgentHome({
             <textarea
               aria-describedby={modeBriefId}
               aria-label="描述你想完成的工作"
-              onChange={(event) => setPrompt(event.target.value)}
+              onChange={(event) => { setPrompt(event.target.value); onDraftChange?.(event.target.value); }}
               onPaste={pasteIntoHome}
               ref={promptRef}
               onKeyDown={(event) => {
@@ -823,6 +825,7 @@ export function PawAgentHome({
                   key={starter.label}
                   onClick={() => {
                     setPrompt(starter.prompt);
+                    onDraftChange?.(starter.prompt);
                     promptRef.current?.focus();
                   }}
                   title={starter.prompt}

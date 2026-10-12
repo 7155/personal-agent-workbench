@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createPreviewTransport } from './preview-control-transport';
 import { parseProjectRead } from '@/features/eval-lab/projects/types';
 import { parseGoldenRead } from '@/features/eval-lab/golden/types';
@@ -6,8 +6,29 @@ import { parseLabAppRead } from '@/features/eval-lab/projects/apps';
 import { parseKnowledgeState } from '@/features/eval-lab/projects/knowledge-types';
 import { pawExtensionApps } from '@/paw-os/extensions/registry';
 import { projectPawExtensionInstallation } from '@/paw-os/extensions/installation';
+import type { JsonValue } from '@/platform/transport';
 
 describe('preview page contracts', () => {
+  it('replays only the built-in synthetic Browser fixture without any network capture', async () => {
+    const fetch = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('network is forbidden'));
+    try {
+      const transport = createPreviewTransport();
+      const body = { action: 'screenshot', deviceId: 'paw-browser', tabId: 23 };
+      expect(await transport.request({ pathId: 'browser.command', body })).toMatchObject({
+        ok: true, preview: true, result: { source: 'synthetic_fixture', captured: false },
+      });
+      expect(await transport.request({ pathId: 'browser.snapshot.latest', query: { deviceId: 'paw-browser', tabId: 23 } })).toMatchObject({
+        hasScreenshot: false, markdown: expect.stringContaining('内置合成演示'),
+      });
+      const invalidBodies: JsonValue[] = [{ ...body, deviceId: 'other-device' }, { ...body, tabId: 999 }, { ...body, url: 'https://example.invalid' }, { action: 'navigate', tabId: 23, url: 'https://example.invalid' }];
+      for (const invalid of invalidBodies) {
+        expect(await transport.request({ pathId: 'browser.command', body: invalid })).toMatchObject({ ok: false });
+      }
+      await transport.request({ pathId: 'browser.command', body: { action: 'close_tab', tabId: 23 } });
+      expect(await transport.request({ pathId: 'browser.command', body })).toMatchObject({ ok: false });
+      expect(fetch).not.toHaveBeenCalled();
+    } finally { fetch.mockRestore(); }
+  });
   it('filters public WorkDocument history by title, authority and path', async () => {
     const transport = createPreviewTransport();
     for (const query of [' 输入法 ', 'GOAL-PREVIEW', 'archive/session-preview']) {

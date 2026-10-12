@@ -904,6 +904,19 @@ describe('PAWOS Agent App', () => {
     expect(screen.getByTestId('room-initial-draft').textContent).toBe('@Mars ');
   });
 
+  it('retains an edited unsent creator draft while inspecting an existing Session', async () => {
+    const transport = createTransport();
+    const view = renderAgent(transport, { initialRoute: '/agent?draft=初始草稿' });
+    fireEvent.change(await screen.findByRole('textbox', { name: '描述你想完成的工作' }), {
+      target: { value: '编辑后尚未发送的工作' },
+    });
+    view.rerender(agentTree(transport, { initialRoute: '/agent?session=session-old' }));
+    expect(await screen.findByTestId('session-record-id')).toHaveTextContent('session-old');
+    view.rerender(agentTree(transport, { initialRoute: '/agent' }));
+    expect(await screen.findByRole('textbox', { name: '描述你想完成的工作' })).toHaveValue('编辑后尚未发送的工作');
+    expect(transport.requests.some(({ request }) => ['agent.sessions.create', 'agent.session.prompt'].includes(request.pathId))).toBe(false);
+  });
+
   it('accepts the sessionId compatibility deep link without returning to new work', async () => {
     renderAgent(createTransport(), { initialRoute: '/agent?sessionId=session-old' });
 

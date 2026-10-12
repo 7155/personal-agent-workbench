@@ -44,7 +44,9 @@
 .ctl-kpis [data-tone='satellite'] dd { color: var(--ctl-sat); }
 
 /* ---------- Phase rail ---------- */
-.ctl-phases { position: relative; list-style: none; display: flex; margin: 0; padding: 6px 22px 14px; }
+/* A replay can start before the first observed phase. Reserve its row so
+   admitting that phase cannot push the timeline down while it is playing. */
+.ctl-phases { position: relative; list-style: none; display: flex; flex: 0 0 auto; min-height: 65px; margin: 0; padding: 6px 22px 14px; }
 .ctl-phases li { position: relative; z-index: 1; flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px; font-size: var(--text-label); color: var(--ctl-muted); }
 .ctl-phases__dot { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; background: var(--ctl-paper); border: 2px solid var(--ctl-line); transition: background .35s var(--ctl-ease), border-color .35s, color .35s, box-shadow .35s; }
 .ctl-phases li[data-state='current'] { color: var(--ctl-ink); font-weight: 600; }

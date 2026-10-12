@@ -5,6 +5,19 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Keep immediate window-control clicks attached to their original target while
+  the opening animation stops, retain Session creator drafts when browsing work
+  records, and keep narrow Room view controls reachable with 40px targets.
+
+- Align citation and file actions, keep replay phase rows stable, and allow
+  management labels and code-copy controls to grow at larger text sizes.
+
+- Support the current StarMate ownership and explicit creation boundary in the
+  deterministic web preview without starting new work on object creation.
+
+- Let the built-in Browser preview replay its labelled synthetic page data;
+  real-page navigation and capture remain unavailable in the preview.
+
 - Preserve the first Guide budget edit and unsaved budget fields across native
   Goal updates; keep untouched fields aligned with the latest budget receipt.
 

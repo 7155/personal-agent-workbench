@@ -55,6 +55,9 @@
 @container paw-session-workspace (max-width: 730px) {
   .paw-desktop-root .paw-session-workspace[data-chat-presentation-version='v2'][data-design='workbench'] .ccui-turn { width: calc(100% - 40px); }
 }
+@container paw-session-workspace (min-width: 471px) and (max-width: 880px) {
+  .paw-desktop-root .paw-session-workspace[data-chat-presentation-version='v2'][data-design='workbench'] .paw-session-workspace__composer { padding-inline: 16px; }
+}
 @container paw-session-workspace (max-width: 470px) {
   .paw-desktop-root .paw-session-workspace[data-chat-presentation-version='v2'][data-design='workbench'] .paw-session-workspace__composer { padding: 9px 12px 12px; }
   .paw-desktop-root .paw-session-workspace[data-chat-presentation-version='v2'][data-design='workbench'] .project-quick-actions button { min-height: 40px; }

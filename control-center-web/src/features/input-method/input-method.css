@@ -532,6 +532,7 @@
   padding-right: 15px;
   color: var(--color-text-secondary);
   font-size: 13px;
+  line-height: var(--line-height-ui);
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -1020,6 +1021,7 @@
   margin-inline-start: auto;
   color: var(--color-text-tertiary);
   font-size: 13px;
+  line-height: var(--line-height-ui);
   text-overflow: ellipsis;
   white-space: nowrap;
 }

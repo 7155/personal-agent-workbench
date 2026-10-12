@@ -136,6 +136,7 @@ test('V5 local draft viewer never uploads and releases blob URLs on removal', as
 
 test('production Room delivery desk returns to original task controls in one Dialog', async ({ page }) => {
   await page.goto('/e2e/fixtures/jev-execution.html?scene=final');
+  await page.getByRole('button', { name: '查看 Room 任务', exact: true }).click();
   const expand = page.getByRole('button', { name: '展开任务栏' }); if (await expand.isVisible()) await expand.click();
   await page.getByRole('button', { name: /打开成果桌/ }).first().click();
   await page.locator('[data-delivery-select]').first().click();

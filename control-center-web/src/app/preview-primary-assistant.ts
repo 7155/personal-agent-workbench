@@ -1,5 +1,5 @@
 import type { ControlPathId } from '@/platform/routes';
-import type { ControlRequest } from '@/platform/transport';
+import type { ControlRequest, JsonValue } from '@/platform/transport';
 import type { MockRouteHandler } from '@/test/mock-transport';
 import { ControlTransportHttpError } from '@/platform/http-transport';
 import type { AgentWorkflowStateV1 } from '@/contracts/generated/agent-workflow-state.v1';
@@ -19,6 +19,9 @@ export function installPrimaryAssistantPreview(routes: Partial<Record<ControlPat
   // cannot. Never recycle their identities into another preview instance.
   const instanceId = crypto.randomUUID();
   let nextId = 1;
+  let coordinator: Record<string, unknown> | undefined;
+  let coordinatorId = '';
+  const controlled = new Map<string, { signature: string; sourceSessionId: string; coordinatorId: string; kind: 'session' | 'room'; task: string; target: Record<string, unknown> }>();
   function makeSession(title: string, roots: string[], metadata: Record<string, unknown>, execute: boolean) {
     const id = `session-primary-preview-${instanceId}-${nextId++}`;
     const session: Record<string, unknown> = { schemaVersion: 'rag-ime.agent-session.v1', id, title,
@@ -61,6 +64,56 @@ export function installPrimaryAssistantPreview(routes: Partial<Record<ControlPat
         && metadata.assistantId === 'primary:preview' && metadata.sourceSessionId === sourceSessionId;
     });
     return { ok: true, assistantId: 'primary:preview', created, session, tasks };
+  };
+  // StarMate is a separate persistent owner. Its preview follows the public
+  // creation boundary: creating a controlled object never starts a turn.
+  routes['agent.coordinator.ensure'] = () => {
+    const current = coordinator && sessions.find(item => item.id === coordinator?.id && item.status !== 'archived');
+    const created = !current;
+    if (!current) {
+      coordinatorId = `coordinator:preview:${crypto.randomUUID()}`;
+      coordinator = makeSession('星伴', [], { coordinatorId }, false);
+      Object.assign(coordinator, { mode: 'coordinator', executionMode: 'full_trust', toolProfileVersion: 'control-center-v1' });
+    } else coordinator = current;
+    const objects = [...controlled.values()].filter(item => item.sourceSessionId === coordinator!.id && item.coordinatorId === coordinatorId)
+      .map(item => ({ kind: item.kind, id: item.target.id, sourceSessionId: item.sourceSessionId,
+        coordinatorId: item.coordinatorId, task: item.task, target: item.target })).filter(item => item.target.status !== 'archived');
+    return { schemaVersion: 'rag-ime.agent-coordinator-ensure.v1', ok: true, created, coordinatorId,
+      sourceSessionId: coordinator!.id, session: coordinator, objects };
+  };
+  routes['agent.coordinator.command'] = async (request: ControlRequest) => {
+    const body = record(request.body); const input = record(body.input) as { [key: string]: JsonValue };
+    const source = coordinator && sessions.find(item => item.id === coordinator?.id && item.id === body.sourceSessionId && item.status !== 'archived');
+    if (!source) throw new Error('当前星伴会话已变更，请重新连接。');
+    if (body.action === 'stop') {
+      const link = [...controlled.values()].find(item => item.target.id === body.targetId && item.sourceSessionId === source.id && item.coordinatorId === coordinatorId);
+      if (!link) throw new Error('这个对象不属于当前星伴。');
+      if (link.kind === 'session') {
+        if (!input.turnId || histories.get(String(link.target.id))?.active !== input.turnId) throw new Error('指定轮次已不在执行。');
+        return call(routes['agent.session.abort'], { ...request, pathId: 'agent.session.abort', params: { sessionId: String(link.target.id) }, body: input });
+      }
+      return call(routes['agent.room.abort'], { ...request, pathId: 'agent.room.abort', params: { roomId: String(link.target.id) }, body: input });
+    }
+    if (!['create_session', 'create_room'].includes(String(body.action))) throw new Error('网页演示暂不支持这项星伴操作。');
+    if (source.executionMode !== 'full_trust') throw new Error('星伴执行权限已变更，不能创建控制对象。');
+    const task = String(input.task ?? '').trim(); const requestId = String(body.clientRequestId ?? '').trim();
+    if (!task || !requestId) throw new Error('创建需要任务和原请求标识。');
+    const signature = JSON.stringify({ sourceSessionId: source.id, action: body.action, input });
+    const existing = controlled.get(requestId);
+    if (existing && existing.signature !== signature) throw new Error('原请求已绑定另一项创建。');
+    const kind = body.action === 'create_session' ? 'session' : 'room';
+    let target = existing?.target;
+    if (target && target.status === 'archived') throw new Error('原创建对象已归档，请使用新请求。');
+    if (!target) {
+      const title = String(input.title || task).slice(0, 120);
+      target = kind === 'session'
+        ? makeSession(title, [], { coordinatorId, sourceSessionId: source.id, coordinatorTask: true }, true)
+        : record(record(await call(routes['agent.rooms.create'], { ...request, pathId: 'agent.rooms.create', body: { ...input, title } })).room);
+      if (!target.id) throw new Error('创建尚未确认。');
+      controlled.set(requestId, { signature, sourceSessionId: String(source.id), coordinatorId, kind, task, target });
+    }
+    return { schemaVersion: 'rag-ime.agent-coordinator-create.v1', ok: true, created: !existing, kind, target,
+      sourceSessionId: source.id, coordinatorId, clientRequestId: requestId };
   };
   routes['agent.primary.tasks.create'] = (request: ControlRequest) => {
     const body = record(request.body); const id = String(body.clientRequestId); const signature = JSON.stringify(body);
@@ -139,15 +192,18 @@ export function installPrimaryAssistantPreview(routes: Partial<Record<ControlPat
     if (history.requests.has(clientId)) return { ok: true, accepted: true, deduplicated: true };
     history.requests.add(clientId);
     const turnId = `${id}:turn:${clientId}`; history.active = turnId;
-    const session = sessions.find(item => item.id === id)!; const task = record(session.metadata).primaryTask === true;
+    const session = sessions.find(item => item.id === id)!;
+    const task = record(session.metadata).primaryTask === true || record(session.metadata).coordinatorTask === true;
     session.status = 'busy'; session.updatedAtMs = Date.now();
     message(id, turnId, 'user', String(body.message), clientId);
     event(id, turnId, 'reasoning_summary', { summary: task ? '演示任务：正在核对目标和完成标准' : '正在整理你的问题', state: 'running' });
-    if (task) event(id, turnId, 'tool_started', { toolCallId: `${turnId}:tool`, toolId: 'read', summary: '演示：读取工作目录中的材料', args: { path: strings(session.workspaceRoots)[0] } });
+    if (task) event(id, turnId, 'tool_started', { toolCallId: `${turnId}:tool`, toolId: 'read', summary: '演示：核对任务材料', args: strings(session.workspaceRoots).length ? { path: strings(session.workspaceRoots)[0] } : {} });
     history.timer = setTimeout(() => {
       if (history.active !== turnId) return;
       if (task) event(id, turnId, 'tool_finished', { toolCallId: `${turnId}:tool`, toolId: 'read', summary: '演示材料已读取', status: 'completed' });
-      const text = task ? '这是演示任务的结果：工作过程和结果保留在当前对话中。实际运行时会显示模型与工具的真实回执。' : '我们可以先把目标和顾虑说清楚。需要我动手时，点「交给助手做」，确认本次工作范围即可。';
+      const text = task ? '这是演示任务的结果：工作过程和结果保留在当前对话中。实际运行时会显示模型与工具的真实回执。' : session.id === coordinator?.id
+        ? '我们可以先把目标和顾虑说清楚。控制面板可以创建 Session 或 Room；创建后需要显式开始工作。'
+        : '我们可以先把目标和顾虑说清楚。需要我动手时，点「交给助手做」，确认本次工作范围即可。';
       message(id, turnId, 'assistant', text, clientId);
       history.active = undefined; session.status = 'idle'; session.lastMessagePreview = text; session.lastTerminalTurnId = turnId;
       session.messageCount = history.messages.length;

@@ -64,9 +64,8 @@ test.describe('PAWOS App interface audit (ops)', () => {
 });
 
 async function openAppFromLaunchpad(page: Page, appId: PawOsAppId, label: string): Promise<void> {
-  // The menu-bar system mark opens the same Launchpad ("打开全部 App"), so the
-  // Dock button has to be named exactly or the audit stops on an ambiguity.
-  await page.getByRole('button', { name: '全部 App', exact: true }).click();
+  // The menu-bar entry stays reachable when a maximized App hides the Dock.
+  await page.getByRole('button', { name: '打开全部 App', exact: true }).click();
   const launcher = page.getByRole('dialog', { name: '全部 App' });
   await expect(launcher).toBeVisible();
   const app = launcher.locator(`button[data-app="${appId}"]`);

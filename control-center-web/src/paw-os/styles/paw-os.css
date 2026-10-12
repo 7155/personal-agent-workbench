@@ -1314,6 +1314,9 @@ html[data-paw-native-host='macos'] .paw-menu-bar > .paw-menu-status { grid-colum
    height token moves the absolute header and the content inset together.
    Focus-primary Rooms omit this caption and retain their existing chrome. */
 @container paw-window (max-width: 700px) {
+  .paw-window-titlebar .paw-window-chrome-slot > .paw-room-window-chrome { overflow-x: auto; justify-content: flex-start; overscroll-behavior-x: contain; }
+  .paw-window-titlebar .paw-window-chrome-slot > .paw-room-window-chrome > nav { flex: 0 0 auto; overflow: visible; }
+  .paw-window-titlebar .paw-window-chrome-slot > .paw-room-window-chrome button { min-width: 40px; min-height: 40px; }
   .paw-desktop-root .paw-window:has(> .paw-window-titlebar:is([data-window-chrome='room-workspace'], [data-window-chrome='agent-session']) > .paw-window-title) {
     --paw-titlebar-h: calc(var(--paw-window-control-size) + 32px);
   }

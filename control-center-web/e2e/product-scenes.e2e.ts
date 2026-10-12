@@ -29,7 +29,9 @@ test('the product Room retains ordered conversation and independent partner cont
   const room = page.locator('.paw-room-workspace');
   await expect(room).toBeVisible();
   await expect(room.getByRole('textbox', { name: '协作消息' })).toBeVisible();
-  await expect(room.locator('.paw-room-session-round').first()).toBeVisible();
+  const conversation = room.getByRole('region', { name: 'Room 公开对话' });
+  await expect(conversation.locator('.ccui-user-text').first()).toBeVisible();
+  await expect(conversation.locator('.ccui-assistant-turn').first()).toBeVisible();
   await expect(page.getByRole('button', { name: '展开 Room 控件' })).toBeVisible();
   await expectNoHorizontalPageOverflow(page);
   await info.attach('product-room.png', { body: await page.screenshot(), contentType: 'image/png' });

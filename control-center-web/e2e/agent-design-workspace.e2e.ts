@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { expectNoHorizontalPageOverflow } from './helpers';
+import { createControlledSession, expectNoHorizontalPageOverflow } from './helpers';
 
 for (const width of [390,1440]) {
   test(`capability defaults return to the same conversation and reading state at ${width}px`, async ({page}) => {
@@ -49,36 +49,35 @@ test('compact task center exposes artifact and background empty states', async (
 
 for (const reducedMotion of ['no-preference', 'reduce'] as const) {
   test(`task records retain the home draft and old task access (${reducedMotion})`, async ({page}) => {
-    await page.setViewportSize({width:390,height:900});
-    await page.emulateMedia({reducedMotion});
-    await page.goto('/?controlTransport=mock#/agent');
-    await expect(page.getByRole('button', {name:/进入对话/})).toBeEnabled({timeout:30_000});
-    await page.getByRole('button', {name:'交给助手做',exact:true}).click();
-    await page.getByRole('textbox', {name:'和我的助手聊聊'}).fill('检查任务记录的恢复');
-    await page.getByRole('textbox', {name:'本次工作目录'}).fill('/work/demo');
-    await page.getByRole('checkbox').check();
-    await page.getByRole('button', {name:'授权并开始任务',exact:true}).click();
-    await expect(page.locator('[data-agent-message-id]').filter({hasText:'检查任务记录的恢复'})).toBeVisible();
-    await page.getByRole('button', {name:'停止本轮',exact:true}).click();
-    await expect(page.getByRole('region', {name:'当前工作',exact:true}).getByRole('status')).toContainText('本轮已停止');
-    await page.getByRole('button', {name:'返回我的助手',exact:true}).click();
-    const input=page.getByRole('textbox', {name:'和我的助手聊聊'});
+    await page.setViewportSize({width:390,height:900});await page.emulateMedia({reducedMotion});
+    await page.goto('/?controlTransport=mock#/agent-controller');
+    const task='检查任务记录的恢复';const target=await createControlledSession(page,task);await target.click();
+    const owned=page.locator('.paw-window-shell[data-window-target="session"]');
+    const message=owned.getByRole('textbox',{name:'消息',exact:true});await expect(message).toBeVisible();
+    await message.fill(task);await owned.getByRole('button',{name:'发送',exact:true}).click();
+    await expect(owned.locator('.paw-user-message',{hasText:task})).toHaveCount(1);
+    await owned.getByRole('button',{name:'停止本轮',exact:true}).click();
+    await expect(owned.getByRole('button',{name:'停止本轮',exact:true})).toBeHidden();
+    await page.evaluate(()=>{location.hash='#/agent';});
+    const app=page.locator('.paw-window-shell[data-paw-window-id="agent"]');
+    const input=app.getByRole('textbox',{name:'描述你想完成的工作'});
     await input.fill('不要丢失这份草稿');
-    const records=page.getByRole('region', {name:'助手的任务',exact:true});
-    const toggle=records.getByRole('button', {name:/^任务记录/});
+    const toggle=app.getByRole('button',{name:'打开工作记录',exact:true});
     await expect(toggle).toHaveAttribute('aria-expanded','false');
-    await expect(records.getByRole('button', {name:/检查任务记录的恢复/})).toHaveCount(0);
+    await expect(app.getByRole('button',{name:new RegExp('^'+task)})).toHaveCount(0);
     await toggle.focus();await page.keyboard.press('Enter');
-    const oldTask=records.getByRole('button', {name:/检查任务记录的恢复/});
-    await expect(oldTask).toContainText('任务未完成');
-    await oldTask.click();
-    await expect(page.getByRole('textbox', {name:'消息',exact:true})).toBeVisible();
-    await page.getByRole('button', {name:'返回我的助手',exact:true}).click();
+    const oldTask=app.getByRole('button',{name:new RegExp('^'+task)});
+    await expect(oldTask).toBeVisible();await expect(oldTask).not.toContainText('已完成');
+    await oldTask.click();await expect(app.getByRole('textbox',{name:'消息',exact:true})).toBeVisible();
+    await page.evaluate(()=>{location.hash='#/agent';});
     await expect(input).toHaveValue('不要丢失这份草稿');
-    await expect(toggle).toHaveAttribute('aria-expanded','true');
-    await toggle.focus();await page.keyboard.press('Enter');
-    await expect(oldTask).toHaveCount(0);
-    await expect(toggle).toBeFocused();
+    const reopen=app.getByRole('button',{name:'打开工作记录',exact:true});
+    await expect(reopen).toHaveAttribute('aria-expanded','false');
+    await reopen.focus();await page.keyboard.press('Enter');
+    const close=app.getByRole('button',{name:'收起工作记录',exact:true});
+    await expect(close).toHaveAttribute('aria-expanded','true');
+    await close.focus();await page.keyboard.press('Enter');
+    await expect(oldTask).toHaveCount(0);await expect(app.getByRole('button',{name:'打开工作记录',exact:true})).toBeFocused();
     await expectNoHorizontalPageOverflow(page);
   });
 }
@@ -110,30 +109,28 @@ for (const width of [390,1440]) {
 }
 
 test('finished demo task exposes missing completion evidence and keeps criteria reachable', async ({page}) => {
-  await page.goto('/?controlTransport=mock#/agent');
-  await expect(page.getByRole('button', {name:/进入对话/})).toBeEnabled({timeout:30_000});
-  await page.getByRole('button', {name:'交给助手做',exact:true}).click();
-  await page.getByRole('textbox', {name:'和我的助手聊聊'}).fill('检查完成依据的显示');
-  await page.getByRole('textbox', {name:'完成标准'}).fill('说明真实验证的范围\n保留未完成部分');
-  await page.getByRole('textbox', {name:'本次工作目录'}).fill('/work/demo');
-  await page.getByRole('checkbox').check();
-  await page.getByRole('button', {name:'授权并开始任务',exact:true}).click();
-  await expect(page.locator('p').filter({hasText:/这是演示任务的结果：/})).toBeVisible();
-  const trigger = page.getByRole('navigation', {name:'当前工作内容'}).getByRole('button', {name:'任务',exact:true});
-  await trigger.click();
-  const panel = page.getByLabel('对话工具侧栏', {exact:true});
-  const goal = panel.getByRole('region', {name:'长期目标',exact:true});
-  await expect(goal.getByText('尚无完成依据', {exact:true})).toBeVisible();
-  await expect(goal.getByText('说明真实验证的范围\n保留未完成部分', {exact:true})).toHaveCount(0);
-  const details = goal.locator('summary').filter({hasText:'完成标准与预算'});
-  await details.focus();
+  await page.goto('/?controlTransport=mock#/agent-controller');
+  const task='检查完成依据的显示';const target=await createControlledSession(page,task);await target.click();
+  const app=page.locator('.paw-window-shell[data-window-target="session"]');
+  await app.getByRole('textbox',{name:'消息',exact:true}).fill(task);
+  await app.getByRole('button',{name:'发送',exact:true}).click();
+  await expect(app.getByText('这是演示任务的结果：',{exact:false})).toBeVisible({timeout:10000});
+  const trigger=app.getByRole('navigation',{name:'当前工作内容'}).getByRole('button',{name:'任务',exact:true});
+  await trigger.click();const panel=app.getByLabel('对话工具侧栏',{exact:true});
+  const goal=panel.getByRole('region',{name:'长期目标',exact:true});
+  await expect(goal.getByText('尚无完成依据',{exact:true})).toBeVisible();
+  await expect(goal.getByText('未设置完成标准',{exact:true})).toHaveCount(0);
+  const details=goal.locator('summary').filter({hasText:'完成标准与预算'});
+  await details.focus();await page.keyboard.press('Enter');
+  await expect(goal.getByText('未设置完成标准',{exact:true})).toBeVisible();
+  await page.keyboard.press('Enter');await expect(goal.getByText('未设置完成标准',{exact:true})).toHaveCount(0);
   await page.keyboard.press('Enter');
-  await expect(goal.getByText('说明真实验证的范围\n保留未完成部分', {exact:true})).toBeVisible();
-  await expect(panel.getByText('目标已结束', {exact:true})).toBeVisible();
-  await expect(panel.getByText('执行条件未满足', {exact:true})).toHaveCount(0);
-  await panel.getByRole('button', {name:'收起任务中心',exact:true}).click();
-  await expect(trigger).toBeFocused();
-  await expectNoHorizontalPageOverflow(page);
+  await expect(goal.getByText('未设置完成标准',{exact:true})).toBeVisible();
+  await expect(goal.getByText('未设置预算上限',{exact:true})).toBeVisible();
+  await expect(panel.getByText('目标已结束',{exact:true})).toBeVisible();
+  await expect(panel.getByText('执行条件未满足',{exact:true})).toHaveCount(0);
+  await panel.getByRole('button',{name:'收起任务中心',exact:true}).click();
+  await expect(trigger).toBeFocused();await expectNoHorizontalPageOverflow(page);
 });
 
 test('conversation keeps project actions in files and returns keyboard focus from its tools', async ({ page }) => {
@@ -198,21 +195,19 @@ test('model and permission popovers track their trigger through viewport changes
 });
 
 
-test('focused task criteria remains visible when the window becomes short', async ({ page }) => {
-  await page.goto('/?controlTransport=mock#/agent');
-  await expect(page.getByRole('button', {name: /进入对话/})).toBeEnabled({timeout:30_000});
-  await page.getByRole('button', {name: '交给助手做', exact: true}).click();
-  const criteria = page.getByRole('textbox', {name:'完成标准'});
-  await criteria.fill('说明修改和验证结果');
-  await page.setViewportSize({width:390, height:480});
-  await expect.poll(() => criteria.evaluate(e => {
-    const rect = e.getBoundingClientRect();
-    return e.contains(document.elementFromPoint(rect.x + 20, rect.y + 10));
-  })).toBe(true);
+test('focused task criteria remains visible when the window becomes short',async({page})=>{
+  await page.goto('/?controlTransport=mock#/agent?session=session-preview');
+  await expect(page.getByRole('textbox',{name:'消息',exact:true})).toBeVisible();
+  await page.getByRole('navigation',{name:'当前工作内容'}).getByRole('button',{name:'任务',exact:true}).click();
+  const goal=page.getByRole('region',{name:'长期目标',exact:true});
+  const criteria=goal.locator('summary').filter({hasText:'完成标准与预算'});
+  await criteria.focus();await page.keyboard.press('Enter');
+  await expect(goal.getByText('Todo 全部收束，并通过用户验收。',{exact:true})).toBeVisible();
+  await page.setViewportSize({width:390,height:480});
+  await expect.poll(()=>criteria.evaluate(e=>{const r=e.getBoundingClientRect();return e.contains(document.elementFromPoint(r.x+20,r.y+10));})).toBe(true);
   await expect(criteria).toBeFocused();
-  await expect(criteria).toHaveValue('说明修改和验证结果');
+  await expect(goal.getByText('Todo 全部收束，并通过用户验收。',{exact:true})).toBeVisible();
 });
-
 
 test('file browsing keeps focus visible and preserves its tree through resizing', async ({page}) => {
   await page.goto('/?controlTransport=mock#/agent?session=session-preview');

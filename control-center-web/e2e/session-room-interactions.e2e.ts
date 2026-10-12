@@ -6,7 +6,11 @@ test('Session changes reasoning and publishes one optimistic turn through the ca
   const button = page.getByRole('button', { name: /^模型与推理：/ });
   await button.click();
   const picker = page.getByRole('dialog', { name: '选择模型与推理强度' });
-  await picker.getByRole('radiogroup', { name: '推理强度' }).getByRole('radio', { name: '高', exact: true }).click();
+  const reasoning = picker.getByRole('slider', { name: '推理强度' });
+  await reasoning.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(picker.getByText('高', { exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
   await expect(picker).toBeHidden();
   await expect(button).toHaveAccessibleName(/· 高$/);
   const probe = `Single Session send ${Date.now()}`;
@@ -28,5 +32,11 @@ test('Room preserves its draft across another App and publishes it once', async 
   await expect(composer).toHaveValue(probe);
   await page.getByRole('button', { name: '发送消息', exact: true }).click();
   await expect(composer).toHaveValue('');
-  await expect(page.locator('.paw-room-session-round__objective', { hasText: probe })).toHaveCount(1);
+  // Returning from another App restores the reader's position. A new turn
+  // can be outside the virtualized viewport until the reader opens "latest".
+  const latest = page.getByRole('button', { name: '回到最新消息', exact: true });
+  if (await latest.isVisible()) await latest.click();
+  const message = page.locator('.ccui-user-text', { hasText: probe });
+  await expect(message).toHaveCount(1);
+  await expect(message).toBeInViewport();
 });

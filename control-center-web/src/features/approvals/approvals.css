@@ -143,6 +143,7 @@
   overflow: hidden;
   color: var(--color-text);
   font-size: 13.5px;
+  line-height: 1.55;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
