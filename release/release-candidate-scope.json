@@ -1,128 +1,60 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-14T15:58:13.953309+00:00",
+  "generatedAt": "2026-10-14T17:42:56.538452+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
-    "branch": "undo/paw-history-recovery-20261014",
-    "baseCommit": "74b903e57c836b2580845dee02a0f4279e2252ca",
-    "candidateCommitPolicy": "Recover failed Session history reads, conversation-path focus and workspace group drafts through existing UI and transport owners; source checks do not imply installed or real Agent acceptance."
+    "branch": "undo/paw-workspace-recovery-ui-20261015",
+    "baseCommit": "cc2be92ed37395d3d1b9cf63edd008ae4cdce787",
+    "candidateCommitPolicy": "Correct readable Session recovery notices and complete actionable labels through the existing error UI owner; no API or persistence changes."
   },
   "dispositions": {
-    "keep_release": "Retain task-owned source and regression changes.",
+    "keep_release": "Retain task-owned source and release metadata.",
     "delete_old_implementation": "Remove replaced source only after checking consumers.",
     "other_work_not_in_release": "Preserve unrelated work outside this candidate."
   },
   "groups": {
-    "history_recovery": {
-      "description": "Session history input, conversation-path read recovery and message action reachability.",
-      "pathCount": 11
-    },
-    "work_directory": {
-      "description": "Preserve first edits and unsaved group text while synchronizing stored workspace metadata.",
-      "pathCount": 2
+    "recovery_ui": {
+      "description": "Theme-aware recovery notice and reachable, untruncated actions.",
+      "pathCount": 4
     }
   },
   "items": [
     {
       "path": "CHANGELOG.md",
       "status": "modified",
-      "group": "history_recovery",
+      "group": "recovery_ui",
       "disposition": "keep_release",
-      "reason": "Preserve in-progress history edits, cancel retired reads, retry only history observation and restore reachable message actions and focus."
+      "reason": "Scope flexible copy to the direct child, wrap recovery controls, reuse the active chat surface, and retain40px targets."
     },
     {
-      "path": "control-center-web/src/features/agent/agent.css",
+      "path": "control-center-web/src/paw-os/apps/paw-apps.css",
       "status": "modified",
-      "group": "history_recovery",
+      "group": "recovery_ui",
       "disposition": "keep_release",
-      "reason": "Preserve in-progress history edits, cancel retired reads, retry only history observation and restore reachable message actions and focus."
+      "reason": "Scope flexible copy to the direct child, wrap recovery controls, reuse the active chat surface, and retain40px targets."
     },
     {
-      "path": "control-center-web/src/features/agent/composer/AgentComposer.tsx",
+      "path": "control-center-web/src/paw-os/styles/paw-os-agent.css",
       "status": "modified",
-      "group": "history_recovery",
+      "group": "recovery_ui",
       "disposition": "keep_release",
-      "reason": "Preserve in-progress history edits, cancel retired reads, retry only history observation and restore reachable message actions and focus."
-    },
-    {
-      "path": "control-center-web/src/features/agent/sessions/ConversationForkDialog.test.tsx",
-      "status": "added",
-      "group": "history_recovery",
-      "disposition": "keep_release",
-      "reason": "Preserve in-progress history edits, cancel retired reads, retry only history observation and restore reachable message actions and focus."
-    },
-    {
-      "path": "control-center-web/src/features/agent/sessions/ConversationForkDialog.tsx",
-      "status": "modified",
-      "group": "history_recovery",
-      "disposition": "keep_release",
-      "reason": "Preserve in-progress history edits, cancel retired reads, retry only history observation and restore reachable message actions and focus."
-    },
-    {
-      "path": "control-center-web/src/features/agent/timeline/AgentTimeline.tsx",
-      "status": "modified",
-      "group": "history_recovery",
-      "disposition": "keep_release",
-      "reason": "Preserve in-progress history edits, cancel retired reads, retry only history observation and restore reachable message actions and focus."
-    },
-    {
-      "path": "control-center-web/src/features/agent/timeline/chat-rendering.test.tsx",
-      "status": "modified",
-      "group": "history_recovery",
-      "disposition": "keep_release",
-      "reason": "Preserve in-progress history edits, cancel retired reads, retry only history observation and restore reachable message actions and focus."
-    },
-    {
-      "path": "control-center-web/src/features/semantic-workspace/OrganizationWorkspace.tsx",
-      "status": "modified",
-      "group": "work_directory",
-      "disposition": "keep_release",
-      "reason": "Avoid erasing the first group edit during mount and preserve unsaved text across directory refresh; retain the current command revision."
-    },
-    {
-      "path": "control-center-web/src/features/semantic-workspace/OrganizationWorkspace.v21.test.tsx",
-      "status": "modified",
-      "group": "work_directory",
-      "disposition": "keep_release",
-      "reason": "Avoid erasing the first group edit during mount and preserve unsaved text across directory refresh; retain the current command revision."
-    },
-    {
-      "path": "control-center-web/src/paw-os/apps/PawSessionWorkspace.input-ownership.test.tsx",
-      "status": "modified",
-      "group": "history_recovery",
-      "disposition": "keep_release",
-      "reason": "Preserve in-progress history edits, cancel retired reads, retry only history observation and restore reachable message actions and focus."
-    },
-    {
-      "path": "control-center-web/src/paw-os/apps/PawSessionWorkspace.tsx",
-      "status": "modified",
-      "group": "history_recovery",
-      "disposition": "keep_release",
-      "reason": "Preserve in-progress history edits, cancel retired reads, retry only history observation and restore reachable message actions and focus."
-    },
-    {
-      "path": "control-center-web/src/paw-os/styles/paw-os-agent-fx.css",
-      "status": "modified",
-      "group": "history_recovery",
-      "disposition": "keep_release",
-      "reason": "Preserve in-progress history edits, cancel retired reads, retry only history observation and restore reachable message actions and focus."
+      "reason": "Scope flexible copy to the direct child, wrap recovery controls, reuse the active chat surface, and retain40px targets."
     },
     {
       "path": "release/release-candidate-scope.json",
       "status": "modified",
-      "group": "history_recovery",
+      "group": "recovery_ui",
       "disposition": "keep_release",
-      "reason": "Preserve in-progress history edits, cancel retired reads, retry only history observation and restore reachable message actions and focus."
+      "reason": "Scope flexible copy to the direct child, wrap recovery controls, reuse the active chat surface, and retain40px targets."
     }
   ],
   "summary": {
-    "pathCount": 13,
+    "pathCount": 4,
     "dispositionCounts": {
-      "keep_release": 13
+      "keep_release": 4
     },
     "groupCounts": {
-      "history_recovery": 11,
-      "work_directory": 2
+      "recovery_ui": 4
     },
     "unclassifiedPathCount": 0,
     "otherWorkNotInReleasePathCount": 0
