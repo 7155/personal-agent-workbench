@@ -5,6 +5,11 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Preserve amended Session text and attachments when history reads fail or
+  time out, offer read-only retries without changing the selected node, and
+  cancel retired reads. Keep message actions clickable and return focus to
+  the original branch action when closing the conversation path.
+
 - Name memory generation and hybrid recall by their responsibilities, use
   neutral source-review resource names, and retain historical configuration,
   snapshots and duplicate detection at explicit compatibility boundaries.

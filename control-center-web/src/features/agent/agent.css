@@ -1068,10 +1068,12 @@ details.agent-activity--inline > summary[aria-expanded='true'] > svg:last-child 
   padding-top: var(--space-3);
   border-top: 1px solid var(--color-border-soft);
 }
-.agent-composer__edit { display: grid; min-height: 44px; grid-template-columns: 18px minmax(0, 1fr) 28px; align-items: center; gap: 8px; padding: 7px 8px 7px 12px; border-bottom: 1px solid var(--color-border); background: var(--color-accent-soft); color: var(--color-accent); }
+.agent-composer__edit { display: grid; min-height: 44px; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 7px 8px 7px 12px; border-bottom: 1px solid var(--color-border); background: var(--color-surface-muted); color: var(--color-accent); }
+.agent-composer__edit-actions { display: flex; align-items: center; gap: 4px; }
 .agent-composer__edit > span { display: grid; min-width: 0; gap: 1px; }
 .agent-composer__edit strong { color: var(--color-text); font-size: 13px; }
 .agent-composer__edit small { overflow: hidden; color: var(--color-text-secondary); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.agent-composer__edit[data-failed] small { overflow: visible; overflow-wrap: anywhere; white-space: normal; }
 .agent-composer { overflow: visible; }
 .agent-composer__controls { overflow: visible; overscroll-behavior-inline: contain; scrollbar-width: none; }
 .agent-composer__controls::-webkit-scrollbar { display: none; }

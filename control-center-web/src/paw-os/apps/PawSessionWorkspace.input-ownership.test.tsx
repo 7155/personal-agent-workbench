@@ -8,6 +8,7 @@ import { parseAgentEvent } from '@/contracts/validators';
 import { useAgentLiveStore } from '@/features/agent/state/live-store';
 import type { ModelCatalog, SessionSummary } from '@/features/agent/types';
 import type { ControlRequest } from '@/platform/transport';
+import { HttpControlTransport } from '@/platform/http-transport';
 import { StubControlTransport } from '@/test/stub-control-transport';
 import { PawSessionWorkspace } from './PawSessionWorkspace';
 
@@ -124,6 +125,7 @@ describe('Session composer asynchronous input ownership', () => {
     const pending = deferred(); const transport = transportFor(`cancel-${outcome}`, { 'agent.session.forks.list': () => pending.promise });
     render(workspace(transport, `cancel-${outcome}`)); await edit();
     fireEvent.click(screen.getByRole('button', { name: '取消修改' })); type('取消后新写的草稿');
+    expect(transport.requests.find(request => request.pathId === 'agent.session.forks.list')?.signal?.aborted).toBe(true);
     await act(async () => outcome === 'success' ? pending.resolve(anchors()) : pending.reject(new Error('old anchor failed')));
     expect(input()).toHaveValue('取消后新写的草稿');
     expect(screen.queryByRole('button', { name: '取消修改' })).not.toBeInTheDocument();
@@ -134,6 +136,7 @@ describe('Session composer asynchronous input ownership', () => {
     const first = deferred(); let requests = 0;
     const transport = transportFor(`new-edit-${outcome}`, { 'agent.session.forks.list': () => ++requests === 1 ? first.promise : anchors() });
     render(workspace(transport, `new-edit-${outcome}`)); await edit(0); await edit(1);
+    expect(transport.requests.find(request => request.pathId === 'agent.session.forks.list')?.signal?.aborted).toBe(true);
     await screen.findByText('发送后将从这里重新生成后续对话');
     await act(async () => outcome === 'success' ? first.resolve(anchors()) : first.reject(new Error('stale anchor')));
     expect(input()).toHaveValue(history[1]); enter();
@@ -146,6 +149,7 @@ describe('Session composer asynchronous input ownership', () => {
     const view = render(workspace(transport, 'old-owner')); await edit();
     const nextId = scope === 'record' ? 'new-owner' : 'old-owner';
     view.rerender(workspace(scope === 'transport' ? transportFor(nextId) : transport, nextId));
+    expect(transport.requests.find(request => request.pathId === 'agent.session.forks.list')?.signal?.aborted).toBe(true);
     type('新工作区草稿'); await act(async () => pending.resolve(anchors()));
     expect(input()).toHaveValue('新工作区草稿');
     expect(screen.queryByRole('button', { name: '取消修改' })).not.toBeInTheDocument();
@@ -160,6 +164,66 @@ describe('Session composer asynchronous input ownership', () => {
     await act(async () => pending.resolve(anchors())); enter();
     await waitFor(() => expect(transport.requests.filter(request => request.pathId === 'agent.session.rewrite')).toHaveLength(1));
     expect(transport.requests.find(request => request.pathId === 'agent.session.rewrite')?.body).toMatchObject({ entryId: 'entry-0', message: '已经改好的请求' });
+  });
+
+  it.each(['network failure', 'missing anchor'] as const)('keeps the amended text and attachments after %s, then retries only the anchor read', async failure => {
+    const pending = deferred(); let reads = 0;
+    const id = `anchor-recovery-${failure}`;
+    const transport = transportFor(id, {
+      'agent.session.forks.list': () => ++reads === 1 ? pending.promise : anchors(),
+      'agent.session.snapshot': () => ({ ...sessionSnapshot(id), messages: sessionSnapshot(id).messages.map(message => ({
+        ...message, attachments: message.id === 'message-0' ? ['media_original'] : [],
+      })) }),
+    });
+    Object.assign(transport, { pasteImages: async () => [receipt] });
+    render(workspace(transport, id)); await edit(); type('定位时写好的修改'); paste(); await screen.findByText(receipt.name);
+    await act(async () => failure === 'network failure' ? pending.reject(new Error('anchor unavailable')) : pending.resolve({ items: [] }));
+    expect(input()).toHaveValue('定位时写好的修改');
+    expect(screen.getByText(receipt.name)).toBeInTheDocument();
+    expect(screen.getByText('原附件 1')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '取消修改' })).toBeInTheDocument();
+    enter();
+    expect(prompts(transport)).toHaveLength(0);
+    expect(transport.requests.some(request => request.pathId === 'agent.session.rewrite')).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: '重试历史定位' }));
+    await screen.findByText('发送后将从这里重新生成后续对话');
+    expect(input()).toHaveFocus();
+    expect(input()).toHaveValue('定位时写好的修改'); enter();
+    await waitFor(() => expect(transport.requests.filter(request => request.pathId === 'agent.session.rewrite')).toHaveLength(1));
+    expect(transport.requests.find(request => request.pathId === 'agent.session.rewrite')?.body)
+      .toMatchObject({ entryId: 'entry-0', message: '定位时写好的修改', attachments: ['media_original', receipt.id] });
+    expect(reads).toBe(2);
+    expect(prompts(transport)).toHaveLength(0);
+  });
+
+  it('ends a stalled HTTP anchor read with recoverable input and never admits a prompt or rewrite', async () => {
+    const id = 'anchor-http-timeout'; const transport = transportFor(id);
+    let signal: AbortSignal | undefined;
+    const http = new HttpControlTransport({ baseUrl: 'http://127.0.0.1:8768', fetch: (async (_url, init) => {
+      signal = init?.signal as AbortSignal;
+      return { ok: true, headers: new Headers({ 'Content-Type': 'application/json' }), text: () => new Promise((_resolve, reject) => {
+        signal?.addEventListener('abort', () => reject(signal?.reason), { once: true });
+      }) } as Response;
+    }) as typeof fetch });
+    const request = transport.request.bind(transport);
+    transport.request = <T,>(input: ControlRequest) => {
+      if (input.pathId !== 'agent.session.forks.list') return request<T>(input);
+      transport.requests.push(input);
+      return http.request<T>(input);
+    };
+    render(workspace(transport, id));
+    const buttons = await screen.findAllByRole('button', { name: '修改这条消息' }, { timeout: 10_000 });
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(buttons[0]!); type('超时也不能丢失的修改');
+      await act(async () => { await vi.advanceTimersByTimeAsync(45_001); });
+      expect(signal?.aborted).toBe(true);
+      expect(input()).toHaveValue('超时也不能丢失的修改');
+      expect(screen.getByRole('button', { name: '重试历史定位' })).toBeEnabled();
+      enter();
+      expect(prompts(transport)).toHaveLength(0);
+      expect(transport.requests.some(input => input.pathId === 'agent.session.rewrite')).toBe(false);
+    } finally { vi.useRealTimers(); }
   });
 
   it.each([false, true])('restores a rejected rewrite only while its input is still empty (new draft: %s)', async fresh => {

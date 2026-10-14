@@ -40,6 +40,27 @@ afterEach(() => {
 });
 
 describe('Agent chat rendering', () => {
+  it.each(['default', 'fx'] as const)('restores a pointer-blurred fork opener before the controlled dialog opens (%s)', presentation => {
+    const sessionId = 'session-1'; const turnId = 'turn-1';
+    useAgentLiveStore.getState().hydrateSnapshot(sessionId, {
+      messages: [userMessage(sessionId, turnId), assistantMessage(sessionId, turnId, '公开回答', 2)],
+      liveEvents: [], lastSequence: 0, resumeToken: '', status: 'idle',
+    });
+    const activeOpeners: (Element | null)[] = [];
+    const onFork = vi.fn(() => { activeOpeners.push(document.activeElement); });
+    render(<TooltipProvider><AgentTurn sessionId={sessionId} turnId={turnId} presentation={presentation}
+      forkAvailable onForkFromMessage={onFork} onApprovalDecision={() => {}} /></TooltipProvider>);
+    const buttons = screen.getAllByRole('button', { name: '从这条消息创建分支' });
+    expect(buttons).toHaveLength(2);
+    for (const button of buttons) {
+      button.focus(); fireEvent.pointerUp(button);
+      expect(button).not.toHaveFocus();
+      fireEvent.click(button);
+    }
+    expect(onFork).toHaveBeenCalledTimes(2);
+    expect(activeOpeners).toEqual(buttons);
+  });
+
   it.each(['recent', 'full'] as const)('keeps the canonical full answer visible after returning to a %s snapshot with a cached streaming prefix', snapshotView => {
     const sessionId = 'session-1';
     const turnId = 'turn-1';

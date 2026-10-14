@@ -38,7 +38,7 @@ import {
   type CompositionEvent,
   type KeyboardEvent,
 } from 'react';
-import { IconButton } from '@/components/primitives';
+import { Button, IconButton } from '@/components/primitives';
 import type { AgentPersonaV1 } from '@/contracts/generated/agent-persona.v1';
 import { ComposerShell } from '@/features/composer/ComposerShell';
 import { ComposerAddMenu } from '@/features/composer/ComposerAddMenu';
@@ -85,6 +85,7 @@ export interface AgentComposerEditState {
   entryId: string;
   messageId: string;
   resolving?: boolean;
+  error?: string;
 }
 
 const productCommandIcons: Record<AgentProductCommandName, LucideIcon> = {
@@ -148,6 +149,7 @@ export function AgentComposer({
   editState,
   onEditPrevious,
   onCancelEdit,
+  onRetryEdit,
   onPermissionChange,
   onWorkspaceRootsChange,
   onModelChange,
@@ -208,6 +210,7 @@ export function AgentComposer({
   editState?: AgentComposerEditState;
   onEditPrevious?: () => void;
   onCancelEdit?: () => void;
+  onRetryEdit?: () => void;
   onPermissionChange: (selection: AgentPermissionSelection) => void;
   onWorkspaceRootsChange: () => void;
   onModelChange: (provider: string, modelId: string, level: ThinkingLevel) => void;
@@ -560,10 +563,16 @@ export function AgentComposer({
         jumpLatest={showJumpLatest}
         onSurfacePress={() => textareaRef.current?.focus()}
         banner={<>{pastedText.pendingNotice}{editState ? (
-          <div className="agent-composer__edit" role="status">
+          <div className="agent-composer__edit" data-failed={editState.error ? true : undefined} role="status">
             <PencilLine size={15} aria-hidden="true" />
-            <span><strong>正在修改这条消息</strong><small>{editState.resolving ? '正在定位历史锚点；内容现在就可以编辑' : '发送后将从这里重新生成后续对话'}</small></span>
-            <IconButton label="取消修改" icon={<X size={15} />} size="small" onClick={onCancelEdit} tooltip />
+            <span><strong>正在修改这条消息</strong><small title={editState.error}>{editState.error ? '历史消息定位失败，修改已保留；请重试' : editState.resolving ? '正在定位这条消息；内容现在就可以编辑' : '发送后将从这里重新生成后续对话'}</small></span>
+            <div className="agent-composer__edit-actions">
+              {editState.error && onRetryEdit ? <Button variant="quiet" size="small" disabled={busy || sending} onClick={() => {
+                onRetryEdit();
+                textareaRef.current?.focus({ preventScroll: true });
+              }}>重试历史定位</Button> : null}
+              <IconButton label="取消修改" icon={<X size={15} />} size="small" onClick={onCancelEdit} tooltip />
+            </div>
           </div>
         ) : null}</>}
         attachments={attachments.map((attachment) => ({ ...attachment, description: pastedText.previews[attachment.name] }))}

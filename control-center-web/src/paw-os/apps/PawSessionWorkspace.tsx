@@ -56,6 +56,7 @@ import { parseContract } from '@/contracts/validators';
 import type { AgentPersonaV1 } from '@/contracts/generated/agent-persona.v1';
 import {
   AgentComposer,
+  type AgentComposerEditState,
   type AgentMessageDelivery,
 } from '@/features/agent/composer/AgentComposer';
 import { unrestrictedWorkspaceRoots } from '@/features/agent/composer/permission-policy';
@@ -410,11 +411,16 @@ function PawSessionWorkspaceBody({
   const [forkDialogOpen, setForkDialogOpen] = useState(false);
   const [forkDialogNodes, setForkDialogNodes] = useState<ConversationNode[]>([]);
   const [forkDialogInitialEntryId, setForkDialogInitialEntryId] = useState('');
-  const [editState, setEditState] = useState<{ entryId: string; messageId: string; resolving?: boolean }>();
+  const [editState, setEditState] = useState<AgentComposerEditState>();
   const editRequestRef = useRef(0);
+  const editAbortRef = useRef<AbortController | undefined>(undefined);
   useEffect(() => {
     setEditState(undefined);
-    return () => { editRequestRef.current += 1; };
+    return () => {
+      editRequestRef.current += 1;
+      editAbortRef.current?.abort();
+      editAbortRef.current = undefined;
+    };
   }, [workspaceScope]);
   const [jumpRequest, setJumpRequest] = useState<{ messageId: string; requestId: number }>();
   const [timelineFollow, setTimelineFollow] = useState({ following: true, unseenUpdates: 0 });
@@ -471,7 +477,7 @@ function PawSessionWorkspaceBody({
 
   const busy = Boolean(projectionSlice.activeTurnId || compactionTarget);
   const submissionBlockedReason = attachmentImportPending ? '正在导入附件'
-    : editState && (editState.resolving || !editState.entryId) ? '正在定位历史消息'
+    : editState && (editState.resolving || !editState.entryId) ? editState.error ? '请重试历史定位' : '正在定位历史消息'
       : recovery.checking ? '正在核实恢复的附件'
         : recovery.issues.length ? '请先处理失效附件' : '';
   const queueAdmissionBlocked = sending || modelChanging || Boolean(submissionBlockedReason);
@@ -919,7 +925,7 @@ function PawSessionWorkspaceBody({
     const value = rawDraft.trim();
     if (editState) {
       if (editState.resolving || !editState.entryId) {
-        setError('正在定位这条历史消息，请稍候。');
+        setError(editState.error ? '请先重试历史定位，修改内容已保留。' : '正在定位这条历史消息，请稍候。');
         return;
       }
       if (!value && !attachments.length) return;
@@ -1440,35 +1446,54 @@ function PawSessionWorkspaceBody({
       byteSize: 0,
       source: 'path',
     }));
-    const scope = workspaceScope;
-    const request = ++editRequestRef.current;
-    const ownsEdit = () => workspaceScopeRef.current === scope && editRequestRef.current === request;
     cancelAttachmentImports();
     setDraft(text);
     setAttachments(originalAttachments);
-    setEditState({ entryId: '', messageId: message.id, resolving: true });
     setJumpRequest({ messageId: message.id, requestId: Date.now() });
+    await resolveEditAnchor(message.id, conversationNodes(current));
+  }
+
+  async function resolveEditAnchor(messageId: string, nodes: ConversationNode[]): Promise<void> {
+    const scope = workspaceScope;
+    const request = ++editRequestRef.current;
+    const ownsEdit = () => workspaceScopeRef.current === scope && editRequestRef.current === request;
+    editAbortRef.current?.abort();
+    const abort = new AbortController();
+    editAbortRef.current = abort;
+    setEditState({ entryId: '', messageId, resolving: true });
     setError('');
     try {
       const response = await transport.request<Record<string, unknown>>({
         pathId: 'agent.session.forks.list',
         params: { sessionId: recordId },
+        signal: abort.signal,
+        // Match the existing native history-read allowance. This bounds only
+        // observation; rewriting remains an explicit, separate request.
+        timeoutMs: 45_000,
       });
       if (!ownsEdit()) return;
-      const entryId = resolveConversationEntryId(response, conversationNodes(current), message.id);
+      const entryId = resolveConversationEntryId(response, nodes, messageId);
       if (!entryId) throw new Error('Pi 没有返回这条公开消息对应的可回溯锚点。');
-      setEditState({ entryId, messageId: message.id });
+      setEditState({ entryId, messageId });
     } catch (reason) {
       if (!ownsEdit()) return;
-      setEditState(undefined);
-      setDraft('');
-      setAttachments([]);
-      setError(errorText(reason));
+      // The read owns the target, never the user's in-progress amendments.
+      // Keep edit admission blocked so Enter cannot send an ordinary prompt.
+      setEditState({ entryId: '', messageId, error: errorText(reason) });
+    } finally {
+      if (editAbortRef.current === abort) editAbortRef.current = undefined;
     }
+  }
+
+  function retryEditAnchor(): void {
+    if (!editState?.error || busy || sending) return;
+    void resolveEditAnchor(editState.messageId, conversationNodes(agentProjection(address)));
   }
 
   function cancelEdit(): void {
     editRequestRef.current += 1;
+    editAbortRef.current?.abort();
+    editAbortRef.current = undefined;
     cancelAttachmentImports();
     setEditState(undefined);
     setDraft('');
@@ -2158,6 +2183,7 @@ function PawSessionWorkspaceBody({
                 onCapabilityPreferenceChange={(id, preference) => void changeCapabilityPreference(id, preference)}
                 onDraftChange={setDraft}
                 onCancelEdit={cancelEdit}
+                onRetryEdit={retryEditAnchor}
                 onEditPrevious={() => void beginEditMessage()}
                 onCodemodeModeChange={(mode) => void changeCodemodeMode(mode)}
                 onModelChange={(provider, modelId, level) => void changeModel(provider, modelId, level)}
