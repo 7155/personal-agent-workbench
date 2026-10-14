@@ -169,6 +169,35 @@ describe('PAWOS desktop store', () => {
     } finally { viewport(before[0], before[1]); }
   });
 
+  it('keeps visible frames inside through successive zoom steps and restores their intended size', () => {
+    const before = [window.innerWidth, window.innerHeight];
+    const viewport = (width: number, height: number) => {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: height });
+    };
+    try {
+      viewport(1920, 1080);
+      const store = createPawDesktopStore('files');
+      const intended = { x: 228, y: 90, width: 1168, height: 640 };
+      store.getState().commitBounds('files', intended);
+      store.getState().openApp('app-center');
+      store.getState().commitBounds('app-center', { x: -240, y: 70, width: 600, height: 500 });
+      for (const [width, height] of [[1745, 981], [1536, 864], [1280, 720], [1097, 617], [960, 540]]) {
+        viewport(width, height);
+        store.getState().fitWindowsToViewport();
+        const area = pawWindowArea();
+        const frame = store.getState().windows.files.bounds;
+        expect(frame.x).toBeGreaterThanOrEqual(area.x);
+        expect(frame.x + frame.width).toBeLessThanOrEqual(area.x + area.width);
+        expect(frame.y + frame.height).toBeLessThanOrEqual(area.y + area.height);
+        expect(store.getState().windows['app-center'].bounds.x).toBe(-240);
+      }
+      viewport(1920, 1080);
+      store.getState().fitWindowsToViewport();
+      expect(store.getState().windows.files.bounds).toEqual(intended);
+    } finally { viewport(before[0], before[1]); }
+  });
+
   it.each(['same-bounds commit', 'manual resize', 'placement', 'close', 'close app', 'close all'] as const)(
     'does not restore obsolete automatic bounds after %s', (action) => {
       const before = [window.innerWidth, window.innerHeight];

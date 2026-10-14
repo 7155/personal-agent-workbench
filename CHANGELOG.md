@@ -5,6 +5,9 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Keep previously visible windows inside the desktop through successive browser
+  zoom steps, while restoring their original size and preserving manual placement.
+
 - Include Jev's schema validator in base runtime installs and reject Python
   environments missing it before replacing the resident Sidecar source.
 
