@@ -28,6 +28,7 @@ import { browserWindowChrome } from './window-chrome.mjs';
 import { assistantLaunchIntent, assistantSessionRoute } from './assistant-launch.mjs';
 import { installScreenAssistant } from './screen-assistant.mjs';
 import { installDesktopPet } from './desktop-pet.mjs';
+import { createApplicationMenuBase } from './application-menu-base.mjs';
 
 import { createVoiceControl, trustedVoiceSender } from './voice-control.mjs';
 
@@ -457,7 +458,7 @@ async function startPrimaryInstance() {
   pendingAssistantIntent = null;
   mainWindow = createWindow(initialIntent?.kind === 'session' ? assistantSessionRoute(initialIntent.sessionId) : undefined, initialIntent?.kind !== 'capture');
   if (initialIntent?.kind === 'capture') void screenAssistant.startCapture(initialIntent.sourceAppBundleId);
-  const menu = Menu.getApplicationMenu() || new Menu();
+  const menu = createApplicationMenuBase(Menu);
   const petMenuItem = new MenuItem({ label: '显示桌面伙伴', type: 'checkbox', checked: false,
     click: (item) => { if (item.checked) void desktopPet.show(); else desktopPet.hide(); },
   });
@@ -471,14 +472,9 @@ async function startPrimaryInstance() {
   });
   if (menu) {
     const item = new MenuItem({ label: '框选屏幕与 PAW 对话…', click: () => { void screenAssistant.startCapture(); } });
-    // Electron's macOS default menu may expose the File item by label rather
-    // than role. Resolve that submenu explicitly so the managed App remains
-    // reachable even when the host did not install a custom menu template.
-    const fileMenu = menu.items.find((entry) => entry.role === 'fileMenu' || entry.label === 'File')?.submenu;
-    if (fileMenu) {
-      if (!fileMenu.items.some((entry) => entry.label === item.label)) fileMenu.append(item);
-      if (!fileMenu.items.some((entry) => entry.label === petMenuItem.label)) fileMenu.append(petMenuItem);
-    } else menu.append(new MenuItem({ label: 'PAW', submenu: [item, petMenuItem] }));
+    // Add owned actions to a new submenu rather than mutate a returned native
+    // File submenu or clone its wrapped callbacks.
+    menu.append(new MenuItem({ id: 'paw-workbench-actions', label: 'PAW', submenu: [item, petMenuItem] }));
     Menu.setApplicationMenu(menu);
   }
 }

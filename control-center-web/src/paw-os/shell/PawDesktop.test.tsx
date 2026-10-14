@@ -202,6 +202,39 @@ describe('PAWOS desktop', () => {
     expect(screen.queryByRole('dialog', { name: '全部 App' })).not.toBeInTheDocument();
   });
 
+  it.each([false, true])('hands launcher focus to the selected App without returning to a foreign draft (existing=%s)', async (existing) => {
+    renderDesktop(existing ? 'memory' : 'files');
+    if (existing) fireEvent.doubleClick(within(screen.getByLabelText('桌面 App')).getByRole('button', { name: 'Files' }));
+    const files = document.querySelector<HTMLElement>('.paw-window-shell[data-app="files"]')!;
+    const draft = document.createElement('input');
+    draft.value = '保留这个未发送的草稿';
+    files.append(draft);
+    draft.focus();
+    fireEvent.keyDown(window, { key: 'k', metaKey: true });
+    const search = within(screen.getByRole('dialog', { name: '全部 App' })).getByRole('searchbox', { name: '搜索 App' });
+    fireEvent.change(search, { target: { value: 'Memory' } });
+    fireEvent.keyDown(search, { key: 'Enter' });
+    const target = document.querySelector<HTMLElement>('.paw-window-shell[data-app="memory"]')!;
+    await waitFor(() => expect(target).toHaveFocus());
+    expect(draft).toHaveValue('保留这个未发送的草稿');
+    expect(screen.queryByRole('dialog', { name: '全部 App' })).not.toBeInTheDocument();
+  });
+
+  it('returns to the connected draft when choosing its already active App', async () => {
+    renderDesktop('memory');
+    const target = document.querySelector<HTMLElement>('.paw-window-shell[data-app="memory"]')!;
+    const draft = document.createElement('input');
+    draft.value = '同一窗口的草稿';
+    target.append(draft);
+    draft.focus();
+    fireEvent.keyDown(window, { key: 'k', metaKey: true });
+    const search = within(screen.getByRole('dialog', { name: '全部 App' })).getByRole('searchbox', { name: '搜索 App' });
+    fireEvent.change(search, { target: { value: 'Memory' } });
+    fireEvent.keyDown(search, { key: 'Enter' });
+    await waitFor(() => expect(draft).toHaveFocus());
+    expect(draft).toHaveValue('同一窗口的草稿');
+  });
+
   it('renders every registered App in Launchpad with its original SVG identity', () => {
     const { container } = renderDesktop();
     fireEvent.click(screen.getByRole('button', { name: '全部 App' }));

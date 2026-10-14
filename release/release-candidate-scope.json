@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-14T20:52:25.800938+00:00",
+  "generatedAt": "2026-10-14T22:07:39.451619+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
-    "branch": "undo/paw-knowledge-filter-focus-20261015",
-    "baseCommit": "38d28fbf0e49164f4ed8c564f04279f4ab89ac5b",
-    "candidateCommitPolicy": "Restore keyboard focus after clearing the materials filter without modifying document state or execution."
+    "branch": "undo/paw-keyboard-context-20261015",
+    "baseCommit": "79313f54fa0668556269419263af25993054f13b",
+    "candidateCommitPolicy": "Preserve keyboard editing commands and move focus to the explicitly selected work surface without starting or changing tasks."
   },
   "dispositions": {
     "keep_release": "Retain task-owned source and release metadata.",
@@ -13,48 +13,98 @@
     "other_work_not_in_release": "Preserve unrelated work outside this candidate."
   },
   "groups": {
-    "knowledge_filter_focus": {
-      "description": "Keep keyboard navigation continuous after either materials filter recovery action.",
-      "pathCount": 4
+    "native_edit_commands": {
+      "description": "native edit commands",
+      "pathCount": 3
+    },
+    "launcher_focus": {
+      "description": "launcher focus",
+      "pathCount": 2
+    },
+    "task_detail_focus": {
+      "description": "task detail focus",
+      "pathCount": 2
+    },
+    "release_metadata": {
+      "description": "release metadata",
+      "pathCount": 2
     }
   },
   "items": [
     {
+      "path": "control-center-web/electron/application-menu-base.mjs",
+      "status": "added",
+      "group": "native_edit_commands",
+      "disposition": "keep_release",
+      "reason": "Repair observed keyboard context while preserving existing callbacks, drafts and task state."
+    },
+    {
+      "path": "control-center-web/electron/application-menu-base.test.mjs",
+      "status": "added",
+      "group": "native_edit_commands",
+      "disposition": "keep_release",
+      "reason": "Repair observed keyboard context while preserving existing callbacks, drafts and task state."
+    },
+    {
+      "path": "control-center-web/electron/main.mjs",
+      "status": "modified",
+      "group": "native_edit_commands",
+      "disposition": "keep_release",
+      "reason": "Repair observed keyboard context while preserving existing callbacks, drafts and task state."
+    },
+    {
+      "path": "control-center-web/src/paw-os/shell/PawDesktop.tsx",
+      "status": "modified",
+      "group": "launcher_focus",
+      "disposition": "keep_release",
+      "reason": "Repair observed keyboard context while preserving existing callbacks, drafts and task state."
+    },
+    {
+      "path": "control-center-web/src/paw-os/shell/PawDesktop.test.tsx",
+      "status": "modified",
+      "group": "launcher_focus",
+      "disposition": "keep_release",
+      "reason": "Repair observed keyboard context while preserving existing callbacks, drafts and task state."
+    },
+    {
+      "path": "control-center-web/src/features/schedules/SchedulesApp.tsx",
+      "status": "modified",
+      "group": "task_detail_focus",
+      "disposition": "keep_release",
+      "reason": "Repair observed keyboard context while preserving existing callbacks, drafts and task state."
+    },
+    {
+      "path": "control-center-web/src/features/schedules/SchedulesApp.test.tsx",
+      "status": "modified",
+      "group": "task_detail_focus",
+      "disposition": "keep_release",
+      "reason": "Repair observed keyboard context while preserving existing callbacks, drafts and task state."
+    },
+    {
       "path": "CHANGELOG.md",
       "status": "modified",
-      "group": "knowledge_filter_focus",
+      "group": "release_metadata",
       "disposition": "keep_release",
-      "reason": "Return focus to the existing filter after clearing or showing all files; cover both recovery actions."
-    },
-    {
-      "path": "control-center-web/src/features/knowledge/document-workspace.tsx",
-      "status": "modified",
-      "group": "knowledge_filter_focus",
-      "disposition": "keep_release",
-      "reason": "Return focus to the existing filter after clearing or showing all files; cover both recovery actions."
-    },
-    {
-      "path": "control-center-web/src/features/knowledge/knowledge-feature.test.tsx",
-      "status": "modified",
-      "group": "knowledge_filter_focus",
-      "disposition": "keep_release",
-      "reason": "Return focus to the existing filter after clearing or showing all files; cover both recovery actions."
+      "reason": "Repair observed keyboard context while preserving existing callbacks, drafts and task state."
     },
     {
       "path": "release/release-candidate-scope.json",
       "status": "modified",
-      "group": "knowledge_filter_focus",
+      "group": "release_metadata",
       "disposition": "keep_release",
-      "reason": "Return focus to the existing filter after clearing or showing all files; cover both recovery actions."
+      "reason": "Repair observed keyboard context while preserving existing callbacks, drafts and task state."
     }
   ],
   "summary": {
-    "pathCount": 4,
+    "pathCount": 9,
     "dispositionCounts": {
-      "keep_release": 4
+      "keep_release": 9
     },
     "groupCounts": {
-      "knowledge_filter_focus": 4
+      "native_edit_commands": 3,
+      "launcher_focus": 2,
+      "task_detail_focus": 2,
+      "release_metadata": 2
     },
     "unclassifiedPathCount": 0,
     "otherWorkNotInReleasePathCount": 0
