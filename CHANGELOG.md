@@ -5,6 +5,9 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Keep Session readiness separate from conversation turns, so opening an empty
+  Session does not display an ended round or complete unrelated work.
+
 - Keep the verified native codemode selection available when a Session has no
   readable history, without starting the Host during a recent-history read.
 

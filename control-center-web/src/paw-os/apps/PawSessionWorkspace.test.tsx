@@ -1803,6 +1803,35 @@ describe('PAWOS Agent Session structural migration', () => {
     expect(conversationNav?.querySelectorAll('button')).toHaveLength(2);
   });
 
+  it('does not show an ended turn after opening an empty Session', async () => {
+    const sessionId = 'empty-session-ready';
+    const ready = parseAgentEvent({ schemaVersion: 'rag-ime.agent-event.v1', eventId: `${sessionId}:1`,
+      sessionId, turnId: '', sequence: 1, createdAtMs: 1,
+      eventType: 'status_changed', payload: { status: 'ready' }, resumeToken: `${sessionId}:1` });
+    const transport = new StubControlTransport('mock', { ...idleSessionRoutes(),
+      'agent.session.snapshot': { messages: [], liveEvents: [ready], status: 'idle', lastSequence: 1,
+        resumeToken: `${sessionId}:1`, partial: true, runtimeQuiescent: true, snapshotScope: 'recent' } });
+    const streams = vi.spyOn(transport, 'subscribe');
+    const view = render(<ControlTransportProvider transport={transport}><TooltipProvider>
+      <PawWindowFrame active appId="agent" bounds={{ x: 0, y: 0, width: 700, height: 720 }}
+        onBoundsCommit={() => undefined} onClose={() => undefined} onFocus={() => undefined}
+        onMinimize={() => undefined} onToggleMaximize={() => undefined} title="Empty Session"
+        windowChrome="agent-session" windowId={sessionId} zIndex={10}>
+        <PawSessionWorkspace record={{ ...liveSession(), id: sessionId, messageCount: 0 }} recordId={sessionId}
+          initialDraft="保留未发送内容" onNewWork={vi.fn()} onSessionCreated={vi.fn()} onSessionUpdated={vi.fn()} />
+      </PawWindowFrame></TooltipProvider></ControlTransportProvider>);
+    const editor = await screen.findByRole('textbox', { name: '消息' });
+    await waitFor(() => expect(streams).toHaveBeenCalled());
+    act(() => streams.mock.calls[0][1].stable?.(`${sessionId}:1`));
+    const taskbar = screen.getByRole('region', { name: '当前工作' });
+    await waitFor(() => expect(taskbar).toHaveTextContent('可以继续对话'));
+    expect(taskbar).not.toHaveTextContent('本轮已结束');
+    expect(screen.getByRole('status', { name: '空 Session' })).toBeVisible();
+    expect(editor).toHaveValue('保留未发送内容');
+    expect(transport.requests.some(r => ['agent.session.prompt', 'agent.session.abort', 'agent.runtime.ensure'].includes(r.pathId))).toBe(false);
+    view.unmount();
+  });
+
   it.each([true, false])('keeps history feedback and task state tied to an actually stable stream (%s)', async (stable) => {
     const sessionId = `history-feedback-${stable}`;
     const archive = deferred<unknown>();

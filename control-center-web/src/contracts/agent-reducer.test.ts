@@ -25,6 +25,34 @@ import type { AgentBackgroundJobV1 } from './generated/agent-background-job.v1';
 import type { AgentLifecycleCancellationAuditV1 } from './generated/agent-lifecycle-cancellation-audit.v1';
 
 describe('AgentEventReducer', () => {
+  it('keeps a Session ready event out of an empty conversation turn history', () => {
+    const ready = { ...agentEvent(1, 'status_changed', { status: 'ready' }), turnId: '' };
+    const live = reduceAgentEvent(createAgentProjection('session-1'), ready).state;
+    expect(live.status).toBe('ready');
+    expect(live.lastSequence).toBe(1);
+    expect(live.turnOrder).toEqual([]);
+    const restored = applyAgentSnapshot(createAgentProjection('session-1'), {
+      messages: [], liveEvents: [ready], status: 'idle', lastSequence: 1,
+      resumeToken: 'session-1:1', partial: true, runtimeQuiescent: true,
+    });
+    expect(restored.turnOrder).toEqual([]);
+    expect(restored.turnsById).not.toHaveProperty('unscoped');
+  });
+
+  it('does not append a completed turn when an unscoped status follows real work', () => {
+    const running = reduceAgentEvent(createAgentProjection('session-1'),
+      agentEvent(1, 'status_changed', { status: 'busy' })).state;
+    const ready = reduceAgentEvent(running,
+      { ...agentEvent(2, 'status_changed', { status: 'ready' }), turnId: '' }).state;
+    expect(ready.status).toBe('ready');
+    expect(ready.turnOrder).toEqual(['turn-1']);
+    expect(ready.turnsById['turn-1'].status).toBe('running');
+    const completed = reduceAgentEvent(ready,
+      agentEvent(3, 'turn_completed', { status: 'completed' })).state;
+    expect(completed.turnOrder).toEqual(['turn-1']);
+    expect(completed.turnsById['turn-1'].status).toBe('completed');
+  });
+
   it.each([
     { kind: 'turn', runtimeSessionId: 'runtime-1', taskIds: ['durable:task:1'] },
     { kind: 'compaction', runtimeSessionId: 'runtime-1', taskIds: ['durable:task:0'] },
