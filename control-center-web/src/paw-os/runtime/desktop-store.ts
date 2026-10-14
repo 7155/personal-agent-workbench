@@ -546,11 +546,11 @@ export function createPawDesktopStore(initialAppId?: PawAppId | null, initialRou
       const previousViewport = fittedViewport;
       const viewportChanged = !sameBounds(viewport, previousViewport);
       fittedViewport = viewport;
-      const fit = (bounds: PawWindowBounds) => {
+      const fit = (bounds: PawWindowBounds, previousBounds = bounds) => {
         // A smaller desktop must not push previously visible content outside.
         // Keep manual partial placement recoverable instead of undoing the drag.
-        const wasInside = bounds.x >= previousViewport.x
-          && bounds.x + bounds.width <= previousViewport.x + previousViewport.width;
+        const wasInside = previousBounds.x >= previousViewport.x
+          && previousBounds.x + previousBounds.width <= previousViewport.x + previousViewport.width;
         return viewport.width < previousViewport.width && wasInside
           ? fitPawWindowBounds(bounds, viewport)
           : fitReachablePawWindowBounds(bounds, viewport);
@@ -564,7 +564,9 @@ export function createPawDesktopStore(initialAppId?: PawAppId | null, initialRou
           const preferred = preferredViewportBounds.get(windowId) ?? node.bounds;
           const bounds = node.placement
             ? placementBounds(node.placement)
-            : fit(viewportChanged ? preferred : node.bounds);
+            // Preferred bounds retain the original size, while visibility must
+            // follow the frame actually shown before this resize or zoom step.
+            : fit(viewportChanged ? preferred : node.bounds, node.bounds);
           if (!node.placement) {
             if (bounds.width < preferred.width || bounds.height < preferred.height) {
               preferredViewportBounds.set(windowId, preferred);

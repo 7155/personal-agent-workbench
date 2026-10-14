@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-14T22:38:39.976262+00:00",
+  "generatedAt": "2026-10-14T22:50:26.289777+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
-    "branch": "undo/paw-sidecar-runtime-dependency-20261015",
-    "baseCommit": "f51a50364fb621e409def440ba2529aa5ce5c972",
-    "candidateCommitPolicy": "Declare the resident Sidecar schema validator as a base runtime dependency and fail preflight before replacing source when it is missing."
+    "branch": "undo/paw-window-zoom-20261015",
+    "baseCommit": "6a640c701e2afbeef8588fe372f3d1da44b4587c",
+    "candidateCommitPolicy": "Keep automatically fitted visible windows inside the desktop during successive zoom or resize steps, while retaining original size and deliberate partial placement."
   },
   "dispositions": {
     "keep_release": "Retain task-owned source and release metadata.",
@@ -13,12 +13,8 @@
     "other_work_not_in_release": "Preserve unrelated work outside this candidate."
   },
   "groups": {
-    "runtime_dependencies": {
-      "description": "runtime dependencies",
-      "pathCount": 2
-    },
-    "sidecar_preflight": {
-      "description": "sidecar preflight",
+    "window_viewport_fitting": {
+      "description": "window viewport fitting",
       "pathCount": 2
     },
     "release_metadata": {
@@ -28,56 +24,41 @@
   },
   "items": [
     {
-      "path": "pyproject.toml",
+      "path": "control-center-web/src/paw-os/runtime/desktop-store.ts",
       "status": "modified",
-      "group": "runtime_dependencies",
+      "group": "window_viewport_fitting",
       "disposition": "keep_release",
-      "reason": "Keep no-dev runtime installation consistent with unconditional Jev imports and protect resident source from an unusable interpreter."
+      "reason": "Repair the reproduced repeated-zoom overflow without changing manual window placement or persisted data."
     },
     {
-      "path": "uv.lock",
+      "path": "control-center-web/src/paw-os/runtime/desktop-store.test.ts",
       "status": "modified",
-      "group": "runtime_dependencies",
+      "group": "window_viewport_fitting",
       "disposition": "keep_release",
-      "reason": "Keep no-dev runtime installation consistent with unconditional Jev imports and protect resident source from an unusable interpreter."
-    },
-    {
-      "path": "scripts/install_sidecar_launch_agent.sh",
-      "status": "modified",
-      "group": "sidecar_preflight",
-      "disposition": "keep_release",
-      "reason": "Keep no-dev runtime installation consistent with unconditional Jev imports and protect resident source from an unusable interpreter."
-    },
-    {
-      "path": "tests/test_launch_agent_script.py",
-      "status": "modified",
-      "group": "sidecar_preflight",
-      "disposition": "keep_release",
-      "reason": "Keep no-dev runtime installation consistent with unconditional Jev imports and protect resident source from an unusable interpreter."
+      "reason": "Repair the reproduced repeated-zoom overflow without changing manual window placement or persisted data."
     },
     {
       "path": "CHANGELOG.md",
       "status": "modified",
       "group": "release_metadata",
       "disposition": "keep_release",
-      "reason": "Keep no-dev runtime installation consistent with unconditional Jev imports and protect resident source from an unusable interpreter."
+      "reason": "Repair the reproduced repeated-zoom overflow without changing manual window placement or persisted data."
     },
     {
       "path": "release/release-candidate-scope.json",
       "status": "modified",
       "group": "release_metadata",
       "disposition": "keep_release",
-      "reason": "Keep no-dev runtime installation consistent with unconditional Jev imports and protect resident source from an unusable interpreter."
+      "reason": "Repair the reproduced repeated-zoom overflow without changing manual window placement or persisted data."
     }
   ],
   "summary": {
-    "pathCount": 6,
+    "pathCount": 4,
     "dispositionCounts": {
-      "keep_release": 6
+      "keep_release": 4
     },
     "groupCounts": {
-      "runtime_dependencies": 2,
-      "sidecar_preflight": 2,
+      "window_viewport_fitting": 2,
       "release_metadata": 2
     },
     "unclassifiedPathCount": 0,
