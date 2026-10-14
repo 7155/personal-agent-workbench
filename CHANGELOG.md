@@ -5,6 +5,9 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Keep Session recovery notices readable in dark and light themes, preserve
+  complete action labels, and wrap controls into reachable rows on narrow screens.
+
 - Preserve amended Session text and attachments when history reads fail or
   time out, offer read-only retries without changing the selected node, and
   cancel retired reads. Keep message actions clickable and return focus to

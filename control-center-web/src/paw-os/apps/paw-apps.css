@@ -278,8 +278,9 @@
 .paw-session-workspace__composer .agent-composer__toolbar,
 .paw-room-workspace__composer .agent-composer__toolbar { bottom: 5px; padding-inline: 6px; }
 .paw-session-workspace__composer .agent-command-palette { bottom: calc(100% + 6px); }
-.paw-session-workspace__error { width: min(900px, 100%); display: flex; align-items: center; gap: 7px; margin: 0 auto 6px; padding: 7px 10px; border: 1px solid color-mix(in srgb, var(--paw-danger) 30%, var(--paw-line)); border-radius: 9px; color: var(--paw-danger); background: color-mix(in srgb, var(--paw-danger) 7%, var(--paw-panel)); }
-.paw-session-workspace__error span { min-width: 0; flex: 1; }
+.paw-session-workspace__error { width: min(900px, 100%); display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin: 0 auto 6px; padding: 7px 10px; border: 1px solid color-mix(in srgb, var(--paw-danger) 30%, var(--paw-line)); border-radius: 9px; color: var(--paw-danger); background: color-mix(in srgb, var(--paw-danger) 7%, var(--paw-panel)); }
+.paw-session-workspace__error > span { min-width: 0; flex: 1 1 240px; overflow-wrap: anywhere; }
+.paw-session-workspace__error > svg { flex: none; }
 .paw-session-workspace__error button { color: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 
 .paw-session-workspace__side { position: absolute; z-index: 12; top: 44px; right: 0; bottom: 0; width: min(350px, 88%); min-width: 0; min-height: 0; overflow: hidden; contain: layout paint; border-left: 1px solid var(--paw-line-soft); background: color-mix(in srgb, var(--paw-panel-soft) 72%, var(--paw-panel-strong)); box-shadow: -14px 0 40px rgb(15 23 42 / 14%); animation: paw-session-side-in 190ms var(--paw-ease-out) both; }
