@@ -97,7 +97,12 @@ describe('engineering Lab report', () => {
     expect(onOpen).toHaveBeenCalledWith('draft', 'materials');
     fireEvent.change(screen.getByRole('textbox', { name: '搜索 Lab 项目' }), { target: { value: '不存在' } });
     expect(screen.getByRole('heading', { name: '没有匹配的项目' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '清除筛选' }));
+    const clearFilters = screen.getByRole('button', { name: '清除筛选' });
+    clearFilters.focus();
+    expect(clearFilters).toHaveFocus();
+    fireEvent.click(clearFilters);
+    expect(screen.getByRole('textbox', { name: '搜索 Lab 项目' })).toHaveValue('');
+    expect(screen.getByRole('textbox', { name: '搜索 Lab 项目' })).toHaveFocus();
     expect(within(screen.getByRole('region', { name: '最近的优化项目' })).getByRole('button', { name: /企业知识库，历史结果/ })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /历史实验快照/ }));
     expect(onOpen).toHaveBeenCalledWith('history', 'artifact', 's');

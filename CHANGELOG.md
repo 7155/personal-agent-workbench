@@ -5,6 +5,9 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Return keyboard focus to the Lab project search after clearing an empty
+  result, so users can continue searching without restarting tab navigation.
+
 - Keep Session readiness separate from conversation turns, so opening an empty
   Session does not display an ended round or complete unrelated work.
 

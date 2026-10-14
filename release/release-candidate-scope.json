@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-14T19:51:16.744961+00:00",
+  "generatedAt": "2026-10-14T20:44:16.578568+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
-    "branch": "undo/paw-session-ready-state-20261015",
-    "baseCommit": "4c458f1b91ca7b9858c263553993e2cd60b9fda8",
-    "candidateCommitPolicy": "Project unscoped Session status without inventing a conversation turn or completing unrelated work."
+    "branch": "undo/paw-lab-search-focus-20261015",
+    "baseCommit": "bb3f8a609b05007247971d7c7a5dab9857172a70",
+    "candidateCommitPolicy": "Return focus to project search after clearing empty results, without changing project data or execution."
   },
   "dispositions": {
     "keep_release": "Retain task-owned source and release metadata.",
@@ -13,55 +13,48 @@
     "other_work_not_in_release": "Preserve unrelated work outside this candidate."
   },
   "groups": {
-    "session_ready_state": {
-      "description": "Keep Session process readiness distinct from actual conversation turns.",
-      "pathCount": 5
+    "lab_search_focus": {
+      "description": "Preserve keyboard continuity when clearing an empty Lab project search.",
+      "pathCount": 4
     }
   },
   "items": [
     {
       "path": "CHANGELOG.md",
       "status": "modified",
-      "group": "session_ready_state",
+      "group": "lab_search_focus",
       "disposition": "keep_release",
-      "reason": "Do not create a turn from an unscoped status event; cover live/reopened projection and empty workspace feedback."
+      "reason": "Restore focus to the existing search input and verify empty-result recovery."
     },
     {
-      "path": "control-center-web/src/contracts/agent-reducer.ts",
+      "path": "control-center-web/src/features/eval-lab/projects/LabProjectHome.tsx",
       "status": "modified",
-      "group": "session_ready_state",
+      "group": "lab_search_focus",
       "disposition": "keep_release",
-      "reason": "Do not create a turn from an unscoped status event; cover live/reopened projection and empty workspace feedback."
+      "reason": "Restore focus to the existing search input and verify empty-result recovery."
     },
     {
-      "path": "control-center-web/src/contracts/agent-reducer.test.ts",
+      "path": "control-center-web/src/features/eval-lab/projects/ExperimentReport.test.tsx",
       "status": "modified",
-      "group": "session_ready_state",
+      "group": "lab_search_focus",
       "disposition": "keep_release",
-      "reason": "Do not create a turn from an unscoped status event; cover live/reopened projection and empty workspace feedback."
-    },
-    {
-      "path": "control-center-web/src/paw-os/apps/PawSessionWorkspace.test.tsx",
-      "status": "modified",
-      "group": "session_ready_state",
-      "disposition": "keep_release",
-      "reason": "Do not create a turn from an unscoped status event; cover live/reopened projection and empty workspace feedback."
+      "reason": "Restore focus to the existing search input and verify empty-result recovery."
     },
     {
       "path": "release/release-candidate-scope.json",
       "status": "modified",
-      "group": "session_ready_state",
+      "group": "lab_search_focus",
       "disposition": "keep_release",
-      "reason": "Do not create a turn from an unscoped status event; cover live/reopened projection and empty workspace feedback."
+      "reason": "Restore focus to the existing search input and verify empty-result recovery."
     }
   ],
   "summary": {
-    "pathCount": 5,
+    "pathCount": 4,
     "dispositionCounts": {
-      "keep_release": 5
+      "keep_release": 4
     },
     "groupCounts": {
-      "session_ready_state": 5
+      "lab_search_focus": 4
     },
     "unclassifiedPathCount": 0,
     "otherWorkNotInReleasePathCount": 0
