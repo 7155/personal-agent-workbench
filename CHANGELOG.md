@@ -5,6 +5,9 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Keep the verified native codemode selection available when a Session has no
+  readable history, without starting the Host during a recent-history read.
+
 - Keep empty, loading and failed desktop work notices below visible App
   shortcuts, with reachable actions that open the intended work surface.
 

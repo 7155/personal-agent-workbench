@@ -3165,10 +3165,16 @@ class PiRuntimeHostManager:
             durable = self._durable_history_snapshot(session_id)
             projection_identity = self._recent_projection_identity(session_id)
             if durable is None:
-                return {"messages": [], "projectionCurrent": False}
+                return {
+                    "messages": [], "projectionCurrent": False,
+                    **self._codemode_payload(effective_codemode_mode),
+                }
             raw_messages = durable.get("messages")
             if not isinstance(raw_messages, list):
-                return {"messages": [], "projectionCurrent": False}
+                return {
+                    "messages": [], "projectionCurrent": False,
+                    **self._codemode_payload(effective_codemode_mode),
+                }
             raw_entries = (
                 list(durable.get("entries") or [])
                 if isinstance(durable.get("entries"), list)

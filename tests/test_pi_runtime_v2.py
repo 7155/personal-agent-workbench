@@ -4520,6 +4520,53 @@ class PiRuntimeV2Tests(unittest.TestCase):
             1,
         )
 
+    def test_recent_empty_history_keeps_verified_codemode_without_starting_host(self) -> None:
+        session_id = str(self.first["id"])
+        for mode in ("on", "only", "off"):
+            with self.subTest(mode=mode):
+                self.store.bind_runtime_session(
+                    session_id,
+                    driver_id="managed-pi",
+                    runtime_kind="pi_rpc",
+                    external_session_id="pi-empty-codemode",
+                    metadata={"codemodeAvailable": True, "codemodeMode": mode},
+                )
+                with patch.object(
+                    self.runtime, "_host",
+                    side_effect=AssertionError("empty history must not start the Host"),
+                ):
+                    snapshot = self.runtime.recent_session_snapshot(session_id)
+                self.assertEqual(snapshot["messages"], [])
+                self.assertFalse(snapshot["projectionCurrent"])
+                self.assertEqual(snapshot.get("codemodeMode"), mode)
+        self.assertIsNone(self.runtime._client)
+
+    def test_recent_invalid_history_keeps_only_verified_codemode(self) -> None:
+        session_id = str(self.first["id"])
+        for available in (True, False):
+            with self.subTest(available=available):
+                self.store.bind_runtime_session(
+                    session_id,
+                    driver_id="managed-pi",
+                    runtime_kind="pi_rpc",
+                    external_session_id="pi-invalid-history-codemode",
+                    metadata={"codemodeAvailable": available, "codemodeMode": "only"},
+                )
+                with (
+                    patch.object(
+                        self.runtime, "_durable_history_snapshot",
+                        return_value={"messages": None},
+                    ),
+                    patch.object(
+                        self.runtime, "_host",
+                        side_effect=AssertionError("invalid history must not start the Host"),
+                    ),
+                ):
+                    snapshot = self.runtime.recent_session_snapshot(session_id)
+                self.assertEqual(snapshot["messages"], [])
+                self.assertEqual(snapshot.get("codemodeMode"), "only" if available else None)
+        self.assertIsNone(self.runtime._client)
+
     def test_unsupported_host_never_projects_configured_or_snapshot_codemode(self) -> None:
         session_id = str(self.first["id"])
         self.runtime.ensure(session_id)

@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-14T18:33:44.083071+00:00",
+  "generatedAt": "2026-10-14T19:29:51.828386+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
-    "branch": "undo/paw-empty-desktop-start-20261015",
-    "baseCommit": "3f05eed8de82733ee9eb45fc13a054140583d760",
-    "candidateCommitPolicy": "Place desktop work notices below the visible shortcut projection and keep their controls above shortcut hit targets, with40px action targets and narrow-grid regression coverage."
+    "branch": "undo/paw-empty-session-codemode-20261015",
+    "baseCommit": "c2349913642b352c390668893e6d4a8f080cd2a8",
+    "candidateCommitPolicy": "Keep verified native codemode modes in empty or invalid recent-history results without starting the Host or inventing unsupported capabilities."
   },
   "dispositions": {
     "keep_release": "Retain task-owned source and release metadata.",
@@ -13,69 +13,48 @@
     "other_work_not_in_release": "Preserve unrelated work outside this candidate."
   },
   "groups": {
-    "desktop_start": {
-      "description": "Desktop empty/loading/error actions use the visible shortcut count and remain actionable.",
-      "pathCount": 7
+    "empty_session_codemode": {
+      "description": "Preserve verified Session codemode in bounded empty history reads.",
+      "pathCount": 4
     }
   },
   "items": [
     {
       "path": "CHANGELOG.md",
       "status": "modified",
-      "group": "desktop_start",
+      "group": "empty_session_codemode",
       "disposition": "keep_release",
-      "reason": "Align work notices to visible shortcut rows, preserve icon hit areas, and verify narrow notice placement."
+      "reason": "Restore verified mode projection in the two empty-history returns and cover support and no-Host behavior."
     },
     {
-      "path": "control-center-web/src/paw-os/shell/PawDesktop.tsx",
+      "path": "rag_ime/pi/runtime.py",
       "status": "modified",
-      "group": "desktop_start",
+      "group": "empty_session_codemode",
       "disposition": "keep_release",
-      "reason": "Align work notices to visible shortcut rows, preserve icon hit areas, and verify narrow notice placement."
+      "reason": "Restore verified mode projection in the two empty-history returns and cover support and no-Host behavior."
     },
     {
-      "path": "control-center-web/src/paw-os/shell/PawWayfinderWork.tsx",
+      "path": "tests/test_pi_runtime_v2.py",
       "status": "modified",
-      "group": "desktop_start",
+      "group": "empty_session_codemode",
       "disposition": "keep_release",
-      "reason": "Align work notices to visible shortcut rows, preserve icon hit areas, and verify narrow notice placement."
-    },
-    {
-      "path": "control-center-web/src/paw-os/shell/desktop-grid.test.ts",
-      "status": "modified",
-      "group": "desktop_start",
-      "disposition": "keep_release",
-      "reason": "Align work notices to visible shortcut rows, preserve icon hit areas, and verify narrow notice placement."
-    },
-    {
-      "path": "control-center-web/src/paw-os/shell/desktop-grid.ts",
-      "status": "modified",
-      "group": "desktop_start",
-      "disposition": "keep_release",
-      "reason": "Align work notices to visible shortcut rows, preserve icon hit areas, and verify narrow notice placement."
-    },
-    {
-      "path": "control-center-web/src/paw-os/styles/paw-os.css",
-      "status": "modified",
-      "group": "desktop_start",
-      "disposition": "keep_release",
-      "reason": "Align work notices to visible shortcut rows, preserve icon hit areas, and verify narrow notice placement."
+      "reason": "Restore verified mode projection in the two empty-history returns and cover support and no-Host behavior."
     },
     {
       "path": "release/release-candidate-scope.json",
       "status": "modified",
-      "group": "desktop_start",
+      "group": "empty_session_codemode",
       "disposition": "keep_release",
-      "reason": "Align work notices to visible shortcut rows, preserve icon hit areas, and verify narrow notice placement."
+      "reason": "Restore verified mode projection in the two empty-history returns and cover support and no-Host behavior."
     }
   ],
   "summary": {
-    "pathCount": 7,
+    "pathCount": 4,
     "dispositionCounts": {
-      "keep_release": 7
+      "keep_release": 4
     },
     "groupCounts": {
-      "desktop_start": 7
+      "empty_session_codemode": 4
     },
     "unclassifiedPathCount": 0,
     "otherWorkNotInReleasePathCount": 0
