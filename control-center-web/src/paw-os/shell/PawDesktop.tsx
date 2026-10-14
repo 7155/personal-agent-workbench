@@ -879,6 +879,7 @@ const Wayfinder = memo(function Wayfinder({ onArchive, onOpen, onSelectIcon, sel
       .filter((app) => installation.enabledExtensionIds.has(app.id))
       .map((app) => app.id),
   ], [installation.enabledExtensionIds]);
+  const visibleDesktopAppIds = desktopAppIds.filter((id) => !wayfinder.archived.includes(`app:${id}`));
   // Roving arrows walk the shortcut list like a real desktop: focus moves
   // between identities without tabbing out of the Wayfinder, and Enter on the
   // focused identity still opens it (owned by the per-button handler below).
@@ -958,7 +959,7 @@ const Wayfinder = memo(function Wayfinder({ onArchive, onOpen, onSelectIcon, sel
           are still App launchers, but their icon positions now live beside
           project/session icon positions in the same PAWOS snapshot. */}
       <div className="paw-desktop-shortcuts" aria-label="桌面 App" onKeyDown={walkShortcuts} ref={shortcutsRef}>
-        {desktopAppIds.filter((id) => !wayfinder.archived.includes(`app:${id}`)).map((id, index) => {
+        {visibleDesktopAppIds.map((id, index) => {
           const open = running.open.has(id);
           const minimizedOnly = open && !running.visible.has(id);
           const iconId = `app:${id}`;
@@ -995,7 +996,7 @@ const Wayfinder = memo(function Wayfinder({ onArchive, onOpen, onSelectIcon, sel
           );
         })}
       </div>
-      <PawWayfinderWork onArchive={onArchive} onSelectIcon={onSelectIcon} selectedIcons={selectedIcons} />
+      <PawWayfinderWork desktopShortcutCount={visibleDesktopAppIds.length} onArchive={onArchive} onSelectIcon={onSelectIcon} selectedIcons={selectedIcons} />
     </section>
   );
 });

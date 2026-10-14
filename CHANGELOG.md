@@ -5,6 +5,9 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Keep empty, loading and failed desktop work notices below visible App
+  shortcuts, with reachable actions that open the intended work surface.
+
 - Keep Session recovery notices readable in dark and light themes, preserve
   complete action labels, and wrap controls into reachable rows on narrow screens.
 

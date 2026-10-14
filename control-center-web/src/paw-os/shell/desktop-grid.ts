@@ -174,12 +174,14 @@ export function pawDesktopOccupiedPositions(root: ParentNode, excludingIconId: s
 
 /** The y where the work canvas's first default row starts. It is the next row
  * on the same grid, which leaves the pitch's built-in breathing room below the
- * App shortcuts without introducing a second, visibly misaligned origin. */
+ * App shortcuts without introducing a second, visibly misaligned origin.
+ * Utility notices can supply the count of their visible shortcut projection. */
 export function pawDesktopWorkOriginY(
   columns: number,
   shortcutOriginY: number = PAW_DESKTOP_GRID.originY,
+  shortcutCount: number = PAW_DESKTOP_SHORTCUT_COUNT,
 ): number {
-  const appRows = Math.ceil(PAW_DESKTOP_SHORTCUT_COUNT / Math.max(1, columns));
+  const appRows = Math.ceil(Math.max(0, shortcutCount) / Math.max(1, columns));
   return shortcutOriginY + appRows * PAW_DESKTOP_GRID.pitchY;
 }
 

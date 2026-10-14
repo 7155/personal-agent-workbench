@@ -67,6 +67,17 @@ describe('PAWOS desktop grid', () => {
     expect((pawDesktopWorkOriginY(layout.columns) - PAW_DESKTOP_GRID.originY) % PAW_DESKTOP_GRID.pitchY).toBe(0);
   });
 
+  it('keeps a notice below the shortcuts actually present on a narrow desktop', () => {
+    const layout = pawDesktopShortcutLayout(375);
+    const visibleShortcutCount = 15;
+    const lastShortcut = pawDesktopGridPosition(visibleShortcutCount - 1, layout.columns, layout.originY);
+    const noticeY = pawDesktopWorkOriginY(layout.columns, layout.originY, visibleShortcutCount);
+
+    expect(noticeY).toBeGreaterThan(lastShortcut.y + SHORTCUT_HEIGHT);
+    expect(noticeY + 54).toBeLessThan(812 - 48 - 70);
+    expect(pawDesktopWorkOriginY(layout.columns, layout.originY, 0)).toBe(layout.originY);
+  });
+
   it('repairs persisted off-grid and duplicate coordinates around fixed default icons', () => {
     const persisted = {
       'app:agent': { x: 731, y: 418 },
