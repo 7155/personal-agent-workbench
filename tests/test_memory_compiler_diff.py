@@ -15,7 +15,7 @@ from rag_ime.memory_generator import (
     GeneratedLexiconPhrase,
     GeneratedMemoryItem,
     SuggestedHiddenEvent,
-    VcpRebuildConfig,
+    MemoryGeneratorConfig,
 )
 from rag_ime.memory_models import ImeQueryContext
 from rag_ime.models import InputEvent
@@ -25,7 +25,7 @@ import rag_ime.memory_compiler as memory_compiler_module
 class FakeCompilerGenerator:
     calls: list[dict[str, object]] = []
 
-    def __init__(self, config: VcpRebuildConfig):
+    def __init__(self, config: MemoryGeneratorConfig):
         self.config = config
 
     @property
@@ -36,7 +36,7 @@ class FakeCompilerGenerator:
     def from_env_path(cls, env_path=None):
         cls.calls.append({"envPath": str(env_path or "")})
         return cls(
-            VcpRebuildConfig(
+            MemoryGeneratorConfig(
                 api_base_url="https://api.example.com/v1",
                 api_key="fake-key",
                 model="deepseek-v4-flash",
@@ -142,9 +142,9 @@ class MemoryCompilerDiffTests(unittest.TestCase):
         self.assertIn("[REDACTED]", serialized)
 
     def test_memory_compile_cli_is_dry_run_by_default_and_apply_rollback_uses_diff(self) -> None:
-        original = memory_compiler_module.VcpRebuildMemoryGenerator
+        original = memory_compiler_module.DeepSeekMemoryGenerator
         FakeCompilerGenerator.calls = []
-        memory_compiler_module.VcpRebuildMemoryGenerator = FakeCompilerGenerator
+        memory_compiler_module.DeepSeekMemoryGenerator = FakeCompilerGenerator
         try:
             self.core.record_event(
                 InputEvent(
@@ -243,12 +243,12 @@ class MemoryCompilerDiffTests(unittest.TestCase):
             self.assertNotIn("stable:本地检索优先", memory_ids_after)
             self.assertNotIn("phrase:连续预测", memory_ids_after)
         finally:
-            memory_compiler_module.VcpRebuildMemoryGenerator = original
+            memory_compiler_module.DeepSeekMemoryGenerator = original
 
     def test_memory_compile_save_draft_preserves_review_workflow(self) -> None:
-        original = memory_compiler_module.VcpRebuildMemoryGenerator
+        original = memory_compiler_module.DeepSeekMemoryGenerator
         FakeCompilerGenerator.calls = []
-        memory_compiler_module.VcpRebuildMemoryGenerator = FakeCompilerGenerator
+        memory_compiler_module.DeepSeekMemoryGenerator = FakeCompilerGenerator
         try:
             self.core.record_event(
                 InputEvent(
@@ -319,4 +319,4 @@ class MemoryCompilerDiffTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertEqual(apply_payload["run"]["status"], "applied")
         finally:
-            memory_compiler_module.VcpRebuildMemoryGenerator = original
+            memory_compiler_module.DeepSeekMemoryGenerator = original

@@ -186,9 +186,10 @@ from .memory_curation import (
 )
 from .memory_generator import (
     MemoryGenerationError,
-    VcpRebuildMemoryGenerator,
+    DeepSeekMemoryGenerator,
     generated_memory_context,
     generated_memory_dedupe_tag,
+    generated_memory_dedupe_tags,
 )
 from .memory_projection import MemoryProjectionWorker
 from .models import MemoryAction
@@ -3739,7 +3740,7 @@ class DebugImeService:
                 }
             )
 
-        # Like VCP's Time path, rank only inside the explicit range. Semantic
+        # Rank timeline evidence only inside the explicit range. Semantic
         # terms may reorder the time lane, but cannot leak an old memory into it.
         selected = sorted(candidates, key=lambda item: (float(item["score"]), int(item["sourceCreatedAtMs"])), reverse=True)[:12]
         selected.sort(key=lambda item: int(item["sourceCreatedAtMs"]))
@@ -6503,7 +6504,7 @@ class DebugImeService:
         dry_run = _bool(payload.get("dryRun"), default=False)
         allow_duplicates = _bool(payload.get("allowDuplicates"), default=False)
         try:
-            generator = VcpRebuildMemoryGenerator.from_env_path(
+            generator = DeepSeekMemoryGenerator.from_env_path(
                 _string(payload.get("modelEnvPath")) or _string(payload.get("vcpEnvPath")) or None
             )
             report = generator.generate(
@@ -6523,7 +6524,9 @@ class DebugImeService:
         provider_tag = report.provider
         for item in report.items:
             dedupe_tag = generated_memory_dedupe_tag(item.text)
-            if not allow_duplicates and self.core.has_event_tag(dedupe_tag):
+            if not allow_duplicates and any(
+                self.core.has_event_tag(tag) for tag in generated_memory_dedupe_tags(item.text)
+            ):
                 duplicate_skipped += 1
                 continue
             tags = tuple(
@@ -6531,7 +6534,7 @@ class DebugImeService:
                     (
                         "generated-memory",
                         provider_tag,
-                        "aimemo",
+                        "memory-distillation",
                         dedupe_tag,
                         *item.tags,
                     )

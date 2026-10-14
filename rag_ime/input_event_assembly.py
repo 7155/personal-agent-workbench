@@ -11,6 +11,7 @@ from typing import Iterable, Mapping, Sequence
 from .daily_planner import estimate_tokens
 from .input_quality import (
     FINALIZED_INPUT_SOURCE,
+    INTERNAL_EVENT_SOURCES,
     RIME_FRAGMENT_SOURCE,
     assess_input_text,
     source_context_enabled,
@@ -21,13 +22,6 @@ from .text_utils import compact_whitespace, stable_text_hash
 INPUT_CONTEXT_SCHEMA_VERSION = "rag-ime.recent-complete-input-context.v1"
 
 _RIME_FRAGMENT_SOURCE = RIME_FRAGMENT_SOURCE
-_SKIPPED_SOURCES = {
-    "api_core_optimizer",
-    "api_lexicon_optimizer",
-    "squirrel_rime_sidecar",
-    "vcp_memory_generator",
-    "ime_demo_fixture",
-}
 _SENTENCE_END_RE = re.compile(r"[。！？!?；;.]$")
 _EXPLICIT_DATE_RE = re.compile(r"(?<!\d)(20\d{2})[-年/.](\d{1,2})[-月/.](\d{1,2})日?(?!\d)")
 
@@ -232,7 +226,7 @@ def assemble_input_rows(rows: Sequence[Mapping[str, object]]) -> list[dict[str, 
     for row in rows:
         source = compact_whitespace(str(row["source"] if "source" in row.keys() else ""))
         text = compact_whitespace(str(row["committed_text"] if "committed_text" in row.keys() else row.get("text", "")))
-        if source in _SKIPPED_SOURCES or not text:
+        if source in INTERNAL_EVENT_SOURCES or not text:
             continue
         tags = _tags(row)
         if source == "codex_history" and "role:user" not in tags:

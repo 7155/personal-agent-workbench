@@ -3,16 +3,20 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
 from rag_ime.memory_compiler import compiler_generator_from_env
 from rag_ime.memory_generator import (
     MemoryGenerationError,
-    VcpRebuildMemoryGenerator,
+    DeepSeekMemoryGenerator,
     _build_openai_url,
     _core_optimization_max_tokens,
-    default_vcp_rebuild_env_path,
+    default_memory_generator_env_path,
+    generated_memory_context,
+    generated_memory_dedupe_tags,
     _extract_json_object,
     _parse_generated_lexicon_phrases,
     _parse_generated_memory_items,
@@ -21,6 +25,52 @@ from rag_ime.memory_generator import (
 
 
 class MemoryGeneratorTests(unittest.TestCase):
+    def test_cli_keeps_retired_option_at_the_parse_boundary_only(self) -> None:
+        from rag_ime import cli
+
+        captured = []
+
+        def capture_arguments(args):
+            captured.append(args)
+            raise RuntimeError("arguments captured before any runtime execution")
+
+        with patch.dict("os.environ", {
+            "RAG_IME_MEMORY_GENERATOR_ENV": "", "RAG_IME_DEEPSEEK_ENV": "",
+            "RAG_IME_MODEL_ENV": "", "RAG_IME_VCP_REBUILD_ENV": "",
+        }), patch.object(cli, "_build_core", side_effect=capture_arguments):
+            with self.assertRaisesRegex(RuntimeError, "arguments captured"):
+                cli.main(["generate-memory", "待整理内容", "--vcp-env-path", "/legacy/model.env"])
+        self.assertEqual(captured[0].legacy_model_env_path, "/legacy/model.env")
+        self.assertFalse(hasattr(captured[0], "vcp_env_path"))
+        output = StringIO()
+        with redirect_stdout(output), self.assertRaises(SystemExit) as result:
+            cli.main(["generate-memory", "--help"])
+        self.assertEqual(result.exception.code, 0)
+        self.assertIn("--model-env-path", output.getvalue())
+        self.assertNotIn("--vcp-env-path", output.getvalue())
+
+    def test_generator_environment_prefers_current_keys_and_accepts_legacy_configuration(self) -> None:
+        values = {
+            "RAG_IME_MEMORY_GENERATOR_ENV": "",
+            "RAG_IME_DEEPSEEK_ENV": "",
+            "RAG_IME_MODEL_ENV": "",
+            "RAG_IME_VCP_REBUILD_ENV": "/legacy/model.env",
+        }
+        with patch.dict("os.environ", values):
+            self.assertEqual(default_memory_generator_env_path(), Path("/legacy/model.env"))
+            with patch.dict("os.environ", {"RAG_IME_MEMORY_GENERATOR_ENV": "/current/model.env"}):
+                self.assertEqual(default_memory_generator_env_path(), Path("/current/model.env"))
+
+    def test_memory_writes_use_neutral_names_and_keep_historical_dedupe_identity(self) -> None:
+        canonical, historical = generated_memory_dedupe_tags("  记忆需要证据  ")
+        self.assertTrue(canonical.startswith("generated-memory:"))
+        self.assertTrue(historical.startswith("vcp-memory:"))
+        self.assertEqual(canonical.partition(":")[2], historical.partition(":")[2])
+        self.assertEqual(generated_memory_dedupe_tags("记忆需要证据"), (canonical, historical))
+        items = _parse_generated_memory_items('{"memories":[{"text":"记忆需要保留可靠证据和来源"}]}')
+        self.assertEqual(items[0].source, "memory-distillation")
+        self.assertNotIn("VCP", generated_memory_context("来源", "上下文", "原因"))
+
     def test_default_generator_env_requires_an_explicit_provider_path(self) -> None:
         with patch.dict(
             "os.environ",
@@ -32,7 +82,7 @@ class MemoryGeneratorTests(unittest.TestCase):
             },
             clear=False,
         ):
-            self.assertIsNone(default_vcp_rebuild_env_path())
+            self.assertIsNone(default_memory_generator_env_path())
 
     def test_parse_generated_memory_items_filters_noise_and_secrets(self) -> None:
         raw = """
@@ -63,7 +113,7 @@ class MemoryGeneratorTests(unittest.TestCase):
             "https://example.com/v1/chat/completions",
         )
 
-    def test_from_env_path_reads_vcp_rebuild_settings_without_printing_key(self) -> None:
+    def test_from_env_path_reads_model_settings_without_printing_key(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             env_path = Path(tmp) / ".env"
             env_path.write_text(
@@ -79,7 +129,7 @@ class MemoryGeneratorTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            generator = VcpRebuildMemoryGenerator.from_env_path(env_path)
+            generator = DeepSeekMemoryGenerator.from_env_path(env_path)
 
         self.assertEqual(generator.config.model, "deepseek-v4-flash")
         self.assertEqual(generator.config.upstream_wire_api, "responses")
@@ -102,7 +152,7 @@ class MemoryGeneratorTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            generator = VcpRebuildMemoryGenerator.from_env_path(env_path)
+            generator = DeepSeekMemoryGenerator.from_env_path(env_path)
 
         self.assertEqual(generator.config.api_base_url, "https://api.example.com/v1")
         self.assertEqual(generator.config.model, "deepseek-v4-flash")
@@ -125,7 +175,7 @@ class MemoryGeneratorTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            generator = VcpRebuildMemoryGenerator.from_env_path(env_path)
+            generator = DeepSeekMemoryGenerator.from_env_path(env_path)
             captured = {}
 
             class FakeResponse:
@@ -165,7 +215,7 @@ class MemoryGeneratorTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            generator = VcpRebuildMemoryGenerator.from_env_path(env_path)
+            generator = DeepSeekMemoryGenerator.from_env_path(env_path)
             captured = {}
 
             class FakeResponse:
@@ -209,7 +259,7 @@ class MemoryGeneratorTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            generator = VcpRebuildMemoryGenerator.from_env_path(env_path)
+            generator = DeepSeekMemoryGenerator.from_env_path(env_path)
 
             class FakeResponse:
                 def __enter__(self):
@@ -247,7 +297,7 @@ class MemoryGeneratorTests(unittest.TestCase):
             )
 
             with self.assertRaises(MemoryGenerationError):
-                VcpRebuildMemoryGenerator.from_env_path(env_path)
+                DeepSeekMemoryGenerator.from_env_path(env_path)
 
     def test_compiler_generator_accepts_dsv4_alias(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -19,6 +19,7 @@ from .activity_timeline_curation import (
 )
 from .contracts.json_schema import validate_contract
 from .db import apply_database_migrations
+from .input_quality import INTERNAL_EVENT_SOURCES
 from .local_calendar import resolve_calendar_timezone as _resolve_timezone
 from .memory_ingest import normalize_text
 from .memory_projection import RETRIEVAL_DOCS_PROJECTION, enqueue_memory_projection
@@ -38,16 +39,6 @@ _MAX_SEMANTIC_TASKS_PER_DAY = 3
 _FRAGMENT_BURST_GAP_MS = 20 * 1_000
 TIMELINE_SEGMENTATION_MODE = "semantic_task_v5"
 _TIMELINE_SEGMENTATION_MODE = TIMELINE_SEGMENTATION_MODE
-
-_INTERNAL_EVENT_SOURCES = frozenset(
-    {
-        "api_core_optimizer",
-        "api_lexicon_optimizer",
-        "squirrel_rime_sidecar",
-        "vcp_memory_generator",
-        "ime_demo_fixture",
-    }
-)
 
 
 class StaleActivityTimelineError(ValueError):
@@ -165,10 +156,10 @@ class DailyActivityTimelineStore:
                 LEFT JOIN memory_state s ON s.event_id = e.id
                 WHERE e.created_at_ms >= ? AND e.created_at_ms < ?
                   AND COALESCE(s.deleted, 0) = 0
-                  AND e.source NOT IN ({_placeholders(_INTERNAL_EVENT_SOURCES)})
+                  AND e.source NOT IN ({_placeholders(INTERNAL_EVENT_SOURCES)})
                 ORDER BY e.project
                 """,
-                (start_ms, end_ms, *sorted(_INTERNAL_EVENT_SOURCES)),
+                (start_ms, end_ms, *sorted(INTERNAL_EVENT_SOURCES)),
             ).fetchall()
         projects = tuple(str(row["project"] or "") for row in rows)
         if self.project:
@@ -347,10 +338,10 @@ class DailyActivityTimelineStore:
                               AND tombstone.target_value = ('event:' || e.id))
                         )
                   )
-                  AND e.source NOT IN ({_placeholders(_INTERNAL_EVENT_SOURCES)})
+                  AND e.source NOT IN ({_placeholders(INTERNAL_EVENT_SOURCES)})
                 ORDER BY e.created_at_ms ASC
                 """,
-                (self.project, *sorted(_INTERNAL_EVENT_SOURCES)),
+                (self.project, *sorted(INTERNAL_EVENT_SOURCES)),
             ).fetchall()
         source_dates = sorted(
             {
@@ -1022,14 +1013,14 @@ class DailyActivityTimelineStore:
                           AND tombstone.target_value = ('event:' || e.id))
                     )
               )
-              AND e.source NOT IN ({_placeholders(_INTERNAL_EVENT_SOURCES)})
+              AND e.source NOT IN ({_placeholders(INTERNAL_EVENT_SOURCES)})
             ORDER BY e.created_at_ms ASC, e.id ASC
             """,
             (
                 start_ms,
                 end_ms,
                 self.project,
-                *sorted(_INTERNAL_EVENT_SOURCES),
+                *sorted(INTERNAL_EVENT_SOURCES),
             ),
         ).fetchall()
         return [

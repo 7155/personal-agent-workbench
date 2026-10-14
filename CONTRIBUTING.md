@@ -62,6 +62,16 @@ selector or a parallel page/router implementation. Product browser tests use
 this same entry with an isolated mock transport; component fixtures remain
 explicitly synthetic.
 
+## Naming and Compatibility
+
+Name project-owned classes, functions, resources and new metadata by their
+responsibility, not by a reference project's brand. External repository paths,
+source identities, licenses and quoted requirements retain their real names.
+Keep retired configuration keys and persisted identities at explicit read
+compatibility boundaries; new writes use the current vocabulary. A rename of
+stored deduplication tags must still recognize older tags, and generated
+contracts must be rebuilt from their source schema.
+
 ## Verification
 
 Run focused tests while working. Before a substantial pull request, run:

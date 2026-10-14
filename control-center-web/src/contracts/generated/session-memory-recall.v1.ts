@@ -22,7 +22,7 @@ export interface SessionMemoryRecallV1 {
     timelineIntent: TimelineIntent;
   };
   retrieval: {
-    strategy: 'vcp_hybrid_book_atom';
+    strategy: 'hybrid_book_atom' | 'vcp_hybrid_book_atom';
     primaryQuery: string;
     matchedAliases: string[];
     activatedTags: string[];

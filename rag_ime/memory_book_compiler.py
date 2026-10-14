@@ -18,6 +18,7 @@ from .input_event_assembly import (
 )
 from .input_quality import (
     FINALIZED_INPUT_SOURCE,
+    MODEL_GENERATED_EVENT_SOURCES,
     RIME_FRAGMENT_SOURCE,
     assess_input_text,
     source_context_enabled,
@@ -117,12 +118,6 @@ _PATH_RE = re.compile(
 )
 _EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 _RIME_FRAGMENT_SOURCE = RIME_FRAGMENT_SOURCE
-_MODEL_GENERATED_EVENT_SOURCES = {
-    "api_core_optimizer",
-    "api_lexicon_optimizer",
-    "squirrel_rime_sidecar",
-    "vcp_memory_generator",
-}
 _NON_MEMORY_EVENT_SOURCES = {
     "ime_demo_fixture",
 }
@@ -370,7 +365,7 @@ def _reconstruct_memory_source_events(
                 excluded_counts.get(f"{source}:source_not_enabled", 0) + 1
             )
             continue
-        if source in _MODEL_GENERATED_EVENT_SOURCES or source in _NON_MEMORY_EVENT_SOURCES:
+        if source in MODEL_GENERATED_EVENT_SOURCES or source in _NON_MEMORY_EVENT_SOURCES:
             excluded_counts[source] = excluded_counts.get(source, 0) + 1
             continue
         if source == _RIME_FRAGMENT_SOURCE:
@@ -389,7 +384,7 @@ def _reconstruct_memory_source_events(
         "modelEventCount": len(filtered),
         "collapsedEventCount": max(0, len(raw_events) - sum(excluded_counts.values()) - len(result)),
         "excludedGeneratedEventCount": sum(
-            count for source, count in excluded_counts.items() if source in _MODEL_GENERATED_EVENT_SOURCES
+            count for source, count in excluded_counts.items() if source in MODEL_GENERATED_EVENT_SOURCES
         ),
         "excludedNonMemoryEventCount": sum(
             count for source, count in excluded_counts.items() if source in _NON_MEMORY_EVENT_SOURCES

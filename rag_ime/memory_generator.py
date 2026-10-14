@@ -16,7 +16,7 @@ from .text_utils import compact_whitespace, truncate_text
 
 
 @dataclass(frozen=True)
-class VcpRebuildConfig:
+class MemoryGeneratorConfig:
     api_base_url: str
     api_key: str
     model: str
@@ -81,13 +81,10 @@ class MemoryGenerationError(RuntimeError):
     pass
 
 
-class VcpRebuildMemoryGenerator:
-    """A small AIMemo-style memory distiller backed by DeepSeek V4.
+class DeepSeekMemoryGenerator:
+    """Distill governed memory and lexicon proposals through DeepSeek V4."""
 
-    VCP/AIMemo is a design reference here, not the provider identity.
-    """
-
-    def __init__(self, config: VcpRebuildConfig):
+    def __init__(self, config: MemoryGeneratorConfig):
         if not config.api_key:
             raise MemoryGenerationError("DeepSeek V4 API key is not configured")
         _validated_deepseek_base_url(config.api_base_url)
@@ -100,8 +97,8 @@ class VcpRebuildMemoryGenerator:
         return "deepseek-v4"
 
     @classmethod
-    def from_env_path(cls, env_path: str | Path | None = None) -> "VcpRebuildMemoryGenerator":
-        resolved = Path(env_path).expanduser() if env_path else default_vcp_rebuild_env_path()
+    def from_env_path(cls, env_path: str | Path | None = None) -> "DeepSeekMemoryGenerator":
+        resolved = Path(env_path).expanduser() if env_path else default_memory_generator_env_path()
         if resolved is None or not resolved.exists():
             raise MemoryGenerationError("DeepSeek V4 env file was not found")
         values = _read_env_file(resolved)
@@ -122,7 +119,7 @@ class VcpRebuildMemoryGenerator:
             "RAG_IME_AI_API_KEY",
             "API_KEY",
         ) or read_keychain_secret(MODEL_KEYCHAIN_SERVICE, MODEL_KNOWLEDGE_ACCOUNT)
-        config = VcpRebuildConfig(
+        config = MemoryGeneratorConfig(
             api_base_url=api_base_url,
             api_key=api_key,
             model=_first_env_value(values, "RAG_IME_DEEPSEEK_MODEL", "DEEPSEEK_MODEL", "RAG_IME_AI_MODEL", "MODEL", default="deepseek-v4-flash"),
@@ -312,7 +309,15 @@ def generated_memory_dedupe_tag(text: str) -> str:
     import hashlib
 
     digest = hashlib.sha1(compact_whitespace(text).encode("utf-8")).hexdigest()[:12]
-    return f"vcp-memory:{digest}"
+    return f"generated-memory:{digest}"
+
+
+def generated_memory_dedupe_tags(text: str) -> tuple[str, str]:
+    """Read old stored tags as well as the canonical tag; write only the latter."""
+
+    canonical = generated_memory_dedupe_tag(text)
+    digest = canonical.partition(":")[2]
+    return canonical, f"vcp-memory:{digest}"
 
 
 def generated_lexicon_dedupe_tag(text: str) -> str:
@@ -324,7 +329,7 @@ def generated_lexicon_dedupe_tag(text: str) -> str:
 
 def generated_memory_context(source_text: str, recent_context: str, reason: str) -> str:
     parts = [
-        "DeepSeek V4 generated memory inspired by VCP AIMemo",
+        "DeepSeek V4 generated memory",
         f"reason: {compact_whitespace(reason)}" if reason else "",
         f"context: {compact_whitespace(recent_context)}" if recent_context else "",
         f"source: {compact_whitespace(source_text)[:240]}",
@@ -332,7 +337,7 @@ def generated_memory_context(source_text: str, recent_context: str, reason: str)
     return " | ".join(part for part in parts if part)
 
 
-def default_vcp_rebuild_env_path() -> Path | None:
+def default_memory_generator_env_path() -> Path | None:
     env_override = (
         os.environ.get("RAG_IME_MEMORY_GENERATOR_ENV", "").strip()
         or os.environ.get("RAG_IME_DEEPSEEK_ENV", "").strip()
@@ -430,7 +435,7 @@ def _parse_generated_memory_items(raw_text: str, *, max_items: int = 3) -> list[
                 tags=tuple(dict.fromkeys(tags)),
                 importance=max(0.0, min(1.0, importance)),
                 reason=reason,
-                source="vcp-aimemo",
+                source="memory-distillation",
                 evidence_event_ids=tuple(dict.fromkeys(evidence_event_ids)),
             )
         )
