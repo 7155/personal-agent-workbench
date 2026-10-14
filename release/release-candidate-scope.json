@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-14T22:07:39.451619+00:00",
+  "generatedAt": "2026-10-14T22:38:39.976262+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
-    "branch": "undo/paw-keyboard-context-20261015",
-    "baseCommit": "79313f54fa0668556269419263af25993054f13b",
-    "candidateCommitPolicy": "Preserve keyboard editing commands and move focus to the explicitly selected work surface without starting or changing tasks."
+    "branch": "undo/paw-sidecar-runtime-dependency-20261015",
+    "baseCommit": "f51a50364fb621e409def440ba2529aa5ce5c972",
+    "candidateCommitPolicy": "Declare the resident Sidecar schema validator as a base runtime dependency and fail preflight before replacing source when it is missing."
   },
   "dispositions": {
     "keep_release": "Retain task-owned source and release metadata.",
@@ -13,16 +13,12 @@
     "other_work_not_in_release": "Preserve unrelated work outside this candidate."
   },
   "groups": {
-    "native_edit_commands": {
-      "description": "native edit commands",
-      "pathCount": 3
-    },
-    "launcher_focus": {
-      "description": "launcher focus",
+    "runtime_dependencies": {
+      "description": "runtime dependencies",
       "pathCount": 2
     },
-    "task_detail_focus": {
-      "description": "task detail focus",
+    "sidecar_preflight": {
+      "description": "sidecar preflight",
       "pathCount": 2
     },
     "release_metadata": {
@@ -32,78 +28,56 @@
   },
   "items": [
     {
-      "path": "control-center-web/electron/application-menu-base.mjs",
-      "status": "added",
-      "group": "native_edit_commands",
-      "disposition": "keep_release",
-      "reason": "Repair observed keyboard context while preserving existing callbacks, drafts and task state."
-    },
-    {
-      "path": "control-center-web/electron/application-menu-base.test.mjs",
-      "status": "added",
-      "group": "native_edit_commands",
-      "disposition": "keep_release",
-      "reason": "Repair observed keyboard context while preserving existing callbacks, drafts and task state."
-    },
-    {
-      "path": "control-center-web/electron/main.mjs",
+      "path": "pyproject.toml",
       "status": "modified",
-      "group": "native_edit_commands",
+      "group": "runtime_dependencies",
       "disposition": "keep_release",
-      "reason": "Repair observed keyboard context while preserving existing callbacks, drafts and task state."
+      "reason": "Keep no-dev runtime installation consistent with unconditional Jev imports and protect resident source from an unusable interpreter."
     },
     {
-      "path": "control-center-web/src/paw-os/shell/PawDesktop.tsx",
+      "path": "uv.lock",
       "status": "modified",
-      "group": "launcher_focus",
+      "group": "runtime_dependencies",
       "disposition": "keep_release",
-      "reason": "Repair observed keyboard context while preserving existing callbacks, drafts and task state."
+      "reason": "Keep no-dev runtime installation consistent with unconditional Jev imports and protect resident source from an unusable interpreter."
     },
     {
-      "path": "control-center-web/src/paw-os/shell/PawDesktop.test.tsx",
+      "path": "scripts/install_sidecar_launch_agent.sh",
       "status": "modified",
-      "group": "launcher_focus",
+      "group": "sidecar_preflight",
       "disposition": "keep_release",
-      "reason": "Repair observed keyboard context while preserving existing callbacks, drafts and task state."
+      "reason": "Keep no-dev runtime installation consistent with unconditional Jev imports and protect resident source from an unusable interpreter."
     },
     {
-      "path": "control-center-web/src/features/schedules/SchedulesApp.tsx",
+      "path": "tests/test_launch_agent_script.py",
       "status": "modified",
-      "group": "task_detail_focus",
+      "group": "sidecar_preflight",
       "disposition": "keep_release",
-      "reason": "Repair observed keyboard context while preserving existing callbacks, drafts and task state."
-    },
-    {
-      "path": "control-center-web/src/features/schedules/SchedulesApp.test.tsx",
-      "status": "modified",
-      "group": "task_detail_focus",
-      "disposition": "keep_release",
-      "reason": "Repair observed keyboard context while preserving existing callbacks, drafts and task state."
+      "reason": "Keep no-dev runtime installation consistent with unconditional Jev imports and protect resident source from an unusable interpreter."
     },
     {
       "path": "CHANGELOG.md",
       "status": "modified",
       "group": "release_metadata",
       "disposition": "keep_release",
-      "reason": "Repair observed keyboard context while preserving existing callbacks, drafts and task state."
+      "reason": "Keep no-dev runtime installation consistent with unconditional Jev imports and protect resident source from an unusable interpreter."
     },
     {
       "path": "release/release-candidate-scope.json",
       "status": "modified",
       "group": "release_metadata",
       "disposition": "keep_release",
-      "reason": "Repair observed keyboard context while preserving existing callbacks, drafts and task state."
+      "reason": "Keep no-dev runtime installation consistent with unconditional Jev imports and protect resident source from an unusable interpreter."
     }
   ],
   "summary": {
-    "pathCount": 9,
+    "pathCount": 6,
     "dispositionCounts": {
-      "keep_release": 9
+      "keep_release": 6
     },
     "groupCounts": {
-      "native_edit_commands": 3,
-      "launcher_focus": 2,
-      "task_detail_focus": 2,
+      "runtime_dependencies": 2,
+      "sidecar_preflight": 2,
       "release_metadata": 2
     },
     "unclassifiedPathCount": 0,

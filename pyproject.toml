@@ -13,6 +13,8 @@ dependencies = [
   # ingestion must report a parse result rather than fail only on protected
   # documents, so keep this in the base worker runtime.
   "cryptography>=3.1,<51",
+  # Jev submission validation is imported by the resident Sidecar.
+  "jsonschema>=4.0,<5",
   "pypdf>=5.0,<7",
   "PyYAML>=6.0,<7",
 ]
@@ -43,7 +45,6 @@ knowledge-ann = [
 
 [dependency-groups]
 dev = [
-  "jsonschema>=4.0,<5",
   "numpy>=2.0,<3",
   "Pillow>=12.0,<13",
 ]

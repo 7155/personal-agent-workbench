@@ -5,6 +5,9 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Include Jev's schema validator in base runtime installs and reject Python
+  environments missing it before replacing the resident Sidecar source.
+
 - Keep launcher focus in the selected App without returning to another window's
   draft, and give keyboard-opened task details a named focus landing.
 

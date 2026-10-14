@@ -9,6 +9,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -1087,6 +1088,40 @@ class LaunchAgentScriptTests(unittest.TestCase):
             source.index('$APP_SUPPORT_DIR/KnowledgeRuntime/.venv/bin/python'),
             source.index('$ROOT/.venv/bin/python'),
         )
+
+    def test_base_install_includes_jev_schema_validation_dependency(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        project = tomllib.loads((root / "pyproject.toml").read_text())
+        self.assertTrue(any(item.startswith("jsonschema") for item in project["project"]["dependencies"]))
+        lock = tomllib.loads((root / "uv.lock").read_text())
+        package = next(item for item in lock["package"] if item["name"] == "personal-agent-workbench")
+        self.assertIn("jsonschema", {item["name"] for item in package["dependencies"]})
+
+    def test_sidecar_rejects_missing_schema_validator_before_replacing_runtime(self) -> None:
+        root = self._sidecar_checkout()
+        with tempfile.TemporaryDirectory(prefix="paw-missing-schema-preflight-") as tmp:
+            blockers = Path(tmp) / "modules"
+            blockers.mkdir()
+            for name in ("pypdf", "yaml"):
+                (blockers / f"{name}.py").write_text("")
+            (blockers / "jsonschema.py").write_text("raise ImportError('schema validator unavailable')\n")
+            native = root / "test-tools" / "launchctl"
+            native.write_text("#!/bin/sh\nexit 98\n")
+            native.chmod(0o755)
+            support = Path(tmp) / "runtime"
+            result = subprocess.run(
+                ["bash", str(root / "scripts" / "install_sidecar_launch_agent.sh")],
+                cwd=root,
+                env={**os.environ, "HOME": tmp, "PYTHONPATH": str(blockers),
+                     "RAG_IME_APP_SUPPORT_DIR": str(support),
+                     "RAG_IME_PYTHON": sys.executable, "RAG_IME_KNOWLEDGE_PYTHON": sys.executable,
+                     "RAG_IME_LAUNCH_AGENT_DRY_RUN": "0", "RAG_IME_EMBEDDING_PROVIDER": "local-hash",
+                     "RAG_IME_LAUNCH_AGENT_LABEL": "com.rag-ime.schema-preflight-test"},
+                text=True, capture_output=True, timeout=20,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("pypdf/yaml/jsonschema", result.stderr)
+            self.assertFalse((support / "app").exists(), "An unusable Python must not replace the installed runtime")
 
     def test_install_sidecar_launch_agent_uses_mlx_capable_knowledge_python(self) -> None:
         root = self._sidecar_checkout()
