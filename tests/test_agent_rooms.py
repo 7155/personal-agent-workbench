@@ -262,7 +262,7 @@ class AgentRoomTests(unittest.TestCase):
             title="身份迁移",
             routing_policy="natural",
             participants=[
-                self._participant("future_participant-v1", "未来"),
+                self._participant("vcp-v1", "未来"),
                 self._participant("zhiyou-v1", "此刻"),
             ],
         )

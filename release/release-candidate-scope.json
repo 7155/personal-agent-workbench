@@ -273,6 +273,8 @@
     },
     "groupCounts": {
       "product_naming": 35
-    }
+    },
+    "unclassifiedPathCount": 0,
+    "otherWorkNotInReleasePathCount": 0
   }
 }
