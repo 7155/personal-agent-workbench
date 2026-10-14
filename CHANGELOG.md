@@ -10,6 +10,9 @@ source checkpoint is not a signed and notarized macOS binary release.
   cancel retired reads. Keep message actions clickable and return focus to
   the original branch action when closing the conversation path.
 
+- Preserve the first workspace group edit and unsaved group text across
+  directory refreshes; keep untouched fields aligned with stored metadata.
+
 - Name memory generation and hybrid recall by their responsibilities, use
   neutral source-review resource names, and retain historical configuration,
   snapshots and duplicate detection at explicit compatibility boundaries.

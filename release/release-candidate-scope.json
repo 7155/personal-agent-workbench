@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-14T15:35:49.321458+00:00",
+  "generatedAt": "2026-10-14T15:58:13.953309+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "undo/paw-history-recovery-20261014",
     "baseCommit": "74b903e57c836b2580845dee02a0f4279e2252ca",
-    "candidateCommitPolicy": "Recover failed Session history reads and conversation-path focus through existing UI and transport owners; source checks do not imply installed or real Agent acceptance."
+    "candidateCommitPolicy": "Recover failed Session history reads, conversation-path focus and workspace group drafts through existing UI and transport owners; source checks do not imply installed or real Agent acceptance."
   },
   "dispositions": {
     "keep_release": "Retain task-owned source and regression changes.",
@@ -16,6 +16,10 @@
     "history_recovery": {
       "description": "Session history input, conversation-path read recovery and message action reachability.",
       "pathCount": 11
+    },
+    "work_directory": {
+      "description": "Preserve first edits and unsaved group text while synchronizing stored workspace metadata.",
+      "pathCount": 2
     }
   },
   "items": [
@@ -69,6 +73,20 @@
       "reason": "Preserve in-progress history edits, cancel retired reads, retry only history observation and restore reachable message actions and focus."
     },
     {
+      "path": "control-center-web/src/features/semantic-workspace/OrganizationWorkspace.tsx",
+      "status": "modified",
+      "group": "work_directory",
+      "disposition": "keep_release",
+      "reason": "Avoid erasing the first group edit during mount and preserve unsaved text across directory refresh; retain the current command revision."
+    },
+    {
+      "path": "control-center-web/src/features/semantic-workspace/OrganizationWorkspace.v21.test.tsx",
+      "status": "modified",
+      "group": "work_directory",
+      "disposition": "keep_release",
+      "reason": "Avoid erasing the first group edit during mount and preserve unsaved text across directory refresh; retain the current command revision."
+    },
+    {
       "path": "control-center-web/src/paw-os/apps/PawSessionWorkspace.input-ownership.test.tsx",
       "status": "modified",
       "group": "history_recovery",
@@ -98,12 +116,13 @@
     }
   ],
   "summary": {
-    "pathCount": 11,
+    "pathCount": 13,
     "dispositionCounts": {
-      "keep_release": 11
+      "keep_release": 13
     },
     "groupCounts": {
-      "history_recovery": 11
+      "history_recovery": 11,
+      "work_directory": 2
     },
     "unclassifiedPathCount": 0,
     "otherWorkNotInReleasePathCount": 0
