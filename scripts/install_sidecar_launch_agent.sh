@@ -98,6 +98,7 @@ python_has_required_runtime() {
   RAG_IME_INSTALL_REQUIRE_LOCAL_EMBEDDING="$REQUIRE_LOCAL_EMBEDDING" \
     "$candidate" - <<'PY' >/dev/null 2>&1
 import os
+from jsonschema import Draft202012Validator
 import pypdf
 import yaml
 
@@ -191,10 +192,10 @@ fi
 
 if ! is_dry_run && ! python_has_required_runtime "$PYTHON_EXECUTABLE"; then
   if [[ "$REQUIRE_MLX_EMBEDDING" == "1" ]]; then
-    echo "python executable must be Python 3.12+ and import the project runtime plus MLX modules (pypdf/yaml/mlx/transformers): $PYTHON_EXECUTABLE" >&2
+    echo "python executable must be Python 3.12+ and import the project runtime plus MLX modules (pypdf/yaml/jsonschema/mlx/transformers): $PYTHON_EXECUTABLE" >&2
     echo "Run scripts/setup_knowledge_worker_env.sh or set RAG_IME_PYTHON to a compatible Python." >&2
   else
-    echo "python executable must be Python 3.12+ and import the project runtime modules (pypdf/yaml) plus stdlib (sqlite3/hashlib/ssl): $PYTHON_EXECUTABLE" >&2
+    echo "python executable must be Python 3.12+ and import the project runtime modules (pypdf/yaml/jsonschema) plus stdlib (sqlite3/hashlib/ssl): $PYTHON_EXECUTABLE" >&2
   fi
   echo "Set RAG_IME_PYTHON to a healthy Homebrew or project virtualenv Python." >&2
   exit 1
