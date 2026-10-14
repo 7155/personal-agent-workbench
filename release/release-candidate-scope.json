@@ -1,278 +1,128 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-14T11:34:55.861819+00:00",
+  "generatedAt": "2026-10-14T15:58:13.953309+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
-    "branch": "undo/paw-responsibility-names-20261014",
-    "baseCommit": "d90faf5b2e8121b3183f6522b306e083f10aa688",
-    "candidateCommitPolicy": "Replace borrowed implementation names with responsibility-based memory and external-reference names; keep historical configuration/deduplication/snapshots and upstream attribution. Source verification is separate from installation and foreground acceptance."
+    "branch": "undo/paw-history-recovery-20261014",
+    "baseCommit": "74b903e57c836b2580845dee02a0f4279e2252ca",
+    "candidateCommitPolicy": "Recover failed Session history reads, conversation-path focus and workspace group drafts through existing UI and transport owners; source checks do not imply installed or real Agent acceptance."
   },
   "dispositions": {
     "keep_release": "Retain task-owned source and regression changes.",
-    "delete_old_implementation": "Remove the old resource path after verifying consumers.",
+    "delete_old_implementation": "Remove replaced source only after checking consumers.",
     "other_work_not_in_release": "Preserve unrelated work outside this candidate."
   },
   "groups": {
-    "product_naming": {
-      "description": "Product naming cleanup, compatible memory identities, generated contracts and reference packaging.",
-      "pathCount": 35
+    "history_recovery": {
+      "description": "Session history input, conversation-path read recovery and message action reachability.",
+      "pathCount": 11
+    },
+    "work_directory": {
+      "description": "Preserve first edits and unsaved group text while synchronizing stored workspace metadata.",
+      "pathCount": 2
     }
   },
   "items": [
     {
       "path": "CHANGELOG.md",
       "status": "modified",
-      "group": "product_naming",
+      "group": "history_recovery",
       "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
+      "reason": "Preserve in-progress history edits, cancel retired reads, retry only history observation and restore reachable message actions and focus."
     },
     {
-      "path": "CONTRIBUTING.md",
+      "path": "control-center-web/src/features/agent/agent.css",
       "status": "modified",
-      "group": "product_naming",
+      "group": "history_recovery",
       "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
+      "reason": "Preserve in-progress history edits, cancel retired reads, retry only history observation and restore reachable message actions and focus."
     },
     {
-      "path": "control-center-web/src/contracts/generated-validators.ts",
+      "path": "control-center-web/src/features/agent/composer/AgentComposer.tsx",
       "status": "modified",
-      "group": "product_naming",
+      "group": "history_recovery",
       "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
+      "reason": "Preserve in-progress history edits, cancel retired reads, retry only history observation and restore reachable message actions and focus."
     },
     {
-      "path": "control-center-web/src/contracts/generated/session-memory-recall.v1.ts",
-      "status": "modified",
-      "group": "product_naming",
-      "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
-    },
-    {
-      "path": "control-center-web/src/contracts/schema-index.ts",
-      "status": "modified",
-      "group": "product_naming",
-      "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
-    },
-    {
-      "path": "eval/hybrid_rag_core_cases.jsonl",
-      "status": "modified",
-      "group": "product_naming",
-      "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
-    },
-    {
-      "path": "integrations/pi/skills/memory-curation/references/memory-patterns.md",
+      "path": "control-center-web/src/features/agent/sessions/ConversationForkDialog.test.tsx",
       "status": "added",
-      "group": "product_naming",
+      "group": "history_recovery",
       "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
+      "reason": "Preserve in-progress history edits, cancel retired reads, retry only history observation and restore reachable message actions and focus."
     },
     {
-      "path": "integrations/pi/skills/memory-curation/references/vcp-patterns.md",
-      "status": "deleted",
-      "group": "product_naming",
-      "disposition": "delete_old_implementation",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
-    },
-    {
-      "path": "rag_ime/activity_timeline.py",
+      "path": "control-center-web/src/features/agent/sessions/ConversationForkDialog.tsx",
       "status": "modified",
-      "group": "product_naming",
+      "group": "history_recovery",
       "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
+      "reason": "Preserve in-progress history edits, cancel retired reads, retry only history observation and restore reachable message actions and focus."
     },
     {
-      "path": "rag_ime/cli.py",
+      "path": "control-center-web/src/features/agent/timeline/AgentTimeline.tsx",
       "status": "modified",
-      "group": "product_naming",
+      "group": "history_recovery",
       "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
+      "reason": "Preserve in-progress history edits, cancel retired reads, retry only history observation and restore reachable message actions and focus."
     },
     {
-      "path": "rag_ime/contracts/json/session-memory-recall.v1.json",
+      "path": "control-center-web/src/features/agent/timeline/chat-rendering.test.tsx",
       "status": "modified",
-      "group": "product_naming",
+      "group": "history_recovery",
       "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
+      "reason": "Preserve in-progress history edits, cancel retired reads, retry only history observation and restore reachable message actions and focus."
     },
     {
-      "path": "rag_ime/debug_server.py",
+      "path": "control-center-web/src/features/semantic-workspace/OrganizationWorkspace.tsx",
       "status": "modified",
-      "group": "product_naming",
+      "group": "work_directory",
       "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
+      "reason": "Avoid erasing the first group edit during mount and preserve unsaved text across directory refresh; retain the current command revision."
     },
     {
-      "path": "rag_ime/input_event_assembly.py",
+      "path": "control-center-web/src/features/semantic-workspace/OrganizationWorkspace.v21.test.tsx",
       "status": "modified",
-      "group": "product_naming",
+      "group": "work_directory",
       "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
+      "reason": "Avoid erasing the first group edit during mount and preserve unsaved text across directory refresh; retain the current command revision."
     },
     {
-      "path": "rag_ime/input_quality.py",
+      "path": "control-center-web/src/paw-os/apps/PawSessionWorkspace.input-ownership.test.tsx",
       "status": "modified",
-      "group": "product_naming",
+      "group": "history_recovery",
       "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
+      "reason": "Preserve in-progress history edits, cancel retired reads, retry only history observation and restore reachable message actions and focus."
     },
     {
-      "path": "rag_ime/memory_book_compiler.py",
+      "path": "control-center-web/src/paw-os/apps/PawSessionWorkspace.tsx",
       "status": "modified",
-      "group": "product_naming",
+      "group": "history_recovery",
       "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
+      "reason": "Preserve in-progress history edits, cancel retired reads, retry only history observation and restore reachable message actions and focus."
     },
     {
-      "path": "rag_ime/memory_compiler.py",
+      "path": "control-center-web/src/paw-os/styles/paw-os-agent-fx.css",
       "status": "modified",
-      "group": "product_naming",
+      "group": "history_recovery",
       "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
-    },
-    {
-      "path": "rag_ime/memory_generator.py",
-      "status": "modified",
-      "group": "product_naming",
-      "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
-    },
-    {
-      "path": "rag_ime/session_memory_recall.py",
-      "status": "modified",
-      "group": "product_naming",
-      "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
+      "reason": "Preserve in-progress history edits, cancel retired reads, retry only history observation and restore reachable message actions and focus."
     },
     {
       "path": "release/release-candidate-scope.json",
       "status": "modified",
-      "group": "product_naming",
+      "group": "history_recovery",
       "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
-    },
-    {
-      "path": "scripts/build_paw_backend_web_model_package.py",
-      "status": "modified",
-      "group": "product_naming",
-      "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
-    },
-    {
-      "path": "scripts/templates/agent-prompt-audit.html",
-      "status": "modified",
-      "group": "product_naming",
-      "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
-    },
-    {
-      "path": "tests/test_agent_rooms.py",
-      "status": "modified",
-      "group": "product_naming",
-      "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
-    },
-    {
-      "path": "tests/test_build_paw_backend_web_model_package.py",
-      "status": "modified",
-      "group": "product_naming",
-      "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
-    },
-    {
-      "path": "tests/test_cleanup_pipeline.py",
-      "status": "modified",
-      "group": "product_naming",
-      "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
-    },
-    {
-      "path": "tests/test_debug_server.py",
-      "status": "modified",
-      "group": "product_naming",
-      "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
-    },
-    {
-      "path": "tests/test_hybrid_rag_eval.py",
-      "status": "modified",
-      "group": "product_naming",
-      "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
-    },
-    {
-      "path": "tests/test_hybrid_rag_retriever.py",
-      "status": "modified",
-      "group": "product_naming",
-      "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
-    },
-    {
-      "path": "tests/test_memory_book_compiler.py",
-      "status": "modified",
-      "group": "product_naming",
-      "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
-    },
-    {
-      "path": "tests/test_memory_book_schema.py",
-      "status": "modified",
-      "group": "product_naming",
-      "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
-    },
-    {
-      "path": "tests/test_memory_compiler_diff.py",
-      "status": "modified",
-      "group": "product_naming",
-      "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
-    },
-    {
-      "path": "tests/test_memory_generator.py",
-      "status": "modified",
-      "group": "product_naming",
-      "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
-    },
-    {
-      "path": "tests/test_memory_optimizer_sidecar_integration.py",
-      "status": "modified",
-      "group": "product_naming",
-      "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
-    },
-    {
-      "path": "tests/test_rag_core_v3.py",
-      "status": "modified",
-      "group": "product_naming",
-      "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
-    },
-    {
-      "path": "tests/test_retrieval_docs.py",
-      "status": "modified",
-      "group": "product_naming",
-      "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
-    },
-    {
-      "path": "tests/test_session_memory_recall.py",
-      "status": "modified",
-      "group": "product_naming",
-      "disposition": "keep_release",
-      "reason": "Responsibility-based product naming and verified legacy read compatibility; preserve exact third-party attribution."
+      "reason": "Preserve in-progress history edits, cancel retired reads, retry only history observation and restore reachable message actions and focus."
     }
   ],
   "summary": {
-    "pathCount": 35,
+    "pathCount": 13,
     "dispositionCounts": {
-      "keep_release": 34,
-      "delete_old_implementation": 1
+      "keep_release": 13
     },
     "groupCounts": {
-      "product_naming": 35
+      "history_recovery": 11,
+      "work_directory": 2
     },
     "unclassifiedPathCount": 0,
     "otherWorkNotInReleasePathCount": 0

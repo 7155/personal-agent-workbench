@@ -65,6 +65,55 @@ describe('OrganizationWorkspace v2.1 integration', () => {
     await waitFor(() => expect(rows.get('session:1')!.group).toBe('RAG 实验'));
     expect(await screen.findByText('分组：RAG 实验')).toBeTruthy();
   });
+  it('keeps the first edit as soon as the group field becomes editable', async () => {
+    const { rows, commands } = setupServer([makeSpace(1)]);
+    let release!: () => void; const ready = new Promise<void>(resolve => { release = resolve; });
+    const serve = fixture.request.getMockImplementation()!; let initialRead = true; let edited = false;
+    fixture.request.mockImplementation(async (request: OrganizationRequest) => {
+      if (request.pathId === 'agent.organization.read' && initialRead) { initialRead = false; await ready; }
+      return serve(request);
+    });
+    const observer = new MutationObserver(() => {
+      const input = document.querySelector<HTMLInputElement>('input[aria-label="项目 1的分组"]');
+      if (edited || !input || input.disabled) return;
+      edited = true; observer.disconnect();
+      fireEvent.click(screen.getByText('设置分组'));
+      fireEvent.change(input, { target: { value: 'RAG 实验' } });
+      fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    });
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled'] });
+    try {
+      render(<OrganizationWorkspace spaceKeys={['session:1']} selectedKey="" onOpen={vi.fn()} onClose={vi.fn()} />);
+      await waitFor(() => expect(initialRead).toBe(false)); release();
+      await waitFor(() => expect(edited).toBe(true));
+      await waitFor(() => expect(rows.get('session:1')!.group).toBe('RAG 实验'));
+      expect(commands.size).toBe(1);
+      expect(await screen.findByText('分组：RAG 实验')).toBeTruthy();
+    } finally { observer.disconnect(); }
+  });
+  it.each([false, true])('syncs a changed stored group while retaining an edited field (edited: %s)', async edited => {
+    const { rows, commands } = setupServer([makeSpace(1)]);
+    render(<OrganizationWorkspace spaceKeys={['session:1']} selectedKey="" onOpen={vi.fn()} onClose={vi.fn()} />);
+    const input = await screen.findByLabelText('项目 1的分组');
+    await waitFor(() => expect(input).toBeEnabled());
+    fireEvent.click(screen.getByText('设置分组'));
+    if (edited) fireEvent.change(input, { target: { value: '尚未保存的分组' } });
+    rows.get('session:1')!.group = '服务器已更新'; rows.get('session:1')!.revision++;
+    fireEvent.click(screen.getByRole('button', { name: '刷新工作目录' }));
+    await screen.findByText('分组：服务器已更新');
+    expect(input).toHaveValue(edited ? '尚未保存的分组' : '服务器已更新');
+    expect(commands.size).toBe(0);
+    if (edited) {
+      fireEvent.click(screen.getByRole('button', { name: '保存' }));
+      await waitFor(() => expect(rows.get('session:1')!.group).toBe('尚未保存的分组'));
+      expect(commands.size).toBe(1);
+      const writes = fixture.request.mock.calls.map(([request]) => request as OrganizationRequest)
+        .filter(request => request.pathId === 'agent.organization.command');
+      expect(writes).toHaveLength(1);
+      expect(writes[0].body).toMatchObject({ expectedRevision: 1, operation: 'group', value: '尚未保存的分组' });
+      expect(await screen.findByText('分组：尚未保存的分组')).toBeTruthy();
+    }
+  });
   it('remounting the panel preserves an uncertain command for explicit same-ID reconciliation', async () => {
     const { rows, commands } = setupServer([makeSpace(1)], true);
     const props = { spaceKeys: ['session:1'], selectedKey: '', onOpen: vi.fn(), onClose: vi.fn() };

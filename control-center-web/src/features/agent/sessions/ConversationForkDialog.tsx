@@ -1,5 +1,5 @@
 import { CornerDownRight, GitBranch, LoaderCircle } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as RadioGroup from '@radix-ui/react-radio-group';
 import { useControlTransport } from '@/app/control-transport';
 import {
@@ -76,6 +76,9 @@ export function ConversationForkDialog({
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
+  const [readError, setReadError] = useState(false);
+  const [readAttempt, setReadAttempt] = useState(0);
+  const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open || !sessionId) return;
@@ -83,31 +86,43 @@ export function ConversationForkDialog({
       ? initialEntryId ?? ''
       : nodes.at(-1)?.entryId ?? '';
     setSelectedId(preferred);
+    setReadError(false);
+  }, [initialEntryId, nodes, open, sessionId, transport]);
+
+  useEffect(() => {
+    if (!open || !sessionId) return;
     if (!branchAvailable || branchBlocked) {
       setItems([]);
       setLoading(false);
       setError('');
+      setReadError(false);
       return;
     }
     let active = true;
+    const abort = new AbortController();
+    setItems([]);
     setLoading(true);
     setError('');
     void transport.request<Record<string, unknown>>({
       pathId: 'agent.session.forks.list',
       params: { sessionId },
+      signal: abort.signal,
+      timeoutMs: 45_000,
     }).then((response) => {
       if (!active) return;
       const candidates = forkCandidates(response);
       setItems(candidates);
+      setReadError(false);
     }).catch((requestError) => {
       if (!active) return;
       setItems([]);
+      setReadError(true);
       setError(publicAgentErrorText(requestError, '历史分支点暂时无法读取。'));
     }).finally(() => {
       if (active) setLoading(false);
     });
-    return () => { active = false; };
-  }, [branchAvailable, branchBlocked, initialEntryId, nodes, open, sessionId, transport]);
+    return () => { active = false; abort.abort(); };
+  }, [branchAvailable, branchBlocked, initialEntryId, nodes, open, readAttempt, sessionId, transport]);
 
   const pathNodes = useMemo(() => mergePathNodes(nodes, items), [items, nodes]);
   const selectedNode = useMemo(() => pathNodes.find((item) => item.key === selectedId), [pathNodes, selectedId]);
@@ -158,7 +173,7 @@ export function ConversationForkDialog({
           </DialogDescription>
         </DialogHeader>
         {pathNodes.length ? (
-          <RadioGroup.Root className="agent-fork-dialog__list" aria-label="对话分支点" value={selectedId} onValueChange={setSelectedId}>
+          <RadioGroup.Root ref={listRef} className="agent-fork-dialog__list" aria-label="对话分支点" value={selectedId} onValueChange={setSelectedId}>
             {pathNodes.map((item, index) => {
               const branchable = Boolean(item.branchEntryId);
               return (
@@ -182,7 +197,7 @@ export function ConversationForkDialog({
         ) : (
           <div className="agent-fork-dialog__state">当前对话还没有可回溯的消息。</div>
         )}
-        {loading ? <p className="agent-fork-dialog__status"><LoaderCircle size={14} />正在核对 Pi 分支锚点</p> : null}
+        {loading ? <p className="agent-fork-dialog__status"><LoaderCircle size={14} />正在核对历史节点</p> : null}
         {branchBlocked ? <p className="agent-fork-dialog__status">当前回合结束后可创建分支，历史节点仍可直接跳转。</p> : null}
         {!branchAvailable ? (
           <p className="agent-fork-dialog__status">
@@ -190,6 +205,10 @@ export function ConversationForkDialog({
           </p>
         ) : null}
         {error ? <p className="agent-fork-dialog__error" role="alert">{error} 历史节点仍可直接跳转。</p> : null}
+        {readError ? <p className="agent-fork-dialog__status"><Button variant="quiet" size="small" loading={loading} disabled={creating || branchBlocked} onClick={() => {
+          setReadAttempt(attempt => attempt + 1);
+          listRef.current?.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]')?.focus({ preventScroll: true });
+        }}>重试历史节点</Button></p> : null}
         <footer>
           <Button variant="quiet" onClick={() => onOpenChange(false)} disabled={creating}>取消</Button>
           <Button variant="quiet" leadingIcon={<CornerDownRight size={15} />} onClick={jumpToNode} disabled={!selectedNode?.jumpEntryId || creating}>跳到节点</Button>

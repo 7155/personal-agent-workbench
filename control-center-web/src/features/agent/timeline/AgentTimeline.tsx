@@ -3,7 +3,7 @@ import { useOptionalControlTransport } from '@/app/control-transport';
 import { recoveryScope } from '@/features/semantic-workspace/workspace-recovery';
 import { AgentRecoveryActions } from '../AgentRecoveryActions';
 import { CircleDashed, GitBranch, PencilLine, TriangleAlert } from 'lucide-react';
-import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { memo, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
 import { Virtuoso, type ListRange, type VirtuosoHandle } from 'react-virtuoso';
 import { useShallow } from 'zustand/react/shallow';
 import { Button, IconButton } from '@/components/primitives';
@@ -1725,6 +1725,12 @@ function MessageView({
     && Boolean(onEditMessage);
   const showStreaming = !user && (streaming ?? message.status === 'streaming');
   const visibleStatus = showStreaming ? 'streaming' : message.status === 'streaming' ? 'completed' : message.status;
+  function openFork(event: MouseEvent<HTMLButtonElement>): void {
+    // IconButton releases pointer focus on mouse-up. Controlled Dialogs need
+    // the opener focused when they mount so Escape can return to this action.
+    event.currentTarget.focus({ preventScroll: true });
+    onForkFromMessage?.(messageId);
+  }
   if (presentation === 'fx' && user) {
     const visibleUserMeta = [
       deliveryFeedback,
@@ -1763,7 +1769,7 @@ function MessageView({
                 label="从这条消息创建分支"
                 icon={<GitBranch size={14} />}
                 size="small"
-                onClick={() => onForkFromMessage?.(messageId)}
+                onClick={openFork}
                 tooltip
                 tooltipSide="left"
               />
@@ -1786,7 +1792,7 @@ function MessageView({
               label="从这条消息创建分支"
               icon={<GitBranch size={14} />}
               size="small"
-              onClick={() => onForkFromMessage?.(messageId)}
+              onClick={openFork}
               tooltip
               tooltipSide="left"
             />
@@ -1829,7 +1835,7 @@ function MessageView({
             label="从这条消息创建分支"
             icon={<GitBranch size={14} />}
             size="small"
-            onClick={() => onForkFromMessage?.(messageId)}
+            onClick={openFork}
             tooltip
             tooltipSide="left"
           />
@@ -1849,7 +1855,7 @@ function MessageView({
             label="从这条消息创建分支"
             icon={<GitBranch size={14} />}
             size="small"
-            onClick={() => onForkFromMessage?.(messageId)}
+            onClick={openFork}
             tooltip
             tooltipSide="left"
           />

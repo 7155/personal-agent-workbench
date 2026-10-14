@@ -70,6 +70,12 @@
   position: relative;
 }
 
+/* Keep hover/focus actions inside their own message's layout box. An absolute
+   footer extends into the next virtualized item, which intercepts its clicks. */
+.paw-desktop-root .paw-chatfx .paw-fx-message-shell > .agent-message-actions {
+  position: static;
+}
+
 .paw-desktop-root .paw-chatfx :is(.paw-user-step, .paw-fx-message-shell):hover .agent-message-actions,
 .paw-desktop-root .paw-chatfx :is(.paw-user-step, .paw-fx-message-shell):focus-within .agent-message-actions {
   opacity: 1;
