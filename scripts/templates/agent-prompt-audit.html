@@ -1383,7 +1383,7 @@
           .filter(Boolean);
         const upstream = (item.upstreamSnapshotIds || []).map((id) => snapshots.get(id)).filter(Boolean);
         const cafe = upstream.filter((entry) => entry.project === "Cafe");
-        const vcp = upstream.filter((entry) => entry.project === "VCP");
+        const memoryReferenceEntries = upstream.filter((entry) => entry.project === "VCP");
         currentCopyValue = pretty({
           comparison: item,
           productPromptRecords: local,
@@ -1448,7 +1448,7 @@
           <div class="comparison-grid">
             ${sourceColumn("本项目", revisions.Product, local, true, localSkills)}
             ${sourceColumn("Cafe", revisions.Cafe, cafe)}
-            ${sourceColumn("VCP", revisions.VCP, vcp)}
+            ${sourceColumn("VCP", revisions.VCP, memoryReferenceEntries)}
           </div>
         `;
         renderInspector({
@@ -1459,7 +1459,7 @@
           "本项目 Prompt": local.length,
           "本项目 Skill": localSkills.length,
           "Cafe 原文": cafe.length,
-          "VCP 原文": vcp.length,
+          "VCP 原文": memoryReferenceEntries.length,
           "Product commit": revisions.Product || "unknown",
           "Cafe commit": revisions.Cafe || "unknown",
           "VCP commit": revisions.VCP || "unknown",

@@ -20,7 +20,7 @@ class HybridRagEvalTests(unittest.TestCase):
         cases = load_hybrid_rag_eval_cases(self.cases_file, default_project="wisdom-weasel-rag-ime")
 
         self.assertGreaterEqual(len(cases), 4)
-        self.assertEqual(cases[0].case_id, "vcp-multilane-rag")
+        self.assertEqual(cases[0].case_id, "hybrid-multilane-rag")
         self.assertIn("bm25_tags", cases[0].must_have_lane)
 
     def test_run_hybrid_rag_eval_passes_correctness_gate(self) -> None:

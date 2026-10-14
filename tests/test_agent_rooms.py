@@ -43,7 +43,7 @@ class AgentRoomTests(unittest.TestCase):
             participants=[
                 self._participant("companion-present-v1", "澄"),
                 self._participant("companion-firstlight-v1", "Hermes"),
-                self._participant("companion-future-v1", "VCP"),
+                self._participant("companion-future-v1", "未来"),
             ],
             created_at_ms=10,
         )
@@ -57,11 +57,11 @@ class AgentRoomTests(unittest.TestCase):
         fallback = self.store.route_target(str(room["id"]), "先检查当前状态")
         self.assertEqual(fallback["roleId"], "companion-present-v1")
         fan_out = self.store.plan_routes(
-            str(room["id"]), "@澄 和 @VCP 一起回答"
+            str(room["id"]), "@澄 和 @未来 一起回答"
         )
         self.assertEqual(
             [decision["targetDisplayName"] for decision in fan_out],
-            ["澄", "VCP"],
+            ["澄", "未来"],
         )
         self.assertTrue(
             all(
@@ -295,13 +295,13 @@ class AgentRoomTests(unittest.TestCase):
             routing_policy="moderator",
             participants=[
                 self._participant("companion-present-v1", "澄"),
-                self._participant("companion-future-v1", "VCP"),
+                self._participant("companion-future-v1", "未来"),
             ],
             moderator_ordinal=1,
             created_at_ms=100,
         )
         target = self.store.route_target(str(room["id"]), "请先整理线索")
-        self.assertEqual(target["displayName"], "VCP")
+        self.assertEqual(target["displayName"], "未来")
         self.assertEqual(room["moderatorParticipantId"], target["id"])
 
         hub = AgentRoomEventHub(self.store)
@@ -999,7 +999,7 @@ class AgentRoomTests(unittest.TestCase):
             self.store.create(
                 title="人数过少",
                 routing_policy="manual_mentions",
-                participants=[self._participant("companion-future-v1", "VCP")],
+                participants=[self._participant("companion-future-v1", "未来")],
             )
 
     def test_room_accepts_eight_participants_and_rejects_nine(self) -> None:
@@ -2115,7 +2115,7 @@ class AgentRoomServiceTests(unittest.TestCase):
         hermes = next(
             item for item in room["participants"] if item["roleId"] == "companion-firstlight-v1"
         )
-        vcp = next(
+        future_participant = next(
             item for item in room["participants"] if item["roleId"] == "companion-future-v1"
         )
         work_item = self.service.room_work.create(
@@ -2123,8 +2123,8 @@ class AgentRoomServiceTests(unittest.TestCase):
             objective="完成时序数据库性能诊断",
             expected_output="给出诊断报告",
             acceptance_criteria=["诊断报告已生成"],
-            current_owner_participant_id=str(vcp["id"]),
-            created_by_participant_id=str(vcp["id"]),
+            current_owner_participant_id=str(future_participant["id"]),
+            created_by_participant_id=str(future_participant["id"]),
             client_message_id="work-item-authority-1",
             topic_id=str(room["activeTopicId"]),
             state="active",
@@ -2133,7 +2133,7 @@ class AgentRoomServiceTests(unittest.TestCase):
         with patch.object(
             self.service,
             "prompt",
-            return_value={"turnId": "turn:work-vcp"},
+            return_value={"turnId": "turn:work-future"},
         ):
             routed = self.service.post_room_message(
                 str(room["id"]),
@@ -2143,7 +2143,7 @@ class AgentRoomServiceTests(unittest.TestCase):
                 },
             )
 
-        self.assertEqual(routed["participant"]["id"], vcp["id"])
+        self.assertEqual(routed["participant"]["id"], future_participant["id"])
         self.assertEqual(routed["routeDecision"]["reason"], "work_item_owner")
         self.assertEqual(routed["workItem"]["id"], work_item["id"])
 
@@ -2159,9 +2159,9 @@ class AgentRoomServiceTests(unittest.TestCase):
 
         reassigned = self.service.room_work.reassign(
             str(work_item["id"]),
-            actor_participant_id=str(vcp["id"]),
+            actor_participant_id=str(future_participant["id"]),
             current_owner_participant_id=str(hermes["id"]),
-            reason="VCP 正式移交给 Hermes",
+            reason="未来 正式移交给 Hermes",
         )
         self.assertEqual(
             reassigned["currentOwnerParticipantId"],
@@ -2174,7 +2174,7 @@ class AgentRoomServiceTests(unittest.TestCase):
         )
         self.assertEqual(
             work_events[-1]["payload"]["previousOwnerParticipantId"],
-            vcp["id"],
+            future_participant["id"],
         )
         self.assertEqual(
             work_events[-1]["payload"]["currentOwnerParticipantId"],

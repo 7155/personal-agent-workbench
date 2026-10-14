@@ -25,7 +25,7 @@ from rag_ime.core_client import FixtureCoreClient
 import rag_ime.debug_server as debug_server_module
 from rag_ime.debug_server import DebugImeService, DebugRequestHandler, DebugServerConfig
 from rag_ime.local_sqlite_core import LocalSqliteCoreClient
-from rag_ime.memory_generator import GeneratedMemoryItem, GeneratedMemoryReport
+from rag_ime.memory_generator import GeneratedMemoryItem, GeneratedMemoryReport, generated_memory_dedupe_tags
 from rag_ime.memory_evidence_admission import transition_evidence_admission
 from rag_ime.memory_models import ImeQueryContext
 from rag_ime.models import InputEvent, InputSuggestion, MemoryAction, ModelPrediction
@@ -1099,9 +1099,9 @@ class DebugImeServiceTests(unittest.TestCase):
         self.assertNotIn("连续预测", [item["text"] for item in after["candidates"]])
 
     def test_generate_memory_endpoint_uses_deepseek_v4_generator_and_records_rows(self) -> None:
-        original = debug_server_module.VcpRebuildMemoryGenerator
+        original = debug_server_module.DeepSeekMemoryGenerator
         FakeDeepSeekV4MemoryGenerator.calls = []
-        debug_server_module.VcpRebuildMemoryGenerator = FakeDeepSeekV4MemoryGenerator
+        debug_server_module.DeepSeekMemoryGenerator = FakeDeepSeekV4MemoryGenerator
         try:
             payload = self.service.generate_memory(
                 {
@@ -1111,13 +1111,38 @@ class DebugImeServiceTests(unittest.TestCase):
                 }
             )
         finally:
-            debug_server_module.VcpRebuildMemoryGenerator = original
+            debug_server_module.DeepSeekMemoryGenerator = original
 
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["recorded"], 1)
         self.assertEqual(FakeDeepSeekV4MemoryGenerator.calls[0]["maxItems"], 2)
         history = self.service.memory_history({"generatedOnly": True, "query": "API 蒸馏"})
         self.assertEqual(history["items"][0]["text"], "用户希望输入历史先经 API 蒸馏后再进入长期记忆")
+        self.assertIn("memory-distillation", history["items"][0]["tags"])
+        self.assertTrue(any(tag.startswith("generated-memory:") for tag in history["items"][0]["tags"]))
+        self.assertFalse(any(tag.startswith("vcp-memory:") for tag in history["items"][0]["tags"]))
+
+    def test_generated_memory_does_not_duplicate_existing_historical_or_current_tags(self) -> None:
+        # The database owner, not a mocked tag lookup, decides duplicate identity.
+        for index in (1, 0):
+            text = f"用户希望输入历史先经 API 蒸馏后再进入长期记忆，案例{index}"
+            tag = generated_memory_dedupe_tags(text)[index]
+            with self.subTest(tag=tag):
+                self.service.adapter.commit_text(
+                    text, project=self.service.config.project, app="memory-test",
+                    privacy_disposition="allowed", source="api_memory_generator",
+                    tags=("generated-memory", tag),
+                )
+                report = GeneratedMemoryReport(
+                    provider="deepseek-v4", model="deepseek-v4-flash", elapsed_ms=0,
+                    items=(GeneratedMemoryItem(text=text),),
+                )
+                with patch.object(debug_server_module, "DeepSeekMemoryGenerator", FakeDeepSeekV4MemoryGenerator), \
+                        patch.object(FakeDeepSeekV4MemoryGenerator, "generate", return_value=report):
+                    result = self.service.generate_memory({"text": "请整理记忆"})
+                self.assertTrue(result["ok"])
+                self.assertEqual(result["recorded"], 0)
+                self.assertEqual(result["duplicateSkipped"], 1)
 
     def test_organize_rag_database_endpoint_reports_dry_run(self) -> None:
         report = self.service.organize_rag_database({"dryRun": True, "sampleSize": 2})

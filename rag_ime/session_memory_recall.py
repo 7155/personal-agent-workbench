@@ -356,7 +356,7 @@ class SessionMemoryRecallBuilder:
                 "timelineIntent": timeline_intent.as_dict(),
             },
             "retrieval": {
-                "strategy": "vcp_hybrid_book_atom",
+                "strategy": "hybrid_book_atom",
                 "primaryQuery": truncate_text(
                     str(_mapping(retrieval.get("query")).get("primary") or query),
                     240,

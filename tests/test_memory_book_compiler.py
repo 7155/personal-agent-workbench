@@ -2579,23 +2579,23 @@ def sample_compile_output(event_id: int) -> dict[str, object]:
             {
                 "bookKey": "2026-07-06",
                 "title": "RAG 输入法多路召回方案",
-                "summary": "用户希望借鉴 VCP 的 BM25、向量、TagMemo 和 Time。",
-                "tags": ["RAG", "输入法", "VCP"],
+                "summary": "用户希望结合 BM25、向量、TagMemo 和 Time。",
+                "tags": ["RAG", "输入法", "混合检索"],
                 "surfaceHints": ["多路召回", "TagMemo"],
-                "queryExpansions": ["VCP RAG", "Daily Book"],
+                "queryExpansions": ["混合 RAG", "Daily Book"],
                 "sourceEventIds": [event_id],
                 "confidence": 0.86,
             }
         ],
         "memoryAtoms": [
             {
-                "atomId": "atom:vcp-style-rag-core",
+                "atomId": "atom:hybrid-rag-core",
                 "kind": "project_fact",
                 "claimKey": "project:rag-ime.retrieval-architecture",
                 "canonicalText": "RAG core 应使用 BM25、向量、TagMemo 和 Time 多路召回。",
                 "summary": "用户希望底层 RAG core 成为通用上下文预测层。",
                 "tags": ["RAG core", "BM25", "TagMemo"],
-                "aliases": ["VCP式RAG"],
+                "aliases": ["混合RAG"],
                 "surfaceHints": ["混合召回", "语义图召回"],
                 "queryExpansions": ["输入法 RAG", "千问三 Qwen3"],
                 "sourceEventIds": [event_id],

@@ -1,4 +1,4 @@
-# VCP Memory Patterns Adapted by Personal Agent Workbench
+# Governed Memory Patterns
 
 Reference implementations inspected locally:
 
@@ -8,7 +8,7 @@ Reference implementations inspected locally:
 
 Personal Agent Workbench adapts those ideas as follows:
 
-| VCP pressure | Personal Agent Workbench rule |
+| Reference pattern | Personal Agent Workbench rule |
 | --- | --- |
 | Raw diary text is not the final prompt | Keep Evidence separate from Current Atom and Topic Book retrieval documents. |
 | Tool calls make memory changes observable | Pi uses governed preview/apply/rollback operations on `memory`; the Skill never writes SQLite. |

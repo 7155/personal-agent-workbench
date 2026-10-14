@@ -13,7 +13,7 @@ from rag_ime.memory_generator import (
     CoreOptimizationReport,
     GeneratedLexiconPhrase,
     GeneratedMemoryItem,
-    VcpRebuildConfig,
+    MemoryGeneratorConfig,
 )
 from rag_ime.models import InputEvent, MemoryAction
 import rag_ime.memory_compiler as memory_compiler_module
@@ -22,7 +22,7 @@ import rag_ime.memory_compiler as memory_compiler_module
 class FakeCleanupCompilerGenerator:
     calls: list[dict[str, object]] = []
 
-    def __init__(self, config: VcpRebuildConfig):
+    def __init__(self, config: MemoryGeneratorConfig):
         self.config = config
 
     @property
@@ -33,7 +33,7 @@ class FakeCleanupCompilerGenerator:
     def from_env_path(cls, env_path=None):
         cls.calls.append({"envPath": str(env_path or "")})
         return cls(
-            VcpRebuildConfig(
+            MemoryGeneratorConfig(
                 api_base_url="https://api.example.com/v1",
                 api_key="fake-key",
                 model="deepseek-v4-flash",
@@ -306,9 +306,9 @@ class CleanupPipelineCliTests(unittest.TestCase):
         )
 
     def test_cleanup_preview_deepseek_v4_is_dry_run_and_surfaces_validation(self) -> None:
-        original = memory_compiler_module.VcpRebuildMemoryGenerator
+        original = memory_compiler_module.DeepSeekMemoryGenerator
         FakeCleanupCompilerGenerator.calls = []
-        memory_compiler_module.VcpRebuildMemoryGenerator = FakeCleanupCompilerGenerator
+        memory_compiler_module.DeepSeekMemoryGenerator = FakeCleanupCompilerGenerator
         try:
             self.core.record_event(
                 InputEvent(
@@ -338,7 +338,7 @@ class CleanupPipelineCliTests(unittest.TestCase):
                 str(output_path),
             )
         finally:
-            memory_compiler_module.VcpRebuildMemoryGenerator = original
+            memory_compiler_module.DeepSeekMemoryGenerator = original
 
         self.assertEqual(code, 0)
         self.assertTrue(payload["dryRun"])

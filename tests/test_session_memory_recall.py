@@ -30,6 +30,20 @@ PROJECT = "wisdom-weasel-rag-ime"
 
 
 class SessionMemoryRecallTests(unittest.TestCase):
+    def test_current_recall_strategy_and_historical_snapshot_contract(self) -> None:
+        from copy import deepcopy
+        from rag_ime.contracts.json_schema import ContractValidationError, validate_contract
+
+        payload = self.builder.build(self.session_id, role_id="", query_text="缓存方案")["payload"]
+        self.assertEqual(payload["retrieval"]["strategy"], "hybrid_book_atom")
+        validate_contract(payload, "session-memory-recall.v1.json")
+        historical = deepcopy(payload)
+        historical["retrieval"]["strategy"] = "vcp_hybrid_book_atom"
+        validate_contract(historical, "session-memory-recall.v1.json")
+        historical["retrieval"]["strategy"] = "unknown_strategy"
+        with self.assertRaises(ContractValidationError):
+            validate_contract(historical, "session-memory-recall.v1.json")
+
     def test_selected_evidence_preserves_scope_time_and_fact_support(self):
         selected, _ = _select_hits([{
             "source_id": "timeline:review", "doc_type": "timeline",

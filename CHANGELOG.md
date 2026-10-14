@@ -5,6 +5,10 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Name memory generation and hybrid recall by their responsibilities, use
+  neutral source-review resource names, and retain historical configuration,
+  snapshots and duplicate detection at explicit compatibility boundaries.
+
 - Keep immediate window-control clicks attached to their original target while
   the opening animation stops, retain Session creator drafts when browsing work
   records, and keep narrow Room view controls reachable with 40px targets.

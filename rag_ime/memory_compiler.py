@@ -7,7 +7,7 @@ from typing import Any
 
 from .local_sqlite_core import LocalSqliteCoreClient
 from .memory_cleanup import cleanup_plan_to_payload
-from .memory_generator import CoreOptimizationReport, MemoryGenerationError, VcpRebuildMemoryGenerator
+from .memory_generator import CoreOptimizationReport, MemoryGenerationError, DeepSeekMemoryGenerator
 from .memory_ingest import normalize_text
 from .memory_models import CleanupDiffEntry, CleanupRunPlan
 from .text_utils import compact_whitespace, now_ms, token_terms, truncate_text
@@ -164,8 +164,8 @@ def compiler_generator_from_env(
     env_path: str | Path | None,
     provider: str = "",
     model: str = "",
-) -> VcpRebuildMemoryGenerator:
-    generator = VcpRebuildMemoryGenerator.from_env_path(env_path)
+) -> DeepSeekMemoryGenerator:
+    generator = DeepSeekMemoryGenerator.from_env_path(env_path)
     requested_provider = _compiler_provider_alias(provider)
     configured_provider = _compiler_provider_alias(generator.provider_name)
     if requested_provider and configured_provider != requested_provider:
@@ -174,7 +174,7 @@ def compiler_generator_from_env(
         )
     requested_model = compact_whitespace(model)
     if requested_model and requested_model != generator.config.model:
-        generator = VcpRebuildMemoryGenerator(replace(generator.config, model=requested_model))
+        generator = DeepSeekMemoryGenerator(replace(generator.config, model=requested_model))
     return generator
 
 

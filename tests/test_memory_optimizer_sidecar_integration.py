@@ -391,10 +391,10 @@ class MemoryOptimizerSidecarIntegrationTests(unittest.TestCase):
                 "urllib.request.urlopen",
                 side_effect=AssertionError("/rime-suggest must not make external HTTP calls"),
             ), patch(
-                "rag_ime.memory_generator.VcpRebuildMemoryGenerator.from_env_path",
+                "rag_ime.memory_generator.DeepSeekMemoryGenerator.from_env_path",
                 side_effect=AssertionError("/rime-suggest must not load the DeepSeek V4 generator"),
             ), patch(
-                "rag_ime.memory_compiler.VcpRebuildMemoryGenerator.from_env_path",
+                "rag_ime.memory_compiler.DeepSeekMemoryGenerator.from_env_path",
                 side_effect=AssertionError("/rime-suggest must not load the offline compiler"),
             ):
                 response = build_rime_sidecar_response(

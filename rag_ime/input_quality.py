@@ -23,13 +23,16 @@ _WORD_RE = re.compile(r"[A-Za-z0-9]+|[\u3400-\u4dbf\u4e00-\u9fff]+")
 _SENTENCE_END_RE = re.compile(r"[。！？!?；;.]$")
 _ONLY_SYMBOLS_RE = re.compile(r"^[\W_]+$", re.UNICODE)
 
-_TRANSPORT_SOURCES = {
-    "api_core_optimizer",
-    "api_lexicon_optimizer",
-    "squirrel_rime_sidecar",
-    "vcp_memory_generator",
-    "ime_demo_fixture",
-}
+MODEL_GENERATED_EVENT_SOURCES = frozenset(
+    {
+        "api_core_optimizer",
+        "api_lexicon_optimizer",
+        "squirrel_rime_sidecar",
+        "vcp_memory_generator",
+    }
+)
+# Historical source values remain readable; no new event emits the retired name.
+INTERNAL_EVENT_SOURCES = MODEL_GENERATED_EVENT_SOURCES | {"ime_demo_fixture"}
 _TRANSPORT_TAGS = {
     "group-buffer",
     "rime-commit",
@@ -118,7 +121,7 @@ def assess_input_text(
 
     if not source_context_enabled(normalized_source, tags=normalized_tags):
         reasons.append("source_not_enabled")
-    if normalized_source in _TRANSPORT_SOURCES:
+    if normalized_source in INTERNAL_EVENT_SOURCES:
         reasons.append("transport_or_generated_source")
     if not value:
         reasons.append("empty")

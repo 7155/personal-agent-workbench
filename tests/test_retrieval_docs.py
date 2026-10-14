@@ -104,7 +104,7 @@ class RetrievalDocsTests(unittest.TestCase):
         self.assertEqual(report["counts"]["book"], 1)
         self.assertIsNotNone(row)
         self.assertIn("多路召回偏好", row["raw_text"])
-        self.assertIn("VCP", row["tags_text"])
+        self.assertIn("混合检索", row["tags_text"])
         self.assertIn("多路召回", row["surface_hints_text"])
         self.assertIn("Topic Book", row["query_expansions_text"])
         self.assertEqual(row["time_key"], "topic:rag-retrieval")
@@ -115,7 +115,7 @@ class RetrievalDocsTests(unittest.TestCase):
             metadata["inlineAtoms"],
             [
                 {
-                    "atomId": "atom:vcp-style-rag-core",
+                    "atomId": "atom:hybrid-rag-core",
                     "text": "用户偏好检索系统同时使用 BM25、向量、标签和时间召回。",
                 }
             ],
@@ -261,7 +261,7 @@ class RetrievalDocsTests(unittest.TestCase):
         self.assertIsNotNone(row)
         self.assertIn("用户偏好检索系统同时使用", row["raw_text"])
         self.assertIn("RAG core", row["tags_text"])
-        self.assertIn("VCP式RAG", row["aliases_text"])
+        self.assertIn("混合RAG", row["aliases_text"])
         self.assertIn("混合召回", row["surface_hints_text"])
         self.assertIn("千问三 Qwen3", row["query_expansions_text"])
 
@@ -301,8 +301,8 @@ class RetrievalDocsTests(unittest.TestCase):
             conn.execute(
                 """
                 UPDATE memory_aliases
-                SET alias = '新版 VCP RAG'
-                WHERE memory_atom_id = 'atom:vcp-style-rag-core'
+                SET alias = '新版 混合 RAG'
+                WHERE memory_atom_id = 'atom:hybrid-rag-core'
                   AND alias_type = 'alias'
                 """
             )
@@ -325,7 +325,7 @@ class RetrievalDocsTests(unittest.TestCase):
             int(after["source_revision"]),
             int(before["source_revision"]),
         )
-        self.assertIn("新版 VCP RAG", str(after["aliases_text"]))
+        self.assertIn("新版 混合 RAG", str(after["aliases_text"]))
         with self.connect() as conn:
             self.assertEqual(
                 conn.execute(
@@ -552,7 +552,7 @@ class RetrievalDocsTests(unittest.TestCase):
             }
 
         self.assertIn(("phrase", "phrase:多路召回"), projected)
-        self.assertNotIn(("atom", "atom:vcp-style-rag-core"), projected)
+        self.assertNotIn(("atom", "atom:hybrid-rag-core"), projected)
         self.assertFalse(any(kind == "book" for kind, _ in projected))
 
     def test_retrieval_docs_rebuild_is_idempotent(self) -> None:
@@ -847,23 +847,23 @@ def sample_compile_output(event_id: int) -> dict[str, object]:
                 "bookKey": "rag-retrieval",
                 "title": "多路召回偏好",
                 "summary": "用户长期偏好同时使用 BM25、向量、标签和时间召回。",
-                "tags": ["RAG", "输入法", "VCP"],
+                "tags": ["RAG", "输入法", "混合检索"],
                 "surfaceHints": ["多路召回", "TagMemo"],
-                "queryExpansions": ["VCP RAG", "Topic Book"],
+                "queryExpansions": ["混合 RAG", "Topic Book"],
                 "sourceEventIds": [event_id],
-                "memoryAtomIds": ["atom:vcp-style-rag-core"],
+                "memoryAtomIds": ["atom:hybrid-rag-core"],
                 "confidence": 0.86,
             }
         ],
         "memoryAtoms": [
             {
-                "atomId": "atom:vcp-style-rag-core",
+                "atomId": "atom:hybrid-rag-core",
                 "kind": "durable_preference",
                 "claimKey": "preference:retrieval.multichannel",
                 "canonicalText": "用户偏好检索系统同时使用 BM25、向量、标签和时间召回。",
                 "summary": "这是跨项目复用的长期检索偏好。",
                 "tags": ["RAG core", "BM25", "TagMemo"],
-                "aliases": ["VCP式RAG"],
+                "aliases": ["混合RAG"],
                 "surfaceHints": ["混合召回", "语义图召回"],
                 "queryExpansions": ["输入法 RAG", "千问三 Qwen3"],
                 "sourceEventIds": [event_id],

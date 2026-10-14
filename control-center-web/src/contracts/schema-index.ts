@@ -25682,7 +25682,10 @@ export const contractSchemas = {
         ],
         "properties": {
           "strategy": {
-            "const": "vcp_hybrid_book_atom"
+            "enum": [
+              "hybrid_book_atom",
+              "vcp_hybrid_book_atom"
+            ]
           },
           "primaryQuery": {
             "type": "string"

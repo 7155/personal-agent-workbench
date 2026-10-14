@@ -25,17 +25,24 @@ from typing import Iterable
 
 
 PAW_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_TUTTI_ROOT = PAW_ROOT.parent / "tutti"
+DEFAULT_REFERENCE_ROOT = PAW_ROOT.parent / "tutti"
 DEFAULT_PI_ROOT = PAW_ROOT.parent / "pi"
 DEFAULT_SKILLS_ROOT = PAW_ROOT.parent / "pi-skills"
 DEFAULT_OUTPUT = PAW_ROOT / "output" / "model-review" / "paw-backend-web-model-review.zip"
 
-GUIDE_FILES = (
-    "docs/handoffs/model-bundles/README_FOR_BACKEND_WEB_MODEL.md",
-    "docs/handoffs/model-bundles/TUTTI_SYSTEM_PROMPT_INVENTORY.md",
-    "docs/handoffs/model-bundles/TUTTI_DUOAGENT_REFERENCE.md",
-    "docs/handoffs/model-bundles/PAW_SKILL_INVENTORY.md",
-)
+GUIDE_FILES = {
+    "docs/handoffs/model-bundles/README_FOR_BACKEND_WEB_MODEL.md": "README_FOR_BACKEND_WEB_MODEL.md",
+    "docs/handoffs/model-bundles/TUTTI_SYSTEM_PROMPT_INVENTORY.md": "REFERENCE_SYSTEM_PROMPT_INVENTORY.md",
+    "docs/handoffs/model-bundles/TUTTI_DUOAGENT_REFERENCE.md": "REFERENCE_AGENT_WORKFLOWS.md",
+    "docs/handoffs/model-bundles/PAW_SKILL_INVENTORY.md": "PAW_SKILL_INVENTORY.md",
+}
+REFERENCE_ARTIFACT_PATH_ALIASES = {
+    "tutti-prompts/": "references/prompts/",
+    "tutti-duoagent/": "references/agent-workflows/",
+    "TUTTI_SYSTEM_PROMPTS_EXTRACTED.md": "REFERENCE_SYSTEM_PROMPTS.md",
+    "TUTTI_SYSTEM_PROMPT_INVENTORY.md": "REFERENCE_SYSTEM_PROMPT_INVENTORY.md",
+    "TUTTI_DUOAGENT_REFERENCE.md": "REFERENCE_AGENT_WORKFLOWS.md",
+}
 AUTHORITY_FILES = (
     "AGENTS.md",
     "control-center-web/docs/README.md",
@@ -197,7 +204,7 @@ that the PAWOS foreground path accepted it. Installation, an installed Gateway
 canary, and a foreground Trace/Eval check remain separate requirements.
 """
 
-TUTTI_EXACT_PROMPT_FILES = (
+REFERENCE_EXACT_PROMPT_FILES = (
     "packages/agent/daemon/runtime/prompt_content.go",
     "packages/agent/daemon/runtime/prompt_content_test.go",
     "packages/agent/daemon/runtime/tutti_mode_host_context.go",
@@ -235,12 +242,12 @@ TUTTI_EXACT_PROMPT_FILES = (
     "packages/workspace/issue-manager/src/core/runPrompt.ts",
     "apps/desktop/scripts/generate-release-summary.mjs",
 )
-TUTTI_PROMPT_GLOBS = (
+REFERENCE_PROMPT_GLOBS = (
     "packages/agent/runtimeprep/**/*",
     "services/tuttid/service/tuttimodeexecution/**/*",
     "services/tuttid/service/workspace/app_factory_reference/**/*",
 )
-TUTTI_SCAN_ROOTS = (
+REFERENCE_SCAN_ROOTS = (
     "packages/agent/runtimeprep",
     "packages/agent/daemon/runtime",
     "packages/agent/host",
@@ -255,7 +262,7 @@ TUTTI_SCAN_ROOTS = (
 # selection explicit at its architectural seams, then scan only bounded owner
 # roots for the current symbol closure so renamed integration files are not
 # silently omitted.
-TUTTI_DUOAGENT_EXACT_FILES = (
+REFERENCE_AGENT_WORKFLOW_EXACT_FILES = (
     "docs/architecture/workspace-workflows.md",
     "docs/architecture/issue-execution.md",
     "docs/architecture/model-access-plans.md",
@@ -305,7 +312,7 @@ TUTTI_DUOAGENT_EXACT_FILES = (
     "apps/desktop/src/renderer/src/features/workspace-agent/services/internal/workspaceAgentActivityService.ts",
     "apps/desktop/src/renderer/src/features/workspace-agent/services/internal/workspaceAgentActivityService.test.ts",
 )
-TUTTI_DUOAGENT_GLOBS = (
+REFERENCE_AGENT_WORKFLOW_GLOBS = (
     "services/tuttid/biz/collabrun/**/*",
     "services/tuttid/service/collabrun/**/*",
     "services/tuttid/biz/tuttimodeactivation/**/*",
@@ -324,7 +331,7 @@ TUTTI_DUOAGENT_GLOBS = (
     "packages/agent/gui/workspaceWorkflow/tuttiModePlan/**/*",
     "packages/agent/gui/app/renderer/i18n/locales/*agentGuiCollaboration*",
 )
-TUTTI_DUOAGENT_SCAN_ROOTS = (
+REFERENCE_AGENT_WORKFLOW_SCAN_ROOTS = (
     "services/tuttid/api",
     "services/tuttid/data/workspace",
     "services/tuttid/service/agent",
@@ -337,7 +344,7 @@ TUTTI_DUOAGENT_SCAN_ROOTS = (
     "apps/desktop/src/renderer/src/features/workspace-agent",
     "apps/desktop/src/renderer/src/features/workspace-workbench",
 )
-TUTTI_DUOAGENT_SCAN_PATTERNS = (
+REFERENCE_AGENT_WORKFLOW_SCAN_PATTERNS = (
     re.compile(r"(?i)\bcollabrun|\bCollaborationRun"),
     re.compile(r"(?i)\btutti[_ -]?mode[_ -]?execution|\bTuttiModeExecution"),
     re.compile(r"(?i)\btutti(?:[_ -]?mode)?[_ -]?plan|\bTutti Mode\b"),
@@ -429,16 +436,17 @@ class SourceReceipt:
     redactions: dict[str, int]
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--tutti-root", type=Path, default=DEFAULT_TUTTI_ROOT)
+    parser.add_argument("--reference-root", type=Path, default=DEFAULT_REFERENCE_ROOT)
+    parser.add_argument("--tutti-root", dest="reference_root", type=Path, default=argparse.SUPPRESS, help=argparse.SUPPRESS)
     parser.add_argument("--pi-root", type=Path, default=DEFAULT_PI_ROOT)
     parser.add_argument("--skills-root", type=Path, default=DEFAULT_SKILLS_ROOT)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--scope", choices=("backend", "room-jev", "room-jev-fullstack"), default="backend")
     parser.add_argument("--room-pi-source", type=Path, help="Include selected Pi source needed by the Room/Jev integration")
     parser.add_argument("--check", action="store_true")
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 def load_module(name: str, path: Path) -> ModuleType:
@@ -583,20 +591,20 @@ def walk_eligible(root: Path) -> list[Path]:
     return sorted((path for path in root.rglob("*") if eligible(path, root=root)), key=lambda path: path.relative_to(root).as_posix())
 
 
-def collect_tutti_prompt_paths(tutti_root: Path) -> list[Path]:
+def collect_reference_prompt_paths(reference_root: Path) -> list[Path]:
     selected: set[Path] = set()
-    for relative in TUTTI_EXACT_PROMPT_FILES:
-        path = tutti_root / relative
-        if path.is_file() and eligible(path, root=tutti_root):
+    for relative in REFERENCE_EXACT_PROMPT_FILES:
+        path = reference_root / relative
+        if path.is_file() and eligible(path, root=reference_root):
             selected.add(path)
-    for pattern in TUTTI_PROMPT_GLOBS:
-        selected.update(path for path in tutti_root.glob(pattern) if eligible(path, root=tutti_root))
-    for relative_root in TUTTI_SCAN_ROOTS:
-        scan_root = tutti_root / relative_root
+    for pattern in REFERENCE_PROMPT_GLOBS:
+        selected.update(path for path in reference_root.glob(pattern) if eligible(path, root=reference_root))
+    for relative_root in REFERENCE_SCAN_ROOTS:
+        scan_root = reference_root / relative_root
         if not scan_root.is_dir():
             continue
         for path in walk_eligible(scan_root):
-            relative = path.relative_to(tutti_root).as_posix()
+            relative = path.relative_to(reference_root).as_posix()
             if "/generated/" in f"/{relative}/" or "/i18n/" in f"/{relative}/" or "/testdata/" in f"/{relative}/":
                 continue
             if path.name.endswith(("_test.go", ".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx")):
@@ -604,39 +612,39 @@ def collect_tutti_prompt_paths(tutti_root: Path) -> list[Path]:
             text = path.read_text(encoding="utf-8")
             if any(pattern.search(text) for _, pattern in PROMPT_SCAN_PATTERNS):
                 selected.add(path)
-    return sorted(selected, key=lambda path: path.relative_to(tutti_root).as_posix())
+    return sorted(selected, key=lambda path: path.relative_to(reference_root).as_posix())
 
 
-def collect_tutti_duoagent_paths(tutti_root: Path) -> list[Path]:
+def collect_reference_agent_workflow_paths(reference_root: Path) -> list[Path]:
     selected: set[Path] = set()
-    for relative in TUTTI_DUOAGENT_EXACT_FILES:
-        path = tutti_root / relative
-        if path.is_file() and eligible(path, root=tutti_root):
+    for relative in REFERENCE_AGENT_WORKFLOW_EXACT_FILES:
+        path = reference_root / relative
+        if path.is_file() and eligible(path, root=reference_root):
             selected.add(path)
-    for pattern in TUTTI_DUOAGENT_GLOBS:
-        selected.update(path for path in tutti_root.glob(pattern) if eligible(path, root=tutti_root))
-    for relative_root in TUTTI_DUOAGENT_SCAN_ROOTS:
-        scan_root = tutti_root / relative_root
+    for pattern in REFERENCE_AGENT_WORKFLOW_GLOBS:
+        selected.update(path for path in reference_root.glob(pattern) if eligible(path, root=reference_root))
+    for relative_root in REFERENCE_AGENT_WORKFLOW_SCAN_ROOTS:
+        scan_root = reference_root / relative_root
         if not scan_root.is_dir():
             continue
         for path in walk_eligible(scan_root):
-            relative = path.relative_to(tutti_root).as_posix()
+            relative = path.relative_to(reference_root).as_posix()
             if "/generated/" in f"/{relative}/" or "/testdata/" in f"/{relative}/":
                 continue
             text = path.read_text(encoding="utf-8")
-            if any(pattern.search(text) for pattern in TUTTI_DUOAGENT_SCAN_PATTERNS):
+            if any(pattern.search(text) for pattern in REFERENCE_AGENT_WORKFLOW_SCAN_PATTERNS):
                 selected.add(path)
-    return sorted(selected, key=lambda path: path.relative_to(tutti_root).as_posix())
+    return sorted(selected, key=lambda path: path.relative_to(reference_root).as_posix())
 
 
-def render_prompt_candidates(tutti_root: Path, roots: tuple[Path, ...]) -> str:
+def render_prompt_candidates(reference_root: Path, roots: tuple[Path, ...]) -> str:
     rows = ["path\tline\tclassifiers\tpreview"]
-    for relative_root in TUTTI_SCAN_ROOTS:
-        scan_root = tutti_root / relative_root
+    for relative_root in REFERENCE_SCAN_ROOTS:
+        scan_root = reference_root / relative_root
         if not scan_root.is_dir():
             continue
         for path in walk_eligible(scan_root):
-            relative = path.relative_to(tutti_root).as_posix()
+            relative = path.relative_to(reference_root).as_posix()
             if "/generated/" in f"/{relative}/" or "/i18n/" in f"/{relative}/" or "/testdata/" in f"/{relative}/":
                 continue
             if path.name.endswith(("_test.go", ".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx")):
@@ -655,9 +663,9 @@ def fence_for(text: str) -> str:
     return "`" * max(3, longest + 1)
 
 
-def render_tutti_extraction(staging: Path, receipts: list[SourceReceipt]) -> str:
+def render_reference_extraction(staging: Path, receipts: list[SourceReceipt]) -> str:
     prompt_receipts = sorted(
-        (receipt for receipt in receipts if receipt.category == "tutti-prompt-source"),
+        (receipt for receipt in receipts if receipt.category == "reference-prompt-source"),
         key=lambda receipt: receipt.source_relative,
     )
     sections = [
@@ -691,7 +699,7 @@ def render_tutti_extraction(staging: Path, receipts: list[SourceReceipt]) -> str
     return "\n".join(sections)
 
 
-def duoagent_layer(relative: str) -> str:
+def agent_workflow_layer(relative: str) -> str:
     if relative.startswith("docs/"):
         return "architecture"
     if "/biz/" in relative:
@@ -711,15 +719,15 @@ def duoagent_layer(relative: str) -> str:
     return "supporting-contract"
 
 
-def render_duoagent_index(receipts: list[SourceReceipt]) -> str:
+def render_agent_workflow_index(receipts: list[SourceReceipt]) -> str:
     selected = sorted(
-        (receipt for receipt in receipts if receipt.category == "tutti-duoagent-reference"),
+        (receipt for receipt in receipts if receipt.category == "agent-workflow-reference"),
         key=lambda receipt: receipt.source_relative,
     )
     layer_counts: dict[str, int] = {}
     rows: list[str] = []
     for receipt in selected:
-        layer = duoagent_layer(receipt.source_relative)
+        layer = agent_workflow_layer(receipt.source_relative)
         layer_counts[layer] = layer_counts.get(layer, 0) + 1
         test_kind = "test" if receipt.source_relative.endswith(
             ("_test.go", ".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx")
@@ -756,6 +764,9 @@ Selected files: `{len(selected)}`.
 def copy_generated_text(staging: Path, source: Path, target: str, roots: tuple[Path, ...]) -> None:
     raw = source.read_text(encoding="utf-8")
     copied, _ = sanitize(raw, roots)
+    # Normalize old package links in copied local guides, never in their source.
+    for old_path, current_path in REFERENCE_ARTIFACT_PATH_ALIASES.items():
+        copied = copied.replace(old_path, current_path)
     destination = staging / target
     if destination.exists():
         if destination.read_text(encoding="utf-8") != copied:
@@ -858,7 +869,7 @@ def render_trace_evidence_index(
     receipts: list[SourceReceipt],
     *,
     missing_prompt_exact: list[str],
-    missing_duoagent_exact: list[str],
+    missing_agent_workflow_exact: list[str],
 ) -> str:
     selected = sorted(
         (receipt for receipt in receipts if receipt.category == "trace-evaluation-result"),
@@ -873,7 +884,7 @@ def render_trace_evidence_index(
             f"`{run_id}` | {summary.replace('|', '\\|')} | `{receipt.original_sha256}` |"
         )
     missing_prompt = "\n".join(f"- `{item}`" for item in missing_prompt_exact) or "- none"
-    missing_duoagent = "\n".join(f"- `{item}`" for item in missing_duoagent_exact) or "- none"
+    missing_agent_workflow = "\n".join(f"- `{item}`" for item in missing_agent_workflow_exact) or "- none"
     return f"""# Trace/Eval Review Evidence
 
 This directory is a curated, source-linked evidence set for a web-model
@@ -913,7 +924,7 @@ longer exist, rather than silently calling them present.
 
 ### Missing Tutti DuoAgent exact entries
 
-{missing_duoagent}
+{missing_agent_workflow}
 
 These are mostly renamed/removed test or cancellation paths; the conservative
 source scan and bounded closure remain the material review corpus. Review the
@@ -1160,9 +1171,9 @@ def render_prompt_skill_inventory(
     private_skills: list[str],
     current_skills: list[str],
     prompt_count: int,
-    duoagent_count: int,
+    agent_workflow_count: int,
     missing_prompt_exact: list[str],
-    missing_duoagent_exact: list[str],
+    missing_agent_workflow_exact: list[str],
     high_privilege_paths: list[str],
 ) -> str:
     def bullets(items: Iterable[str]) -> str:
@@ -1179,7 +1190,7 @@ inventory is retained as historical context and may contain a previous count.
 - Private Pi Skill package: **{len(private_skills)}** directories.
 - Current PAW Skill checkout: **{len(current_skills)}** directories.
 - Tutti prompt-related source selection: **{prompt_count}** files.
-- Tutti DuoAgent/Tutti Mode reference closure: **{duoagent_count}** files.
+- Tutti DuoAgent/Tutti Mode reference closure: **{agent_workflow_count}** files.
 
 ## Current PAW Skills
 
@@ -1204,7 +1215,7 @@ Prompt entries no longer present:
 
 DuoAgent entries no longer present:
 
-{bullets(missing_duoagent_exact)}
+{bullets(missing_agent_workflow_exact)}
 
 The collector's conservative scan still captures current owner files matching
 the prompt/collaboration patterns, but these gaps must remain visible in any
@@ -1251,7 +1262,7 @@ source, the Tutti system/developer prompt reference corpus, the bounded Tutti
 DuoAgent/Tutti Mode implementation reference, PAW-owned Skills, interfaces,
 production-shaped privacy-safe fixtures, licenses and a per-file manifest.
 
-Start with `guides/PAW_BACKEND_WEB_MODEL_GUIDE.md`.
+Start with `guides/README_FOR_BACKEND_WEB_MODEL.md`.
 
 ## Responsibility warning
 
@@ -1292,8 +1303,8 @@ committing or pushing any source worktree.
 - `code/paw/` — navigable current PAW backend source/contracts/tests.
 - `code/pi/` — navigable selected Pi core/Runtime Host source and tests.
 - `single-file-bundles/` — searchable embedded-source backend and Pi bundles.
-- `tutti-prompts/` — extracted prompt corpus, conservative scan and source tree.
-- `tutti-duoagent/` — bounded Tutti Mode/CollaborationRun reference source and index.
+- `references/prompts/` — extracted prompt corpus, conservative scan and source tree.
+- `references/agent-workflows/` — bounded Tutti Mode/CollaborationRun reference source and index.
 - `skills/` — private {len(private_skills)}-Skill package and current
   {len(current_skills)}-Skill PAW checkout.
 - `interfaces-and-fixtures/` — route/function guide and safe real-shape data.
@@ -1328,13 +1339,13 @@ def validate_package(staging: Path, receipts: list[SourceReceipt]) -> dict[str, 
     if len({receipt.target for receipt in receipts}) != len(receipts):
         raise ValueError("duplicate source targets in receipt ledger")
     required_paths = (
-        "guides/TUTTI_DUOAGENT_REFERENCE.md",
-        "tutti-duoagent/SOURCE_INDEX.md",
-        "tutti-duoagent/source/docs/architecture/workspace-workflows.md",
-        "tutti-duoagent/source/services/tuttid/service/tuttimodeexecution/service.go",
-        "tutti-duoagent/source/services/tuttid/service/tuttimodeexecution/worker_test.go",
-        "tutti-duoagent/source/services/tuttid/service/collabrun/service.go",
-        "tutti-duoagent/source/packages/agent/gui/shared/agentConversation/components/AgentCollaborationRow.tsx",
+        "guides/REFERENCE_AGENT_WORKFLOWS.md",
+        "references/agent-workflows/SOURCE_INDEX.md",
+        "references/agent-workflows/source/docs/architecture/workspace-workflows.md",
+        "references/agent-workflows/source/services/tuttid/service/tuttimodeexecution/service.go",
+        "references/agent-workflows/source/services/tuttid/service/tuttimodeexecution/worker_test.go",
+        "references/agent-workflows/source/services/tuttid/service/collabrun/service.go",
+        "references/agent-workflows/source/packages/agent/gui/shared/agentConversation/components/AgentCollaborationRow.tsx",
         "evaluation/trace-results/control-center-web/docs/pawos/PAWOS_TRACE_EVAL.md",
         "evaluation/trace-results/eval/trace-agent/closed-loop-v1/public-manifest.json",
         "evaluation/trace-results/eval/interview-metrics/runs/trace-agent-provider-bootstrap-20260901.v1.json",
@@ -1350,18 +1361,18 @@ def validate_package(staging: Path, receipts: list[SourceReceipt]) -> dict[str, 
     missing = [relative for relative in required_paths if not (staging / relative).is_file()]
     if missing:
         raise ValueError(f"required review-package paths missing: {missing}")
-    duoagent_receipts = [
-        receipt for receipt in receipts if receipt.category == "tutti-duoagent-reference"
+    agent_workflow_receipts = [
+        receipt for receipt in receipts if receipt.category == "agent-workflow-reference"
     ]
-    if not duoagent_receipts:
+    if not agent_workflow_receipts:
         raise ValueError("Tutti DuoAgent reference source selection is empty")
-    duoagent_test_count = sum(
+    agent_workflow_test_count = sum(
         receipt.source_relative.endswith(
             ("_test.go", ".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx")
         )
-        for receipt in duoagent_receipts
+        for receipt in agent_workflow_receipts
     )
-    if duoagent_test_count == 0:
+    if agent_workflow_test_count == 0:
         raise ValueError("Tutti DuoAgent reference contains no executable tests")
     secret_hits: list[str] = []
     local_path_hits: list[str] = []
@@ -1393,8 +1404,8 @@ def validate_package(staging: Path, receipts: list[SourceReceipt]) -> dict[str, 
         "sourceOriginalBytes": sum(receipt.original_bytes for receipt in receipts),
         "sourcePackageBytes": sum(receipt.package_bytes for receipt in receipts),
         "sourceRedactions": sum(sum(receipt.redactions.values()) for receipt in receipts),
-        "tuttiDuoAgentSourceCount": len(duoagent_receipts),
-        "tuttiDuoAgentTestCount": duoagent_test_count,
+        "agentWorkflowReferenceSourceCount": len(agent_workflow_receipts),
+        "agentWorkflowReferenceTestCount": agent_workflow_test_count,
         "traceEvidenceFileCount": sum(
             receipt.category == "trace-evaluation-result" for receipt in receipts
         ),
@@ -1643,10 +1654,10 @@ def build_room_jev(output: Path, *, include_frontend: bool = False, pi_root: Pat
 def build(args: argparse.Namespace, output: Path) -> dict[str, object]:
     if getattr(args, "scope", "backend") in {"room-jev", "room-jev-fullstack"}:
         return build_room_jev(output, include_frontend=args.scope == "room-jev-fullstack", pi_root=getattr(args, "room_pi_source", None))
-    tutti_root = args.tutti_root.expanduser().resolve()
+    reference_root = args.reference_root.expanduser().resolve()
     pi_root = args.pi_root.expanduser().resolve()
     skills_root = args.skills_root.expanduser().resolve()
-    roots = (PAW_ROOT, tutti_root, pi_root, skills_root)
+    roots = (PAW_ROOT, reference_root, pi_root, skills_root)
     for root in roots:
         if not root.is_dir():
             raise FileNotFoundError(root)
@@ -1662,11 +1673,11 @@ def build(args: argparse.Namespace, output: Path) -> dict[str, object]:
     snapshots = [
         snapshot(PAW_ROOT, "PAW product/backend"),
         snapshot(pi_root, "Pi Runtime"),
-        snapshot(tutti_root, "Tutti prompt and DuoAgent reference"),
+        snapshot(reference_root, "Tutti prompt and DuoAgent reference"),
         snapshot(skills_root, "PAW private Pi Skills"),
     ]
     paw_tracked, paw_statuses = git_file_status(PAW_ROOT)
-    tutti_tracked, tutti_statuses = git_file_status(tutti_root)
+    reference_tracked, reference_statuses = git_file_status(reference_root)
     skills_tracked, skills_statuses = git_file_status(skills_root)
 
     private_skill_names = skill_names(skills_root / "skills")
@@ -1675,8 +1686,8 @@ def build(args: argparse.Namespace, output: Path) -> dict[str, object]:
         raise ValueError(f"expected 13 private Skills, found {len(private_skill_names)}")
     if not current_skill_names:
         raise ValueError("current PAW Skill checkout is empty")
-    missing_prompt_exact = missing_exact_paths(tutti_root, TUTTI_EXACT_PROMPT_FILES)
-    missing_duoagent_exact = missing_exact_paths(tutti_root, TUTTI_DUOAGENT_EXACT_FILES)
+    missing_prompt_exact = missing_exact_paths(reference_root, REFERENCE_EXACT_PROMPT_FILES)
+    missing_agent_workflow_exact = missing_exact_paths(reference_root, REFERENCE_AGENT_WORKFLOW_EXACT_FILES)
     high_privilege_paths: list[str] = []
     current_skills_root = PAW_ROOT / "integrations/pi/skills"
     for path in walk_eligible(current_skills_root):
@@ -1710,22 +1721,22 @@ def build(args: argparse.Namespace, output: Path) -> dict[str, object]:
                 git_status=source.status, roots=roots,
             )
 
-        tutti_prompt_paths = collect_tutti_prompt_paths(tutti_root)
-        for path in tutti_prompt_paths:
-            relative = path.relative_to(tutti_root).as_posix()
+        reference_prompt_paths = collect_reference_prompt_paths(reference_root)
+        for path in reference_prompt_paths:
+            relative = path.relative_to(reference_root).as_posix()
             add_text_source(
-                staging, receipts, repository="tutti", category="tutti-prompt-source",
-                root=tutti_root, path=path, target=f"tutti-prompts/source/{relative}",
-                git_status=status_for(relative, tutti_tracked, tutti_statuses), roots=roots,
+                staging, receipts, repository="tutti", category="reference-prompt-source",
+                root=reference_root, path=path, target=f"references/prompts/source/{relative}",
+                git_status=status_for(relative, reference_tracked, reference_statuses), roots=roots,
             )
 
-        tutti_duoagent_paths = collect_tutti_duoagent_paths(tutti_root)
-        for path in tutti_duoagent_paths:
-            relative = path.relative_to(tutti_root).as_posix()
+        reference_agent_workflow_paths = collect_reference_agent_workflow_paths(reference_root)
+        for path in reference_agent_workflow_paths:
+            relative = path.relative_to(reference_root).as_posix()
             add_text_source(
-                staging, receipts, repository="tutti", category="tutti-duoagent-reference",
-                root=tutti_root, path=path, target=f"tutti-duoagent/source/{relative}",
-                git_status=status_for(relative, tutti_tracked, tutti_statuses), roots=roots,
+                staging, receipts, repository="tutti", category="agent-workflow-reference",
+                root=reference_root, path=path, target=f"references/agent-workflows/source/{relative}",
+                git_status=status_for(relative, reference_tracked, reference_statuses), roots=roots,
             )
 
         for path in walk_eligible(skills_root):
@@ -1778,7 +1789,7 @@ def build(args: argparse.Namespace, output: Path) -> dict[str, object]:
             )
 
         for relative in GUIDE_FILES:
-            copy_generated_text(staging, PAW_ROOT / relative, f"guides/{Path(relative).name}", roots)
+            copy_generated_text(staging, PAW_ROOT / relative, f"guides/{GUIDE_FILES[relative]}", roots)
         authority_paths = [PAW_ROOT / relative for relative in AUTHORITY_FILES if (PAW_ROOT / relative).is_file()]
         for pattern in AUTHORITY_GLOBS:
             authority_paths.extend(sorted(PAW_ROOT.glob(pattern)))
@@ -1809,7 +1820,7 @@ def build(args: argparse.Namespace, output: Path) -> dict[str, object]:
         legal_sources = (
             (PAW_ROOT / "LICENSE", "licenses/PAW_LICENSE"),
             (PAW_ROOT / "THIRD_PARTY_NOTICES.md", "licenses/PAW_THIRD_PARTY_NOTICES.md"),
-            (tutti_root / "LICENSE", "licenses/TUTTI_APACHE_2.0.txt"),
+            (reference_root / "LICENSE", "licenses/TUTTI_APACHE_2.0.txt"),
             (pi_root / "LICENSE", "licenses/PI_MIT.txt"),
             (skills_root / "LICENSES/PAW-GPL-3.0-only.txt", "licenses/PI_SKILLS_PAW_GPL_3.0_ONLY.txt"),
         )
@@ -1817,12 +1828,12 @@ def build(args: argparse.Namespace, output: Path) -> dict[str, object]:
             if source.is_file():
                 copy_generated_text(staging, source, target, roots)
 
-        candidate_text = render_prompt_candidates(tutti_root, roots)
-        (staging / "tutti-prompts/prompt-source-candidates.tsv").write_text(candidate_text, encoding="utf-8")
-        extraction = render_tutti_extraction(staging, receipts)
-        (staging / "tutti-prompts/TUTTI_SYSTEM_PROMPTS_EXTRACTED.md").write_text(extraction, encoding="utf-8")
-        duoagent_index = render_duoagent_index(receipts)
-        (staging / "tutti-duoagent/SOURCE_INDEX.md").write_text(duoagent_index, encoding="utf-8")
+        candidate_text = render_prompt_candidates(reference_root, roots)
+        (staging / "references/prompts/prompt-source-candidates.tsv").write_text(candidate_text, encoding="utf-8")
+        extraction = render_reference_extraction(staging, receipts)
+        (staging / "references/prompts/REFERENCE_SYSTEM_PROMPTS.md").write_text(extraction, encoding="utf-8")
+        agent_workflow_index = render_agent_workflow_index(receipts)
+        (staging / "references/agent-workflows/SOURCE_INDEX.md").write_text(agent_workflow_index, encoding="utf-8")
 
         trace_dir = staging / "evaluation/trace-results"
         trace_dir.mkdir(parents=True, exist_ok=True)
@@ -1834,7 +1845,7 @@ def build(args: argparse.Namespace, output: Path) -> dict[str, object]:
                 staging,
                 receipts,
                 missing_prompt_exact=missing_prompt_exact,
-                missing_duoagent_exact=missing_duoagent_exact,
+                missing_agent_workflow_exact=missing_agent_workflow_exact,
             ),
             encoding="utf-8",
         )
@@ -1848,10 +1859,10 @@ def build(args: argparse.Namespace, output: Path) -> dict[str, object]:
             render_prompt_skill_inventory(
                 private_skill_names,
                 current_skill_names,
-                len(tutti_prompt_paths),
-                len(tutti_duoagent_paths),
+                len(reference_prompt_paths),
+                len(reference_agent_workflow_paths),
                 missing_prompt_exact,
-                missing_duoagent_exact,
+                missing_agent_workflow_exact,
                 high_privilege_paths,
             ),
             encoding="utf-8",
@@ -1866,8 +1877,8 @@ def build(args: argparse.Namespace, output: Path) -> dict[str, object]:
             "schemaVersion": 1,
             "packagePurpose": "PAW backend and Pi Runtime review with Tutti prompt and DuoAgent references and PAW Skills",
             "referenceDomains": {
-                "tuttiPrompts": "reference-only prompt assembly and provider transport",
-                "tuttiDuoAgent": "reference-only Tutti Mode execution, Goal Review, and adjacent CollaborationRun vertical slice",
+                "promptReferences": "reference-only prompt assembly and provider transport",
+                "agentWorkflowReferences": "reference-only Tutti Mode execution, Goal Review, and adjacent CollaborationRun vertical slice",
             },
             "traceEvidence": {
                 "selectedSourceFiles": [
@@ -1898,8 +1909,8 @@ def build(args: argparse.Namespace, output: Path) -> dict[str, object]:
                 "installedOrForegroundProofIncluded": False,
             },
             "promptAndSkillSelection": {
-                "missingTuttiPromptExactEntries": missing_prompt_exact,
-                "missingTuttiDuoAgentExactEntries": missing_duoagent_exact,
+                "missingPromptReferenceExactEntries": missing_prompt_exact,
+                "missingAgentWorkflowReferenceExactEntries": missing_agent_workflow_exact,
                 "highPrivilegeSkillFiles": high_privilege_paths,
                 "inventory": "guides/PROMPT_SKILL_INVENTORY_CURRENT.md",
             },
@@ -1918,8 +1929,8 @@ def build(args: argparse.Namespace, output: Path) -> dict[str, object]:
                 "evaluation/trace-results/README.md",
                 "evaluation/trace-results/TRACE_TEST_RESULTS.md",
                 "evaluation/agent-lab-results/README.md",
-                "tutti-prompts/TUTTI_SYSTEM_PROMPTS_EXTRACTED.md",
-                "tutti-duoagent/SOURCE_INDEX.md",
+                "references/prompts/REFERENCE_SYSTEM_PROMPTS.md",
+                "references/agent-workflows/SOURCE_INDEX.md",
             ],
         }
         manifest_path = manifest_dir / "package-manifest.json"
@@ -1941,8 +1952,8 @@ def build(args: argparse.Namespace, output: Path) -> dict[str, object]:
         "outputBytes": output.stat().st_size,
         "outputSha256": sha256(output.read_bytes()),
         "sourceReceiptCount": len(receipts),
-        "tuttiPromptSourceCount": len(tutti_prompt_paths),
-        "tuttiDuoAgentSourceCount": len(tutti_duoagent_paths),
+        "promptReferenceSourceCount": len(reference_prompt_paths),
+        "agentWorkflowReferenceSourceCount": len(reference_agent_workflow_paths),
         "privateSkillCount": len(private_skill_names),
         "currentPawSkillCount": len(current_skill_names),
         "validation": final_validation,

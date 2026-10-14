@@ -77,10 +77,12 @@ from .memory_optimizer import AntiEchoGovernor, MemoryOptimizerConfig
 from .memory_optimizer_models import ContextFrame, RawRetrievalHit
 from .memory_generator import (
     MemoryGenerationError,
-    VcpRebuildMemoryGenerator,
+    DeepSeekMemoryGenerator,
+    default_memory_generator_env_path,
     generated_lexicon_dedupe_tag,
     generated_memory_context,
     generated_memory_dedupe_tag,
+    generated_memory_dedupe_tags,
 )
 from .memory_maintenance_settings import MemoryMaintenanceSettings
 from .models import InputEvent, InputSuggestion, MemoryAction, ModelPrediction
@@ -424,9 +426,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     cleanup_preview.add_argument("--model", default="")
     cleanup_preview.add_argument(
         "--model-env-path",
-        default=os.environ.get("RAG_IME_DEEPSEEK_ENV", "")
-        or os.environ.get("RAG_IME_MODEL_ENV", "")
-        or os.environ.get("RAG_IME_VCP_REBUILD_ENV", ""),
+        default=str(default_memory_generator_env_path() or ""),
     )
     cleanup_preview.add_argument("--allow-private-paths", action="store_true")
     cleanup_preview.add_argument("--output", default="")
@@ -461,9 +461,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     memory_compile.add_argument("--model", default="")
     memory_compile.add_argument(
         "--model-env-path",
-        default=os.environ.get("RAG_IME_DEEPSEEK_ENV", "")
-        or os.environ.get("RAG_IME_MODEL_ENV", "")
-        or os.environ.get("RAG_IME_VCP_REBUILD_ENV", ""),
+        default=str(default_memory_generator_env_path() or ""),
     )
     memory_compile.add_argument("--output", default="", help="Optional JSON path. When set, writes the dry-run diff plan.")
     memory_compile.add_argument("--allow-private-paths", action="store_true")
@@ -608,12 +606,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     generate_memory.add_argument("--allow-duplicates", action="store_true")
     generate_memory.add_argument(
         "--model-env-path",
-        default=os.environ.get("RAG_IME_DEEPSEEK_ENV", "")
-        or os.environ.get("RAG_IME_MODEL_ENV", "")
-        or os.environ.get("RAG_IME_VCP_REBUILD_ENV", ""),
-        help="DeepSeek V4 env file. Prefer this over the legacy --vcp-env-path.",
+        default=str(default_memory_generator_env_path() or ""),
+        help="DeepSeek V4 env file for memory generation.",
     )
-    generate_memory.add_argument("--vcp-env-path", default="", help=argparse.SUPPRESS)
+    generate_memory.add_argument("--vcp-env-path", dest="legacy_model_env_path", default="", help=argparse.SUPPRESS)
 
     optimize_core = subparsers.add_parser(
         "optimize-core",
@@ -630,9 +626,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     optimize_core.add_argument("--allow-duplicates", action="store_true")
     optimize_core.add_argument(
         "--model-env-path",
-        default=os.environ.get("RAG_IME_DEEPSEEK_ENV", "")
-        or os.environ.get("RAG_IME_MODEL_ENV", "")
-        or os.environ.get("RAG_IME_VCP_REBUILD_ENV", ""),
+        default=str(default_memory_generator_env_path() or ""),
     )
 
     suggest = subparsers.add_parser("suggest", help="Render suggestions for one input")
@@ -2222,7 +2216,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "generate-memory":
         try:
-            generator = VcpRebuildMemoryGenerator.from_env_path(args.model_env_path or args.vcp_env_path or None)
+            generator = DeepSeekMemoryGenerator.from_env_path(args.model_env_path or args.legacy_model_env_path or None)
             report = generator.generate(
                 text=args.text,
                 recent_context=args.recent_context,
@@ -2243,7 +2237,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         provider_tag = report.provider
         for item in report.items:
             dedupe_tag = generated_memory_dedupe_tag(item.text)
-            if not args.allow_duplicates and _core_has_event_tag(core, dedupe_tag):
+            if not args.allow_duplicates and any(
+                _core_has_event_tag(core, tag) for tag in generated_memory_dedupe_tags(item.text)
+            ):
                 duplicate_skipped += 1
                 continue
             tags = tuple(
@@ -2251,7 +2247,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     (
                         "generated-memory",
                         provider_tag,
-                        "aimemo",
+                        "memory-distillation",
                         dedupe_tag,
                         *item.tags,
                     )
@@ -2316,7 +2312,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             phrase_limit=max(1, int(args.phrase_limit)),
         )
         try:
-            generator = VcpRebuildMemoryGenerator.from_env_path(args.model_env_path or None)
+            generator = DeepSeekMemoryGenerator.from_env_path(args.model_env_path or None)
             report = generator.optimize_core(
                 snapshot=snapshot,
                 project=args.project,
@@ -2339,7 +2335,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         provider_tag = report.provider
         for item in report.memories:
             dedupe_tag = generated_memory_dedupe_tag(item.text)
-            if not args.allow_duplicates and _core_has_event_tag(core, dedupe_tag):
+            if not args.allow_duplicates and any(
+                _core_has_event_tag(core, tag) for tag in generated_memory_dedupe_tags(item.text)
+            ):
                 duplicate_skipped += 1
                 continue
             tags = tuple(
@@ -2348,7 +2346,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "generated-memory",
                         "api-core-optimized",
                         provider_tag,
-                        "aimemo",
+                        "memory-distillation",
                         dedupe_tag,
                         *item.tags,
                     )

@@ -10,6 +10,36 @@ from scripts import build_paw_backend_web_model_package as package_builder
 
 
 class PawBackendWebModelPackageTests(unittest.TestCase):
+    def test_reference_root_option_retains_legacy_cli_input_with_canonical_state(self) -> None:
+        for option in ("--reference-root", "--tutti-root"):
+            with self.subTest(option=option):
+                args = package_builder.parse_args([option, "/reference/source"])
+                self.assertEqual(args.reference_root, Path("/reference/source"))
+                self.assertFalse(hasattr(args, "tutti_root"))
+
+    def test_reference_collection_keeps_exact_upstream_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            relative = "services/tuttid/service/collabrun/service.go"
+            source = root / relative
+            source.parent.mkdir(parents=True)
+            source.write_text("package collabrun\n", encoding="utf-8")
+            selected = package_builder.collect_reference_agent_workflow_paths(root)
+            self.assertEqual([path.relative_to(root).as_posix() for path in selected], [relative])
+
+    def test_copied_reference_guide_updates_links_without_rewriting_source_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "guide.md"
+            original = "Tutti source reference\n[corpus](tutti-prompts/TUTTI_SYSTEM_PROMPTS_EXTRACTED.md)\n"
+            source.write_text(original, encoding="utf-8")
+            staging = root / "staging"
+            package_builder.copy_generated_text(staging, source, "guides/reference.md", (root,))
+            self.assertEqual(source.read_text(), original)
+            copied = (staging / "guides/reference.md").read_text()
+            self.assertIn("Tutti source reference", copied)
+            self.assertIn("[corpus](references/prompts/REFERENCE_SYSTEM_PROMPTS.md)", copied)
+
     def test_room_jev_scope_contains_live_seams_and_only_product_skills(self) -> None:
         paths = package_builder.collect_room_jev_paths(package_builder.PAW_ROOT)
         selected = {p.relative_to(package_builder.PAW_ROOT).as_posix() for p in paths}

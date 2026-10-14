@@ -71,7 +71,7 @@ class RagCoreV3Tests(unittest.TestCase):
                         ],
                         ensure_ascii=False,
                     ),
-                    "用户希望借鉴 VCP 的 BM25、向量、TagMemo 和 Time。",
+                    "用户希望结合 BM25、向量、TagMemo 和 Time。",
                     timestamp,
                     timestamp,
                     timestamp,
@@ -88,7 +88,7 @@ class RagCoreV3Tests(unittest.TestCase):
 
         self.assertIn("多路召回", texts)
         self.assertNotIn("RAG 输入法多路召回方案", texts)
-        self.assertNotIn("用户希望借鉴 VCP 的 BM25、向量、TagMemo 和 Time。", texts)
+        self.assertNotIn("用户希望结合 BM25、向量、TagMemo 和 Time。", texts)
         self.assertTrue(all("用户希望借鉴" not in text for text in texts))
 
     def _record_event(self, text: str, *, recent_context: str = "", tags: tuple[str, ...] = ()) -> int:
