@@ -33,19 +33,53 @@ test('augmenting a supplied menu preserves callbacks without mutating the return
   assert.ok(menu.items.some((item) => item.role === 'editMenu'));
 });
 
-test('the copied File submenu can receive PAW actions without changing the native submenu', () => {
+test('PAW actions can be added while leaving existing native submenus untouched', () => {
   const callback = () => {};
   const original = { items: [{ label: 'Existing file action', click: callback }], append() { throw new Error('native submenu is not mutable'); } };
   const menu = createApplicationMenuBase(boundary({ items: [{ label: 'File', submenu: original }] }), 'darwin');
   const files = menu.items.find((item) => item.label === 'File').submenu;
-  files.append({ label: 'PAW action' });
+  menu.append({ label: 'PAW', submenu: [{ label: 'PAW action' }] });
+  assert.equal(files, original);
   assert.equal(files.items[0].click, callback);
   assert.equal(original.items.length, 1);
-  assert.equal(files.items.length, 2);
+  assert.equal(files.items.length, 1);
 });
 
 test('non-macOS menus keep editing shortcuts without inserting a macOS application menu', () => {
   const menu = createApplicationMenuBase(boundary(), 'linux');
   assert.ok(menu.items.some((item) => item.role === 'editMenu'));
   assert.equal(menu.items.some((item) => item.role === 'appMenu'), false);
+});
+
+test('native item activation keeps event arguments, checkbox state and the original instance', () => {
+  let receipt;
+  class NativeItem {
+    constructor(options) {
+      Object.assign(this, options);
+      const callback = options.click;
+      // Electron wraps constructor callbacks; its instance click takes the
+      // keyboard event first, rather than a constructor callback's menu item.
+      this.click = (event, window, contents) => {
+        if (this.type === 'checkbox') this.checked = !this.checked;
+        callback?.(this, window, event);
+      };
+    }
+  }
+  const original = new NativeItem({ label: 'Existing toggle', type: 'checkbox', checked: false,
+    click: (item, window, event) => { receipt = { item, window, event }; },
+  });
+  class Menu {
+    static getApplicationMenu() { return { items: [original] }; }
+    static buildFromTemplate(items) { return { items: items.map((item) => item instanceof NativeItem ? item : new NativeItem(item)) }; }
+  }
+  const menu = createApplicationMenuBase(Menu, 'darwin');
+  const action = menu.items.find((item) => item.label === original.label);
+  const event = { triggeredByAccelerator: true };
+  const window = { id: 42 };
+  action.click(event, window, { id: 7 });
+  assert.equal(receipt.event, event);
+  assert.equal(receipt.window, window);
+  assert.equal(receipt.item, original);
+  assert.equal(action, original);
+  assert.equal(original.checked, true);
 });
