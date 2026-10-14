@@ -259,6 +259,18 @@ it('creates a PR schedule, finds it in the unified list, then edits and pauses t
   expect(await screen.findByRole('button', { name: '暂停自动执行' })).toBeEnabled();
 });
 
+it('lands keyboard focus inside maintenance details without writing settings', async () => {
+  const transport = setup();
+  const user = userEvent.setup();
+  const row = await screen.findByRole('button', { name: /记忆目录整理.*后台维护/ });
+  row.focus();
+  await user.keyboard('{Enter}');
+  expect(await screen.findByRole('heading', { name: '后台维护', level: 2 })).toBeInTheDocument();
+  expect(screen.getByRole('main')).toHaveFocus();
+  expect(screen.getByRole('main')).toHaveAccessibleName('后台维护任务工作区');
+  expect(transport.requests.some((call) => call.request.pathId === 'configuration.settings.apply')).toBe(false);
+});
+
 it('manages persisted memory schedules through the settings owner', async () => {
   setup(); const user = userEvent.setup();
   await user.click(screen.getByRole('button', { name: /后台维护/ }));

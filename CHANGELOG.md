@@ -5,6 +5,12 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Keep launcher focus in the selected App without returning to another window's
+  draft, and give keyboard-opened task details a named focus landing.
+
+- Preserve standard desktop editing, zoom and window commands when adding PAW's
+  native menu actions, without mutating a returned application menu.
+
 - Return focus to the Knowledge file filter after clearing it or restoring all
   files from an empty result, preserving keyboard navigation in the materials list.
 

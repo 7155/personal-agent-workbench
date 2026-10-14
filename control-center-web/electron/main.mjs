@@ -28,6 +28,7 @@ import { browserWindowChrome } from './window-chrome.mjs';
 import { assistantLaunchIntent, assistantSessionRoute } from './assistant-launch.mjs';
 import { installScreenAssistant } from './screen-assistant.mjs';
 import { installDesktopPet } from './desktop-pet.mjs';
+import { createApplicationMenuBase } from './application-menu-base.mjs';
 
 import { createVoiceControl, trustedVoiceSender } from './voice-control.mjs';
 
@@ -457,7 +458,7 @@ async function startPrimaryInstance() {
   pendingAssistantIntent = null;
   mainWindow = createWindow(initialIntent?.kind === 'session' ? assistantSessionRoute(initialIntent.sessionId) : undefined, initialIntent?.kind !== 'capture');
   if (initialIntent?.kind === 'capture') void screenAssistant.startCapture(initialIntent.sourceAppBundleId);
-  const menu = Menu.getApplicationMenu() || new Menu();
+  const menu = createApplicationMenuBase(Menu);
   const petMenuItem = new MenuItem({ label: '显示桌面伙伴', type: 'checkbox', checked: false,
     click: (item) => { if (item.checked) void desktopPet.show(); else desktopPet.hide(); },
   });

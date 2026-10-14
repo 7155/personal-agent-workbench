@@ -46,6 +46,15 @@ export function SchedulesApp({ initialRoute = '' }: { initialRoute?: string }) {
   const [selectedId, setSelectedId] = useState('');
   const [search, setSearch] = useState('');
   const searchInput = useRef<HTMLInputElement>(null);
+  const contentRef = useRef<HTMLElement>(null);
+  const pendingRowFocus = useRef(false);
+  useLayoutEffect(() => {
+    if (!pendingRowFocus.current) return;
+    pendingRowFocus.current = false;
+    const focused = document.activeElement;
+    // A child dialog may already own focus. Only recover a removed task row.
+    if (!focused || focused === document.body || !focused.isConnected) contentRef.current?.focus({ preventScroll: true });
+  }, [group, selectedId]);
   const [statusFilter, setStatusFilter] = useState('all');
   const agent = useQuery({ queryKey: ['planning', 'agent-wake-schedules'], queryFn: ({ signal }) => transport.request({ pathId: 'agent.wakeSchedules.list', query: { limit: 500 }, signal }), enabled: appActive, refetchInterval: appActive ? 15_000 : false });
   const evaluation = useEvalSchedules();
@@ -62,7 +71,7 @@ export function SchedulesApp({ initialRoute = '' }: { initialRoute?: string }) {
     <header className="schedule-app__header"><span className="schedule-app__identity"><CalendarClock size={23} /><span><h1>定时任务</h1><p>把需要惦记的事，交给下一次执行。</p></span></span><IconButton label="刷新所有任务" icon={<RefreshCw size={17} className={refreshing ? 'ui-spin' : ''} />} disabled={refreshing} onClick={() => { void agent.refetch(); void evaluation.refetch(); void memory.settings.refetch(); void memory.status.refetch(); }} tooltip /></header>
     <nav className="schedule-app__nav" aria-label="任务类型">{groups.map((item) => <button key={item.id} aria-pressed={group === item.id} onClick={() => selectGroup(item.id)} type="button"><item.icon size={16} /><span>{item.label}</span><small>{pending ? '·' : item.id === 'all' ? rows.length : rows.filter((row) => row.group === item.id).length}</small></button>)}</nav>
     {group === 'all' || group === 'agent' ? <div className="schedule-app__filters"><label><Search size={16} /><Input ref={searchInput} aria-label="搜索定时任务" placeholder="搜索任务、PR 或关注点" value={search} onChange={(event) => setSearch(event.target.value)} /></label><Select aria-label="任务状态" value={statusFilter} onValueChange={setStatusFilter} options={[{ value: 'all', label: '所有状态' }, ...Object.entries(scheduleStatusLabels).map(([value, label]) => ({ value, label }))]} /></div> : null}
-    <main className="schedule-app__content">
+    <main className="schedule-app__content" ref={contentRef} tabIndex={-1} aria-label={`${group === 'all' ? '全部' : scheduleGroupLabels[group]}任务工作区`}>
       {group === 'all' ? <>
         <div className="schedule-app__overview"><span><strong>{rows.filter((row) => row.status === 'running').length}</strong> 正在执行<span className="schedule-app__separator">/</span><strong>{rows.filter((row) => row.status === 'scheduled').length}</strong> 等待执行</span><Button size="small" variant="primary" onClick={() => selectGroup('agent')}>安排新任务</Button></div>
         {sources.map((source) => <ScheduleSourceNotice key={source.title} title={source.title} query={source.query} focusTarget={searchInput} />)}
@@ -70,7 +79,7 @@ export function SchedulesApp({ initialRoute = '' }: { initialRoute?: string }) {
         {visible.length ? <div className="schedule-app__list" aria-label="统一定时任务列表">{visible.map((item) => {
           const Icon = icons[item.group];
           const terminal = ['completed', 'cancelled', 'paused', 'failed'].includes(item.status);
-          return <button className="schedule-app__row" key={`${item.group}:${item.id}`} type="button" onClick={() => { setGroup(item.group); setSelectedId(item.id); setSearch(''); setStatusFilter('all'); }}>
+          return <button className="schedule-app__row" key={`${item.group}:${item.id}`} type="button" onClick={() => { pendingRowFocus.current = true; setGroup(item.group); setSelectedId(item.id); setSearch(''); setStatusFilter('all'); }}>
             <span className="schedule-app__row-icon" data-group={item.group}><Icon size={19} /></span><span className="schedule-app__row-copy"><strong>{item.title}</strong><small>{scheduleGroupLabels[item.group]} · {item.cadence}</small>{item.error ? <em>{item.error}</em> : null}</span>
             <span className="schedule-app__row-time"><span className="schedule-state" data-state={item.status}><i />{scheduleStatusLabels[item.status] ?? '状态待确认'}</span><small>{item.status === 'running' ? '正在等待执行结果' : !terminal && item.nextAt ? `下次 ${scheduleTime(item.nextAt)}` : !terminal && item.group === 'memory' ? '到期且满足条件时执行' : '执行记录已保留'}</small></span><ChevronRight size={15} />
           </button>;

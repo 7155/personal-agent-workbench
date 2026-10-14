@@ -294,7 +294,7 @@ function PawDesktopSurface() {
       state.openApp('app-center', { initialRoute: route, title: pawApp('app-center').label });
       state.setLaunchpadOpen(false);
       window.history.replaceState(null, '', `${window.location.search}#${route}`);
-      return;
+      return api.getState().activeWindowId;
     }
     const existingWindowId = [...state.stack].reverse().find((windowId) => state.windows[windowId]?.appId === appId)
       ?? Object.values(state.windows).find((node) => node.appId === appId)?.id;
@@ -306,6 +306,7 @@ function PawDesktopSurface() {
     const currentRoute = existingWindowId ? api.getState().windows[existingWindowId]?.initialRoute : undefined;
     const route = currentRoute && pawAppForPath(currentRoute)?.id === appId ? currentRoute : pawApp(appId).route;
     window.history.replaceState(window.history.state, '', `${window.location.search}#${route}`);
+    return api.getState().activeWindowId;
   }, [api, installation.enabledExtensionIds]);
   const toggleLaunchpad = useCallback(() => {
     const state = api.getState();
@@ -1232,9 +1233,15 @@ function pawShellReducedMotion(): boolean {
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
-function PawLaunchpad({ onClose, onOpen }: { onClose: () => void; onOpen: (id: PawAppId) => void }) {
+function PawLaunchpad({ onClose, onOpen }: { onClose: () => void; onOpen: (id: PawAppId) => string | null }) {
   const [query, setQuery] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
+  const pickedApp = useRef(false);
+  const pickedWindowId = useRef<string | null>(null);
+  const chooseApp = (appId: PawAppId) => {
+    pickedApp.current = true;
+    pickedWindowId.current = onOpen(appId);
+  };
   const installation = usePawExtensionInstallation();
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -1261,7 +1268,14 @@ function PawLaunchpad({ onClose, onOpen }: { onClose: () => void; onOpen: (id: P
   useEffect(() => {
     const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     searchRef.current?.focus();
-    return () => returnFocus?.focus();
+    return () => {
+      if (!pickedApp.current) { returnFocus?.focus(); return; }
+      const frame = Array.from(document.querySelectorAll<HTMLElement>('.paw-window-shell[data-paw-window-id]'))
+        .find((node) => node.dataset.pawWindowId === pickedWindowId.current);
+      if (!frame || frame.dataset.active !== 'true' || frame.contains(document.activeElement)) return;
+      if (returnFocus?.isConnected && frame.contains(returnFocus)) returnFocus.focus({ preventScroll: true });
+      else frame.focus({ preventScroll: true });
+    };
   }, []);
   return (
     <div
@@ -1292,7 +1306,7 @@ function PawLaunchpad({ onClose, onOpen }: { onClose: () => void; onOpen: (id: P
         }
         if (event.key === 'Enter' && filtered.length === 1) {
           event.preventDefault();
-          onOpen(filtered[0].id);
+          chooseApp(filtered[0].id);
         }
       }}
       onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}
@@ -1343,7 +1357,7 @@ function PawLaunchpad({ onClose, onOpen }: { onClose: () => void; onOpen: (id: P
                   data-extension-installation={installationState}
                   draggable
                   key={app.id}
-                  onClick={() => onOpen(app.id)}
+                  onClick={() => chooseApp(app.id)}
                   onDragStart={(event) => writeAppDrag(event.dataTransfer, app.id, false)}
                   onFocus={() => warmPawAppProcess(app.id)}
                   onPointerEnter={() => warmPawAppProcess(app.id)}
