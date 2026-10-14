@@ -5,6 +5,9 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Return focus to the Knowledge file filter after clearing it or restoring all
+  files from an empty result, preserving keyboard navigation in the materials list.
+
 - Return keyboard focus to the Lab project search after clearing an empty
   result, so users can continue searching without restarting tab navigation.
 
