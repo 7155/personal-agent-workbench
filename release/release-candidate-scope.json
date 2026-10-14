@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-14T19:29:51.828386+00:00",
+  "generatedAt": "2026-10-14T19:51:16.744961+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
-    "branch": "undo/paw-empty-session-codemode-20261015",
-    "baseCommit": "c2349913642b352c390668893e6d4a8f080cd2a8",
-    "candidateCommitPolicy": "Keep verified native codemode modes in empty or invalid recent-history results without starting the Host or inventing unsupported capabilities."
+    "branch": "undo/paw-session-ready-state-20261015",
+    "baseCommit": "4c458f1b91ca7b9858c263553993e2cd60b9fda8",
+    "candidateCommitPolicy": "Project unscoped Session status without inventing a conversation turn or completing unrelated work."
   },
   "dispositions": {
     "keep_release": "Retain task-owned source and release metadata.",
@@ -13,48 +13,55 @@
     "other_work_not_in_release": "Preserve unrelated work outside this candidate."
   },
   "groups": {
-    "empty_session_codemode": {
-      "description": "Preserve verified Session codemode in bounded empty history reads.",
-      "pathCount": 4
+    "session_ready_state": {
+      "description": "Keep Session process readiness distinct from actual conversation turns.",
+      "pathCount": 5
     }
   },
   "items": [
     {
       "path": "CHANGELOG.md",
       "status": "modified",
-      "group": "empty_session_codemode",
+      "group": "session_ready_state",
       "disposition": "keep_release",
-      "reason": "Restore verified mode projection in the two empty-history returns and cover support and no-Host behavior."
+      "reason": "Do not create a turn from an unscoped status event; cover live/reopened projection and empty workspace feedback."
     },
     {
-      "path": "rag_ime/pi/runtime.py",
+      "path": "control-center-web/src/contracts/agent-reducer.ts",
       "status": "modified",
-      "group": "empty_session_codemode",
+      "group": "session_ready_state",
       "disposition": "keep_release",
-      "reason": "Restore verified mode projection in the two empty-history returns and cover support and no-Host behavior."
+      "reason": "Do not create a turn from an unscoped status event; cover live/reopened projection and empty workspace feedback."
     },
     {
-      "path": "tests/test_pi_runtime_v2.py",
+      "path": "control-center-web/src/contracts/agent-reducer.test.ts",
       "status": "modified",
-      "group": "empty_session_codemode",
+      "group": "session_ready_state",
       "disposition": "keep_release",
-      "reason": "Restore verified mode projection in the two empty-history returns and cover support and no-Host behavior."
+      "reason": "Do not create a turn from an unscoped status event; cover live/reopened projection and empty workspace feedback."
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawSessionWorkspace.test.tsx",
+      "status": "modified",
+      "group": "session_ready_state",
+      "disposition": "keep_release",
+      "reason": "Do not create a turn from an unscoped status event; cover live/reopened projection and empty workspace feedback."
     },
     {
       "path": "release/release-candidate-scope.json",
       "status": "modified",
-      "group": "empty_session_codemode",
+      "group": "session_ready_state",
       "disposition": "keep_release",
-      "reason": "Restore verified mode projection in the two empty-history returns and cover support and no-Host behavior."
+      "reason": "Do not create a turn from an unscoped status event; cover live/reopened projection and empty workspace feedback."
     }
   ],
   "summary": {
-    "pathCount": 4,
+    "pathCount": 5,
     "dispositionCounts": {
-      "keep_release": 4
+      "keep_release": 5
     },
     "groupCounts": {
-      "empty_session_codemode": 4
+      "session_ready_state": 5
     },
     "unclassifiedPathCount": 0,
     "otherWorkNotInReleasePathCount": 0

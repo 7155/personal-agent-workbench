@@ -307,7 +307,9 @@ export function reduceAgentEvent(
         upsertActivity(next, event, payload, retryStatus);
       }
       next.status = text(payload.status) || next.status;
-      if (event.turnId || payload.projectionCurrent !== true || payload.runtimeEngine !== 'durable') {
+      // Session readiness has no turn identity. It updates process state,
+      // but cannot create a conversation turn or complete unrelated work.
+      if (event.turnId) {
         touchTurn(next, event.turnId, turnStatusFromRuntime(next.status), event.createdAtMs);
       }
       break;
