@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-14T20:44:16.578568+00:00",
+  "generatedAt": "2026-10-14T20:52:25.800938+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
-    "branch": "undo/paw-lab-search-focus-20261015",
-    "baseCommit": "bb3f8a609b05007247971d7c7a5dab9857172a70",
-    "candidateCommitPolicy": "Return focus to project search after clearing empty results, without changing project data or execution."
+    "branch": "undo/paw-knowledge-filter-focus-20261015",
+    "baseCommit": "38d28fbf0e49164f4ed8c564f04279f4ab89ac5b",
+    "candidateCommitPolicy": "Restore keyboard focus after clearing the materials filter without modifying document state or execution."
   },
   "dispositions": {
     "keep_release": "Retain task-owned source and release metadata.",
@@ -13,8 +13,8 @@
     "other_work_not_in_release": "Preserve unrelated work outside this candidate."
   },
   "groups": {
-    "lab_search_focus": {
-      "description": "Preserve keyboard continuity when clearing an empty Lab project search.",
+    "knowledge_filter_focus": {
+      "description": "Keep keyboard navigation continuous after either materials filter recovery action.",
       "pathCount": 4
     }
   },
@@ -22,30 +22,30 @@
     {
       "path": "CHANGELOG.md",
       "status": "modified",
-      "group": "lab_search_focus",
+      "group": "knowledge_filter_focus",
       "disposition": "keep_release",
-      "reason": "Restore focus to the existing search input and verify empty-result recovery."
+      "reason": "Return focus to the existing filter after clearing or showing all files; cover both recovery actions."
     },
     {
-      "path": "control-center-web/src/features/eval-lab/projects/LabProjectHome.tsx",
+      "path": "control-center-web/src/features/knowledge/document-workspace.tsx",
       "status": "modified",
-      "group": "lab_search_focus",
+      "group": "knowledge_filter_focus",
       "disposition": "keep_release",
-      "reason": "Restore focus to the existing search input and verify empty-result recovery."
+      "reason": "Return focus to the existing filter after clearing or showing all files; cover both recovery actions."
     },
     {
-      "path": "control-center-web/src/features/eval-lab/projects/ExperimentReport.test.tsx",
+      "path": "control-center-web/src/features/knowledge/knowledge-feature.test.tsx",
       "status": "modified",
-      "group": "lab_search_focus",
+      "group": "knowledge_filter_focus",
       "disposition": "keep_release",
-      "reason": "Restore focus to the existing search input and verify empty-result recovery."
+      "reason": "Return focus to the existing filter after clearing or showing all files; cover both recovery actions."
     },
     {
       "path": "release/release-candidate-scope.json",
       "status": "modified",
-      "group": "lab_search_focus",
+      "group": "knowledge_filter_focus",
       "disposition": "keep_release",
-      "reason": "Restore focus to the existing search input and verify empty-result recovery."
+      "reason": "Return focus to the existing filter after clearing or showing all files; cover both recovery actions."
     }
   ],
   "summary": {
@@ -54,7 +54,7 @@
       "keep_release": 4
     },
     "groupCounts": {
-      "lab_search_focus": 4
+      "knowledge_filter_focus": 4
     },
     "unclassifiedPathCount": 0,
     "otherWorkNotInReleasePathCount": 0

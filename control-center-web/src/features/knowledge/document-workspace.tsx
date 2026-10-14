@@ -107,7 +107,9 @@ export function KnowledgeMaterialsPanel({
 }) {
   const summary = useMemo(() => summarizeDocuments(documents), [documents]);
   const [filter, setLocalFilter] = useState(initialFilter);
+  const filterRef = useRef<HTMLInputElement>(null);
   const setFilter = (value: string) => { setLocalFilter(value); onFilterChange(value); };
+  const clearFilter = () => { setFilter(''); filterRef.current?.focus(); };
   const normalizedFilter = filter.trim().toLowerCase();
   const visibleDocuments = useMemo(() => (
     normalizedFilter
@@ -136,9 +138,9 @@ export function KnowledgeMaterialsPanel({
           <div className="knowledge-material-list" aria-label="知识库文件">
             <div className="knowledge-material-filter">
               <Search aria-hidden="true" size={13} />
-              <Input aria-label="筛选文件" onChange={(event) => setFilter(event.target.value)} placeholder="按文件名筛选" value={filter} />
+              <Input ref={filterRef} aria-label="筛选文件" onChange={(event) => setFilter(event.target.value)} placeholder="按文件名筛选" value={filter} />
               <span>{normalizedFilter ? `${visibleDocuments.length} / ${documents.length}` : `${documents.length} 个文件`}</span>
-              {normalizedFilter ? <IconButton icon={<X size={13} />} label="清除筛选" onClick={() => setFilter('')} size="small" tooltip /> : null}
+              {normalizedFilter ? <IconButton icon={<X size={13} />} label="清除筛选" onClick={clearFilter} size="small" tooltip /> : null}
             </div>
             <div className="knowledge-material-list__head"><span>文件</span><span>状态</span><span>段落</span><span>操作</span></div>
             {visibleDocuments.length ? (
@@ -165,7 +167,7 @@ export function KnowledgeMaterialsPanel({
               />
             ) : (
               <EmptyState
-                action={<Button onClick={() => setFilter('')} size="small">显示全部文件</Button>}
+                action={<Button onClick={clearFilter} size="small">显示全部文件</Button>}
                 description={`没有名称包含“${filter.trim()}”的文件；清除筛选可查看全部 ${documents.length} 个文件。`}
                 icon={FileSearch}
                 title="没有匹配的文件"

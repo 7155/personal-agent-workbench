@@ -970,10 +970,13 @@ describe('document knowledge library', () => {
     expect(await screen.findByText('没有匹配的文件')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '显示全部文件' }));
     expect((await screen.findAllByText('runtime.pdf')).length).toBeGreaterThan(0);
+    expect(filter).toHaveValue('');
+    expect(filter).toHaveFocus();
     await user.type(filter, 'RUNTIME');
     expect(await screen.findByText(/1 \/ /)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '清除筛选' }));
     expect(filter).toHaveValue('');
+    expect(filter).toHaveFocus();
   });
 
   it('returns from the viewer to the materials workspace in one step', async () => {
