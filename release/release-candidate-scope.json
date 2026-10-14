@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-14T17:42:56.538452+00:00",
+  "generatedAt": "2026-10-14T18:33:44.083071+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
-    "branch": "undo/paw-workspace-recovery-ui-20261015",
-    "baseCommit": "cc2be92ed37395d3d1b9cf63edd008ae4cdce787",
-    "candidateCommitPolicy": "Correct readable Session recovery notices and complete actionable labels through the existing error UI owner; no API or persistence changes."
+    "branch": "undo/paw-empty-desktop-start-20261015",
+    "baseCommit": "3f05eed8de82733ee9eb45fc13a054140583d760",
+    "candidateCommitPolicy": "Place desktop work notices below the visible shortcut projection and keep their controls above shortcut hit targets, with40px action targets and narrow-grid regression coverage."
   },
   "dispositions": {
     "keep_release": "Retain task-owned source and release metadata.",
@@ -13,48 +13,69 @@
     "other_work_not_in_release": "Preserve unrelated work outside this candidate."
   },
   "groups": {
-    "recovery_ui": {
-      "description": "Theme-aware recovery notice and reachable, untruncated actions.",
-      "pathCount": 4
+    "desktop_start": {
+      "description": "Desktop empty/loading/error actions use the visible shortcut count and remain actionable.",
+      "pathCount": 7
     }
   },
   "items": [
     {
       "path": "CHANGELOG.md",
       "status": "modified",
-      "group": "recovery_ui",
+      "group": "desktop_start",
       "disposition": "keep_release",
-      "reason": "Scope flexible copy to the direct child, wrap recovery controls, reuse the active chat surface, and retain40px targets."
+      "reason": "Align work notices to visible shortcut rows, preserve icon hit areas, and verify narrow notice placement."
     },
     {
-      "path": "control-center-web/src/paw-os/apps/paw-apps.css",
+      "path": "control-center-web/src/paw-os/shell/PawDesktop.tsx",
       "status": "modified",
-      "group": "recovery_ui",
+      "group": "desktop_start",
       "disposition": "keep_release",
-      "reason": "Scope flexible copy to the direct child, wrap recovery controls, reuse the active chat surface, and retain40px targets."
+      "reason": "Align work notices to visible shortcut rows, preserve icon hit areas, and verify narrow notice placement."
     },
     {
-      "path": "control-center-web/src/paw-os/styles/paw-os-agent.css",
+      "path": "control-center-web/src/paw-os/shell/PawWayfinderWork.tsx",
       "status": "modified",
-      "group": "recovery_ui",
+      "group": "desktop_start",
       "disposition": "keep_release",
-      "reason": "Scope flexible copy to the direct child, wrap recovery controls, reuse the active chat surface, and retain40px targets."
+      "reason": "Align work notices to visible shortcut rows, preserve icon hit areas, and verify narrow notice placement."
+    },
+    {
+      "path": "control-center-web/src/paw-os/shell/desktop-grid.test.ts",
+      "status": "modified",
+      "group": "desktop_start",
+      "disposition": "keep_release",
+      "reason": "Align work notices to visible shortcut rows, preserve icon hit areas, and verify narrow notice placement."
+    },
+    {
+      "path": "control-center-web/src/paw-os/shell/desktop-grid.ts",
+      "status": "modified",
+      "group": "desktop_start",
+      "disposition": "keep_release",
+      "reason": "Align work notices to visible shortcut rows, preserve icon hit areas, and verify narrow notice placement."
+    },
+    {
+      "path": "control-center-web/src/paw-os/styles/paw-os.css",
+      "status": "modified",
+      "group": "desktop_start",
+      "disposition": "keep_release",
+      "reason": "Align work notices to visible shortcut rows, preserve icon hit areas, and verify narrow notice placement."
     },
     {
       "path": "release/release-candidate-scope.json",
       "status": "modified",
-      "group": "recovery_ui",
+      "group": "desktop_start",
       "disposition": "keep_release",
-      "reason": "Scope flexible copy to the direct child, wrap recovery controls, reuse the active chat surface, and retain40px targets."
+      "reason": "Align work notices to visible shortcut rows, preserve icon hit areas, and verify narrow notice placement."
     }
   ],
   "summary": {
-    "pathCount": 4,
+    "pathCount": 7,
     "dispositionCounts": {
-      "keep_release": 4
+      "keep_release": 7
     },
     "groupCounts": {
-      "recovery_ui": 4
+      "desktop_start": 7
     },
     "unclassifiedPathCount": 0,
     "otherWorkNotInReleasePathCount": 0

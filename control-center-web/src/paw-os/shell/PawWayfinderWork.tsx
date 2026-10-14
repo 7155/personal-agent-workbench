@@ -47,7 +47,8 @@ function projectCompactActivityLabel(project: Pick<WayfinderWorkProject, 'attent
  * window churn and context menus, re-rendering only when its own directory
  * read, expansion or the selection itself changes.
  */
-export const PawWayfinderWork = memo(function PawWayfinderWork({ onArchive, onSelectIcon, selectedIcons }: {
+export const PawWayfinderWork = memo(function PawWayfinderWork({ desktopShortcutCount, onArchive, onSelectIcon, selectedIcons }: {
+  desktopShortcutCount?: number;
   onArchive?: (iconIds: readonly string[], label: string) => void;
   onSelectIcon?: (iconId: string, additive: boolean) => void;
   selectedIcons?: ReadonlySet<string>;
@@ -301,9 +302,11 @@ export const PawWayfinderWork = memo(function PawWayfinderWork({ onArchive, onSe
   };
 
   const hasRows = view.rowCount > 0;
+  const workOriginY = pawDesktopWorkOriginY(gridLayout.columns, gridLayout.originY);
+  const noticeOriginY = pawDesktopWorkOriginY(gridLayout.columns, gridLayout.originY, desktopShortcutCount);
   const canvasMinHeight = Math.max(
     360,
-    pawDesktopWorkOriginY(gridLayout.columns, gridLayout.originY)
+    workOriginY
       + Math.ceil((view.projects.length + view.looseItems.length) / gridLayout.columns) * PAW_DESKTOP_GRID.pitchY
       + 34,
   );
@@ -317,7 +320,7 @@ export const PawWayfinderWork = memo(function PawWayfinderWork({ onArchive, onSe
         onDrop={dropOnCanvas}
         onKeyDown={walkRows}
         ref={(node) => { listRef.current = node; canvasRef.current = node; }}
-        style={{ minHeight: `${canvasMinHeight}px` }}
+        style={{ minHeight: `${canvasMinHeight}px`, paddingTop: `${noticeOriginY}px` }}
       >
         {loading && !loadedOnce ? (
           <p className="paw-wayfinder-work__state" role="status"><LoaderCircle className="paw-wayfinder-work__spin" size={13} />正在读取</p>
