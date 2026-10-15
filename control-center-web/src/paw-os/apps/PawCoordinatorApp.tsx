@@ -38,8 +38,8 @@ export function coordinatorObjects(value: unknown, source: string, identity: str
   });
 }
 
-/** Ready bootstrap may create an empty completed reducer turn. Skip only
- * that harmless boundary; newer admitted/activity turns retain their outcome. */
+/** Ignore empty bootstrap turns retained in older cached projections. Live
+ * Session readiness creates no turn; admitted/activity turns keep their outcome. */
 export function coordinatorLatestTurnOutcome(current?: AgentProjectionState) {
   if (!current) return undefined;
   for (let index = current.turnOrder.length - 1; index >= 0; index -= 1) {

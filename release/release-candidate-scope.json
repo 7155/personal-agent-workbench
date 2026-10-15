@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-14T22:50:26.289777+00:00",
+  "generatedAt": "2026-10-15T08:22:16.225108+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
-    "branch": "undo/paw-window-zoom-20261015",
-    "baseCommit": "6a640c701e2afbeef8588fe372f3d1da44b4587c",
-    "candidateCommitPolicy": "Keep automatically fitted visible windows inside the desktop during successive zoom or resize steps, while retaining original size and deliberate partial placement."
+    "branch": "undo/paw-install-gate-repair-20261015",
+    "baseCommit": "2a468affa14f2b500f7d2f70360d30ac6aeb6162",
+    "candidateCommitPolicy": "Publish workspace group receipts atomically while preserving drafts, and cover live readiness separately from legacy empty bootstrap projections."
   },
   "dispositions": {
     "keep_release": "Retain task-owned source and release metadata.",
@@ -13,8 +13,12 @@
     "other_work_not_in_release": "Preserve unrelated work outside this candidate."
   },
   "groups": {
-    "window_viewport_fitting": {
-      "description": "window viewport fitting",
+    "workspace_group_sync": {
+      "description": "workspace group sync",
+      "pathCount": 2
+    },
+    "coordinator_readiness_regression": {
+      "description": "coordinator readiness regression",
       "pathCount": 2
     },
     "release_metadata": {
@@ -24,41 +28,56 @@
   },
   "items": [
     {
-      "path": "control-center-web/src/paw-os/runtime/desktop-store.ts",
+      "path": "control-center-web/src/features/semantic-workspace/OrganizationWorkspace.tsx",
       "status": "modified",
-      "group": "window_viewport_fitting",
+      "group": "workspace_group_sync",
       "disposition": "keep_release",
-      "reason": "Repair the reproduced repeated-zoom overflow without changing manual window placement or persisted data."
+      "reason": "Repair the reproduced formal-install frontend failures without weakening assertions, replacing runtime ownership, or touching user data."
     },
     {
-      "path": "control-center-web/src/paw-os/runtime/desktop-store.test.ts",
+      "path": "control-center-web/src/features/semantic-workspace/OrganizationWorkspace.v21.test.tsx",
       "status": "modified",
-      "group": "window_viewport_fitting",
+      "group": "workspace_group_sync",
       "disposition": "keep_release",
-      "reason": "Repair the reproduced repeated-zoom overflow without changing manual window placement or persisted data."
+      "reason": "Repair the reproduced formal-install frontend failures without weakening assertions, replacing runtime ownership, or touching user data."
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawCoordinatorApp.tsx",
+      "status": "modified",
+      "group": "coordinator_readiness_regression",
+      "disposition": "keep_release",
+      "reason": "Repair the reproduced formal-install frontend failures without weakening assertions, replacing runtime ownership, or touching user data."
+    },
+    {
+      "path": "control-center-web/src/paw-os/apps/PawCoordinatorApp.test.tsx",
+      "status": "modified",
+      "group": "coordinator_readiness_regression",
+      "disposition": "keep_release",
+      "reason": "Repair the reproduced formal-install frontend failures without weakening assertions, replacing runtime ownership, or touching user data."
     },
     {
       "path": "CHANGELOG.md",
       "status": "modified",
       "group": "release_metadata",
       "disposition": "keep_release",
-      "reason": "Repair the reproduced repeated-zoom overflow without changing manual window placement or persisted data."
+      "reason": "Repair the reproduced formal-install frontend failures without weakening assertions, replacing runtime ownership, or touching user data."
     },
     {
       "path": "release/release-candidate-scope.json",
       "status": "modified",
       "group": "release_metadata",
       "disposition": "keep_release",
-      "reason": "Repair the reproduced repeated-zoom overflow without changing manual window placement or persisted data."
+      "reason": "Repair the reproduced formal-install frontend failures without weakening assertions, replacing runtime ownership, or touching user data."
     }
   ],
   "summary": {
-    "pathCount": 4,
+    "pathCount": 6,
     "dispositionCounts": {
-      "keep_release": 4
+      "keep_release": 6
     },
     "groupCounts": {
-      "window_viewport_fitting": 2,
+      "workspace_group_sync": 2,
+      "coordinator_readiness_regression": 2,
       "release_metadata": 2
     },
     "unclassifiedPathCount": 0,

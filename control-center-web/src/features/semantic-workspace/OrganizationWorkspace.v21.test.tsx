@@ -3,6 +3,7 @@
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Profiler } from 'react';
 import { OrganizationWorkspace } from './OrganizationWorkspace';
 import type { OrganizationRequest, Space } from './organization-model';
 
@@ -113,6 +114,24 @@ describe('OrganizationWorkspace v2.1 integration', () => {
       expect(writes[0].body).toMatchObject({ expectedRevision: 1, operation: 'group', value: '尚未保存的分组' });
       expect(await screen.findByText('分组：尚未保存的分组')).toBeTruthy();
     }
+  });
+  it('keeps the refreshed group summary and pristine input consistent in every commit', async () => {
+    const { rows, commands } = setupServer([makeSpace(1)]);
+    const committed: { summary: string; value: string }[] = [];
+    render(<Profiler id="group-editor" onRender={() => {
+      const input = document.querySelector<HTMLInputElement>('input[aria-label="项目 1的分组"]');
+      if (input) committed.push({ summary: input.closest('details')!.querySelector('summary')!.textContent!, value: input.value });
+    }}><OrganizationWorkspace spaceKeys={['session:1']} selectedKey="" onOpen={vi.fn()} onClose={vi.fn()} /></Profiler>);
+    const input = await screen.findByLabelText('项目 1的分组');
+    await waitFor(() => expect(input).toBeEnabled());
+    rows.get('session:1')!.group = '服务器已更新'; rows.get('session:1')!.revision++;
+    fireEvent.click(screen.getByRole('button', { name: '刷新工作目录' }));
+    await waitFor(() => expect(input).toHaveValue('服务器已更新'));
+    const refreshed = committed.filter(frame => frame.summary === '分组：服务器已更新');
+    expect(refreshed.length).toBeGreaterThan(0);
+    expect(refreshed.every(frame => frame.value === '服务器已更新')).toBe(true);
+    expect(screen.getByLabelText('项目 1的分组')).toBe(input);
+    expect(commands.size).toBe(0);
   });
   it('remounting the panel preserves an uncertain command for explicit same-ID reconciliation', async () => {
     const { rows, commands } = setupServer([makeSpace(1)], true);
