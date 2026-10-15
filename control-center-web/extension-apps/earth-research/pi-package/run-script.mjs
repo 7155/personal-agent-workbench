@@ -47,7 +47,11 @@ function save(update) {
   }
 }
 save(latest);
-const cancel = () => { save({ ...latest, status: 'cancelled', remoteComputeMayContinue: true }); process.exit(130); };
+const cancel = () => {
+  save({ ...latest, status: 'cancelled', remoteComputeMayContinue: true });
+  console.log(JSON.stringify({ runId, status: 'cancelled', artifact: runFile, remoteComputeMayContinue: true }));
+  process.exit(130);
+};
 process.once('SIGTERM', cancel); process.once('SIGINT', cancel);
 const timeout = setTimeout(() => { save({ ...latest, status: 'failed', error: 'Execution exceeded 5 minutes; remote computation may continue.' }); process.exit(1); }, 300000);
 try {

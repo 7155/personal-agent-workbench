@@ -5,6 +5,11 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Retain failed Earth Engine batch run IDs and artifact paths, count missing
+  terminal receipts as failures, and stop active local runners without starting
+  queued scripts. Clarify GIS interpreter selection and geospatial acceptance
+  checks for coverage, exploratory hotspots and classification NoData.
+
 - Keep refreshed workspace group summaries and untouched inputs consistent in
   the same commit, while preserving edits. Cover both live Session readiness
   and legacy empty bootstrap projections in the coordinator regression checks.
