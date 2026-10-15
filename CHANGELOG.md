@@ -5,6 +5,9 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Bind Earth script provenance to the opened file, and keep independent HTML
+  reports free of another script's run correspondence label.
+
 - Retain failed Earth Engine batch run IDs and artifact paths, count missing
   terminal receipts as failures, and stop active local runners without starting
   queued scripts. Clarify GIS interpreter selection and geospatial acceptance
