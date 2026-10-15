@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { lazy, Suspense, startTransition, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useControlTransport } from '@/app/control-transport';
+import type { ControlTransport } from '@/platform/transport';
 import {
   Button,
   Dialog,
@@ -58,6 +59,22 @@ import { initialAgentSelection, loadRoomWorkspace, loadSessionWorkspace, warmAge
 const PawSessionWorkspace = lazy(loadSessionWorkspace);
 const PawRoomWorkspace = lazy(loadRoomWorkspace);
 
+type CreatorDraft = { seed?: string; value: string };
+const creatorDrafts = new WeakMap<ControlTransport, Map<string, CreatorDraft>>();
+
+function acquireCreatorDraft(transport: ControlTransport, windowId: string): CreatorDraft {
+  let windows = creatorDrafts.get(transport);
+  if (!windows) {
+    windows = new Map();
+    creatorDrafts.set(transport, windows);
+  }
+  // Minimized content unmounts. Retain its input under this renderer's
+  // transport/window, while late callbacks keep their previous view's copy.
+  const draft = { ...(windows.get(windowId) ?? { value: '' }) };
+  windows.set(windowId, draft);
+  return draft;
+}
+
 export function PawAgentApp(props: Parameters<typeof PawAgentAppBody>[0]) {
   const presentation = useChatPresentation();
   return presentation ? <PawAgentAppBody {...props} /> : <ChatPresentationProvider ownerKey="builtin:agent" defaultVersion="v2"><PawAgentAppBody {...props} /></ChatPresentationProvider>;
@@ -98,11 +115,24 @@ function PawAgentAppBody({
   const organizationToggleRef = useRef<HTMLButtonElement>(null);
   const directoryNeeded = railOpen || (interfaceMode === 'jev' && organizationOpen);
   const [query, setQuery] = useState('');
-  const homeDraftRef = useRef<{ seed?: string; value: string }>({ value: '' });
-  if (selection.kind === 'new' && selection.draft !== undefined && selection.draft !== homeDraftRef.current.seed) {
-    homeDraftRef.current = { seed: selection.draft, value: selection.draft };
+  const creatorWindowId = surfaceIdentity?.windowId ?? 'standalone';
+  const homeDraftOwnerRef = useRef<{ windowId: string; draft: CreatorDraft } | null>(null);
+  const homeDraft = useMemo(() => {
+    const draft = acquireCreatorDraft(transport, creatorWindowId);
+    const previous = homeDraftOwnerRef.current;
+    // A replacement Host in the same mounted view retains the visible input.
+    if (previous?.windowId === creatorWindowId) {
+      draft.seed = previous.draft.seed;
+      draft.value = previous.draft.value;
+    }
+    homeDraftOwnerRef.current = { windowId: creatorWindowId, draft };
+    return draft;
+  }, [transport, creatorWindowId]);
+  if (selection.kind === 'new' && selection.draft !== undefined && selection.draft !== homeDraft.seed) {
+    homeDraft.seed = selection.draft;
+    homeDraft.value = selection.draft;
   }
-  const retainHomeDraft = useCallback((value: string) => { homeDraftRef.current.value = value; }, []);
+  const retainHomeDraft = useCallback((value: string) => { homeDraft.value = value; }, [homeDraft]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [actionError, setActionError] = useState('');
@@ -524,9 +554,9 @@ function PawAgentAppBody({
             modelError={modelError}
             defaultModel={defaultModel}
             durableAvailable={durableAvailable}
-            initialDraft={homeDraftRef.current.value}
+            initialDraft={homeDraft.value}
             onDraftChange={retainHomeDraft}
-            key={`new:${selection.draft ?? ''}`}
+            key={`${creatorWindowId}:new:${selection.draft ?? ''}`}
             models={models}
             onOpenRoom={(id) => setSelection({ kind: 'room', id })}
             onOpenSession={(id) => setSelection({ kind: 'session', id })}
@@ -537,7 +567,7 @@ function PawAgentAppBody({
             sessions={visibleSessions}
             showRecents={false}
             onCreated={(next, created, createdRoom) => {
-              if (!(next.kind === 'room' && next.error)) homeDraftRef.current.value = '';
+              if (!(next.kind === 'room' && next.error)) homeDraft.value = '';
               if (created) {
                 optimisticSessionsRef.current[created.id] = created;
                 setSessions((current) => [created, ...current.filter((item) => item.id !== created.id)]);

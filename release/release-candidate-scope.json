@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-15T15:21:03.075927+00:00",
+  "generatedAt": "2026-10-15T16:36:28.100829+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
-    "branch": "undo/app-center-control-surface-20261015",
-    "baseCommit": "87e3217f264e40722bbf3521023bd8b8d3d6e6df",
-    "candidateCommitPolicy": "Keep catalogue controls readable across themes and narrow windows; preserve the Browser resting address presentation state."
+    "branch": "undo/creator-minimize-draft-20261016",
+    "baseCommit": "7c9ce94df9656773247f6c76461e6efa9a694bf8",
+    "candidateCommitPolicy": "Retain unsent creator text across minimized view remounts under its existing renderer transport and window; keep late callbacks isolated."
   },
   "dispositions": {
     "keep_release": "Retain task-owned source and release metadata.",
@@ -13,47 +13,43 @@
     "other_work_not_in_release": "Preserve unrelated work outside this candidate."
   },
   "groups": {
-    "app_center_theme": {
-      "description": "App Center Package surface theme",
-      "pathCount": 1
+    "agent_creator": {
+      "description": "Agent creator draft lifetime",
+      "pathCount": 2
     },
     "release_metadata": {
       "description": "release metadata",
       "pathCount": 2
-    },
-    "browser_theme": {
-      "description": "Browser resting address theme",
-      "pathCount": 1
     }
   },
   "items": [
     {
-      "path": "control-center-web/src/paw-os/styles/paw-os-system-apps.css",
+      "path": "control-center-web/src/paw-os/apps/PawAgentApp.tsx",
       "status": "modified",
-      "group": "app_center_theme",
+      "group": "agent_creator",
       "disposition": "keep_release",
-      "reason": "Use the active system surface for catalogue search, filters and selected counts, as proved necessary by installed build1973."
+      "reason": "Preserve unsent creator text across minimized view remounts and verify identity isolation, successful consumption and late receipts."
     },
     {
-      "path": "control-center-web/src/paw-os/styles/paw-os-stellar-dark.css",
+      "path": "control-center-web/src/paw-os/apps/PawAgentApp.test.tsx",
       "status": "modified",
-      "group": "browser_theme",
+      "group": "agent_creator",
       "disposition": "keep_release",
-      "reason": "Respect the Browser hidden raw-input state while its styled address is presented."
+      "reason": "Preserve unsent creator text across minimized view remounts and verify identity isolation, successful consumption and late receipts."
     },
     {
       "path": "CHANGELOG.md",
       "status": "modified",
       "group": "release_metadata",
       "disposition": "keep_release",
-      "reason": "Use the active system surface for catalogue search, filters and selected counts, as proved necessary by installed build1973."
+      "reason": "Preserve unsent creator text across minimized view remounts and verify identity isolation, successful consumption and late receipts."
     },
     {
       "path": "release/release-candidate-scope.json",
       "status": "modified",
       "group": "release_metadata",
       "disposition": "keep_release",
-      "reason": "Use the active system surface for catalogue search, filters and selected counts, as proved necessary by installed build1973."
+      "reason": "Preserve unsent creator text across minimized view remounts and verify identity isolation, successful consumption and late receipts."
     }
   ],
   "summary": {
@@ -62,9 +58,8 @@
       "keep_release": 4
     },
     "groupCounts": {
-      "app_center_theme": 1,
-      "release_metadata": 2,
-      "browser_theme": 1
+      "agent_creator": 2,
+      "release_metadata": 2
     },
     "unclassifiedPathCount": 0,
     "otherWorkNotInReleasePathCount": 0
