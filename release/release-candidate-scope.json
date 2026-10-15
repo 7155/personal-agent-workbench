@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-15T10:13:43.933502+00:00",
+  "generatedAt": "2026-10-15T10:59:22.110112+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
-    "branch": "undo/earth-batch-receipts-20261015",
-    "baseCommit": "ca188d147a3395ca7155c59f8d1ce37e1df0a13b",
-    "candidateCommitPolicy": "Keep terminal Earth batch receipts on failure and Stop, with task-led geospatial verification guidance."
+    "branch": "undo/earth-preview-provenance-20261015",
+    "baseCommit": "179d113b66401ee37736e72bf8406af6697a9643",
+    "candidateCommitPolicy": "Bind Earth preview provenance to the actual open script; HTML reports retain their own evidence."
   },
   "dispositions": {
     "keep_release": "Retain task-owned source and release metadata.",
@@ -13,12 +13,8 @@
     "other_work_not_in_release": "Preserve unrelated work outside this candidate."
   },
   "groups": {
-    "earth_runtime": {
-      "description": "earth runtime",
-      "pathCount": 6
-    },
-    "geospatial_guidance": {
-      "description": "geospatial guidance",
+    "earth_preview_provenance": {
+      "description": "earth preview provenance",
       "pathCount": 2
     },
     "release_metadata": {
@@ -28,84 +24,41 @@
   },
   "items": [
     {
-      "path": "control-center-web/extension-apps/earth-research/pi-package/cloud-batch.mjs",
+      "path": "control-center-web/extension-apps/earth-research/App.tsx",
       "status": "modified",
-      "group": "earth_runtime",
+      "group": "earth_preview_provenance",
       "disposition": "keep_release",
-      "reason": "Preserve Earth batch failure identity and cancellation; retain real geospatial evidence, coverage and NoData boundaries."
+      "reason": "Do not associate an independent report or a different script with the current run merely because another saved script matches."
     },
     {
-      "path": "control-center-web/extension-apps/earth-research/pi-package/cloud-batch.d.mts",
+      "path": "control-center-web/extension-apps/earth-research/App.test.tsx",
       "status": "modified",
-      "group": "earth_runtime",
+      "group": "earth_preview_provenance",
       "disposition": "keep_release",
-      "reason": "Preserve Earth batch failure identity and cancellation; retain real geospatial evidence, coverage and NoData boundaries."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/pi-package/cloud-batch.test.mjs",
-      "status": "added",
-      "group": "earth_runtime",
-      "disposition": "keep_release",
-      "reason": "Preserve Earth batch failure identity and cancellation; retain real geospatial evidence, coverage and NoData boundaries."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/pi-package/index.ts",
-      "status": "modified",
-      "group": "earth_runtime",
-      "disposition": "keep_release",
-      "reason": "Preserve Earth batch failure identity and cancellation; retain real geospatial evidence, coverage and NoData boundaries."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/pi-package/run-script.mjs",
-      "status": "modified",
-      "group": "earth_runtime",
-      "disposition": "keep_release",
-      "reason": "Preserve Earth batch failure identity and cancellation; retain real geospatial evidence, coverage and NoData boundaries."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/README.md",
-      "status": "modified",
-      "group": "geospatial_guidance",
-      "disposition": "keep_release",
-      "reason": "Preserve Earth batch failure identity and cancellation; retain real geospatial evidence, coverage and NoData boundaries."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/pi-package/gis-knowledge.json",
-      "status": "modified",
-      "group": "geospatial_guidance",
-      "disposition": "keep_release",
-      "reason": "Preserve Earth batch failure identity and cancellation; retain real geospatial evidence, coverage and NoData boundaries."
+      "reason": "Do not associate an independent report or a different script with the current run merely because another saved script matches."
     },
     {
       "path": "CHANGELOG.md",
       "status": "modified",
       "group": "release_metadata",
       "disposition": "keep_release",
-      "reason": "Preserve Earth batch failure identity and cancellation; retain real geospatial evidence, coverage and NoData boundaries."
+      "reason": "Do not associate an independent report or a different script with the current run merely because another saved script matches."
     },
     {
       "path": "release/release-candidate-scope.json",
       "status": "modified",
       "group": "release_metadata",
       "disposition": "keep_release",
-      "reason": "Preserve Earth batch failure identity and cancellation; retain real geospatial evidence, coverage and NoData boundaries."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/pi-package/index.test.ts",
-      "status": "modified",
-      "group": "earth_runtime",
-      "disposition": "keep_release",
-      "reason": "Verify the Session Stop signal reaches the registered Earth batch tool."
+      "reason": "Do not associate an independent report or a different script with the current run merely because another saved script matches."
     }
   ],
   "summary": {
-    "pathCount": 10,
+    "pathCount": 4,
     "dispositionCounts": {
-      "keep_release": 10
+      "keep_release": 4
     },
     "groupCounts": {
-      "earth_runtime": 6,
-      "geospatial_guidance": 2,
+      "earth_preview_provenance": 2,
       "release_metadata": 2
     },
     "unclassifiedPathCount": 0,
