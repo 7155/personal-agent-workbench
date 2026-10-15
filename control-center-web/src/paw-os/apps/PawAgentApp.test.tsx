@@ -826,7 +826,7 @@ describe('PAWOS Agent App', () => {
   it('creates a Session and sends the first prompt from the same composer', async () => {
     const transport = createTransport();
     const user = userEvent.setup();
-    renderAgent(transport);
+    const view = renderAgent(transport);
 
     const composer = await screen.findByRole('textbox', { name: '描述你想完成的工作' });
     await user.type(composer, '检查发布门禁并给出结论');
@@ -839,6 +839,9 @@ describe('PAWOS Agent App', () => {
     expect(prompt?.params).toEqual({ sessionId: 'session-new' });
     expect(prompt?.body).toMatchObject({ message: '检查发布门禁并给出结论' });
     expect(await screen.findByText('Session 工作区')).toBeInTheDocument();
+    view.unmount();
+    renderAgent(transport);
+    expect(await screen.findByRole('textbox', { name: '描述你想完成的工作' })).toHaveValue('');
   });
 
   it('opens the Session before a slow first-prompt receipt settles', async () => {
@@ -915,6 +918,61 @@ describe('PAWOS Agent App', () => {
     view.rerender(agentTree(transport, { initialRoute: '/agent' }));
     expect(await screen.findByRole('textbox', { name: '描述你想完成的工作' })).toHaveValue('编辑后尚未发送的工作');
     expect(transport.requests.some(({ request }) => ['agent.sessions.create', 'agent.session.prompt'].includes(request.pathId))).toBe(false);
+  });
+
+  it.each(['/agent', '/agent?draft=initial'])('retains the creator draft when its minimized view remounts: %s', async initialRoute => {
+    const transport = createTransport();
+    const tree = (windowId: string, owner = transport) => (
+      <PawOsAppSurfaceProvider appId="agent" windowId={windowId} width={1000} height={800}>
+        {agentTree(owner, { initialRoute })}
+      </PawOsAppSurfaceProvider>
+    );
+    const mount = (windowId: string, owner = transport) => render(tree(windowId, owner));
+    const view = mount('creator-one');
+    fireEvent.change(await screen.findByRole('textbox', { name: '描述你想完成的工作' }), {
+      target: { value: 'edited unsent work\nkeep this complete draft' },
+    });
+    // PawWindowLayer deliberately unmounts minimized content.
+    view.unmount();
+    const restored = mount('creator-one');
+    expect(await screen.findByRole('textbox', { name: '描述你想完成的工作' })).toHaveValue('edited unsent work\nkeep this complete draft');
+    restored.rerender(tree('creator-two'));
+    expect(await screen.findByRole('textbox', { name: '描述你想完成的工作' })).toHaveValue(initialRoute.includes('draft=') ? 'initial' : '');
+    restored.rerender(tree('creator-one'));
+    expect(await screen.findByRole('textbox', { name: '描述你想完成的工作' })).toHaveValue('edited unsent work\nkeep this complete draft');
+    restored.unmount();
+    const peer = mount('creator-two');
+    expect(await screen.findByRole('textbox', { name: '描述你想完成的工作' })).toHaveValue(initialRoute.includes('draft=') ? 'initial' : '');
+    peer.unmount();
+    const otherTransport = createTransport();
+    mount('creator-one', otherTransport);
+    expect(await screen.findByRole('textbox', { name: '描述你想完成的工作' })).toHaveValue(initialRoute.includes('draft=') ? 'initial' : '');
+    for (const owner of [transport, otherTransport]) {
+      expect(owner.requests.some(({ request }) => ['agent.sessions.create', 'agent.rooms.create', 'agent.session.prompt', 'agent.room.message'].includes(request.pathId))).toBe(false);
+    }
+  });
+
+  it('keeps a reopened creator draft when the previous view receives a late creation receipt', async () => {
+    const creation = deferred<unknown>();
+    const transport = createTransport({ sessionCreateHandler: () => creation.promise });
+    const user = userEvent.setup();
+    const first = renderAgent(transport);
+    fireEvent.change(await screen.findByRole('textbox', { name: '描述你想完成的工作' }), { target: { value: 'original submitted work' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: '开始 Session' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: '开始 Session' }));
+    first.unmount();
+    const reopened = renderAgent(transport);
+    fireEvent.change(await screen.findByRole('textbox', { name: '描述你想完成的工作' }), { target: { value: 'newer unsent work' } });
+    await act(async () => creation.resolve({ ok: true, session: {
+      id: 'late-created-session', title: 'original submitted work', status: 'idle', mode: 'coordinator',
+      updatedAtMs: 4, workspaceRoots: ['/work/paw'], messageCount: 0, lastMessagePreview: '',
+    } }));
+    await waitFor(() => expect(transport.requests.some(({ request }) => request.pathId === 'agent.session.prompt')).toBe(true));
+    reopened.unmount();
+    renderAgent(transport);
+    expect(await screen.findByRole('textbox', { name: '描述你想完成的工作' })).toHaveValue('newer unsent work');
+    expect(transport.requests.filter(({ request }) => request.pathId === 'agent.sessions.create')).toHaveLength(1);
+    expect(transport.requests.filter(({ request }) => request.pathId === 'agent.session.prompt')).toHaveLength(1);
   });
 
   it('accepts the sessionId compatibility deep link without returning to new work', async () => {
@@ -1176,6 +1234,7 @@ function catalogRequestPaths(transport: MockControlTransport): string[] {
 }
 
 function createTransport(options: {
+  sessionCreateHandler?: (request: ControlRequest) => unknown | Promise<unknown>;
   archiveHandler?: (request: ControlRequest) => unknown | Promise<unknown>;
   promptHandler?: () => Promise<unknown>;
   modelHandler?: () => Promise<unknown>;
@@ -1217,12 +1276,12 @@ function createTransport(options: {
       },
       'agent.role.models': options.modelCatalog ?? { providers: [], selected: {} },
       'configuration.settings': options.preferencesHandler ?? preferenceSettings({}),
-      'agent.sessions.create': (request: ControlRequest) => {
+      'agent.sessions.create': options.sessionCreateHandler ?? ((request: ControlRequest) => {
         const body = request.body as Record<string, unknown>;
         const created = { ...sessions[0], id: 'session-new', title: body.title as string, updatedAtMs: 4 };
         if (!options.staleCatalogAfterCreate) sessions = [created];
         return { ok: true, session: created };
-      },
+      }),
       'agent.session.prompt': options.promptHandler ?? { ok: true },
       'agent.session.archive': options.archiveHandler ?? ((request: ControlRequest) => {
         const sessionId = String(request.params?.sessionId ?? '');

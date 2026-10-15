@@ -5,6 +5,10 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Retain unsent Agent creator text when a minimized window is restored, without
+  sharing it across windows or transport owners, replaying its original seed,
+  or letting a previous view's late creation receipt clear newer input.
+
 - Keep App Center search, filter buttons and selected filter counts on the
   active theme surface, preserving text contrast in dark mode, and let search
   and the enable switch wrap without squeezing the switch label.
