@@ -148,8 +148,8 @@ export default function registerEarthResearchPackage(pi: any) {
   });
   pi.registerTool({
     name: 'earth_gis_workspace', label: '准备 GIS 项目', executionMode: 'sequential',
-    description: 'Prepare the local GIS adapter in the bound Session workspace, preserving runtime configuration. Optional python selects an existing environment containing GeoPandas and Rasterio. No provider or Google call.',
-    parameters: schema({ python: string }),
+    description: 'Prepare the local GIS adapter in the bound Session workspace, preserving runtime configuration. Omit python to select the managed GIS environment. The separate Earth Engine runtime.python may contain only earthengine-api; do not copy it here to inspect downloaded GeoTIFFs. An explicit Python must contain GeoPandas, Rasterio, Shapely and PyProj. No provider or Google call.',
+    parameters: schema({ python: { ...string, description: 'Optional local GIS interpreter, separate from the Earth Engine SDK interpreter. Omit to use the installed managed GIS environment; existing project configuration is preserved.' } }),
     async execute(_id: string, input: { python?: string }, _signal: AbortSignal, _update: Update, ctx: Context) {
       const result = prepareGISWorkspace(workspace(ctx), input);
       return { content: [{ type: 'text', text: JSON.stringify(result) }], details: { status: 'ready', ...result } };
@@ -276,11 +276,11 @@ export default function registerEarthResearchPackage(pi: any) {
   });
   pi.registerTool({
     name: 'earth_run_batch', label: '批量运行 GEE 脚本', executionMode: 'sequential',
-    description: 'Run saved Earth Engine scripts as a bounded batch. Every script retains its own run ID and remote task records; aggregate status is completed, partial or failed.',
+    description: 'Run saved Earth Engine scripts as a bounded batch. Failed runs retain their run ID and artifact. Stop terminates active local runners and prevents queued scripts from starting; remote computation may continue. Aggregate status is completed, partial, failed or cancelled.',
     parameters: schema({ scripts: { type: 'array', items: string }, concurrency: { type: 'number' }, project: string, python: string, dependencies: string }, ['scripts']),
-    async execute(_id: string, input: { scripts: string[]; concurrency?: number; project?: string; python?: string; dependencies?: string }, _signal: AbortSignal, _update: Update, ctx: Context) {
-      const result = await runEarthScriptBatch({ root: workspace(ctx), ...input });
-      return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result, isError: result.status === 'failed' };
+    async execute(_id: string, input: { scripts: string[]; concurrency?: number; project?: string; python?: string; dependencies?: string }, signal: AbortSignal, _update: Update, ctx: Context) {
+      const result = await runEarthScriptBatch({ root: workspace(ctx), ...input, signal });
+      return { content: [{ type: 'text', text: JSON.stringify(result) }], details: result, isError: result.status === 'failed' || result.status === 'cancelled' };
     },
   });
   pi.registerTool({

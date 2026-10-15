@@ -35,6 +35,20 @@ it('registers the map state, GIS retrieval, spatial data, cloud task, Asset, bat
   expect(commands.has('earth-gis-bundle')).toBe(true);
 });
 
+it('honors the Session Stop signal at the registered cloud batch tool boundary', async () => {
+  const { root, tools } = setup();
+  fs.mkdirSync(path.join(root, '.earth'));
+  const runner = path.join(root, 'runner.mjs');
+  fs.writeFileSync(runner, "import fs from 'node:fs';fs.writeFileSync('unexpected-start','yes');console.log(JSON.stringify({runId:'unexpected-run',status:'completed'}));");
+  fs.writeFileSync(path.join(root, '.earth/runtime.json'), JSON.stringify({ runner, project: 'test-project', dependencies: root, python: 'python3' }));
+  fs.writeFileSync(path.join(root, 'analysis.js'), '');
+  const controller = new AbortController(); controller.abort();
+  const result = await tools.get('earth_run_batch').execute('batch-stop', { scripts: ['analysis.js'] }, controller.signal, undefined, { cwd: root });
+  expect(result.isError).toBe(true);
+  expect(result.details).toMatchObject({ status: 'cancelled', cancelled: 1, completed: 0, failed: 0 });
+  expect(fs.existsSync(path.join(root, 'unexpected-start'))).toBe(false);
+});
+
 it('returns a deterministic spatial connection receipt through the package command bridge', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'earth-package-command-test-')); roots.push(root); const entries: unknown[] = []; const commands = new Map<string, any>();
   register({ registerTool: () => {}, registerCommand: (name: string, command: any) => commands.set(name, command), appendEntry: (_type: string, data: unknown) => entries.push(data) });

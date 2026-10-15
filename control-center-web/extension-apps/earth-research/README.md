@@ -92,6 +92,37 @@ Current bounds: raster range/local learning windows up to 4 million pixels; loca
 
 ## Acceptance
 
+For task-led cloud acceptance, keep each script and its failed runs, then read
+back the registered statistics, report and downloaded raster. Useful cases are:
+
+- **Palisades 2025 fire:** distinguish official incident damage counts from a
+  dNBR screening result. Report the fixed study boundary, pre-fire vegetation,
+  common valid coverage and threshold sensitivity. Missing post-fire coverage
+  prevents a whole-fire loss claim; spectral change does not establish building
+  damage or financial loss.
+- **Folsom Lake 2021/2022:** use the same lake envelope and seasonal window,
+  compare water on the common valid mask, and preserve the water classifications
+  and threshold sensitivity. Surface area is not storage volume or water level.
+- **Colorado 2019–2024:** verify all six years and the actual state boundary.
+  Record sampling support, coverage and annual trajectories. Keep a strict
+  confidence tier separate from exploratory candidates; an empty eligible set
+  means insufficient evidence, not zero statewide change. Candidate grid areas
+  extrapolated from sparse samples are not mapped change polygons.
+
+Cloud multi-band reductions need an explicit, appropriate `maxPixels` budget
+at the chosen CRS/scale. A pixel-limit failure is retained and diagnosed before
+rerunning; do not use `bestEffort` to silently change analysis resolution.
+For local GeoTIFF readback, omit `earth_gis_workspace.python` to use the managed
+GIS runtime. The GEE Python environment is separate and may lack GIS packages.
+Clip downloaded classifications to the actual ROI and read their NoData
+metadata back. If zero is reserved for NoData, encode valid classes with
+positive values and record the mapping; valid dry land must remain queryable.
+
+`earth_run_batch` retains each terminal run ID and artifact, including failed
+runs. Stop terminates active local runners and prevents queued scripts from
+starting; already submitted remote computation may still continue. A stopped
+item and a failed item remain distinct in the aggregate receipt.
+
 1. With the model unused, select two IDs from 100 parcels, export GPKG, read back those exact IDs, then open HTML and ensure polling leaves it open.
 2. Change a vertex and remark, save and reopen: IDs, untouched values/types/nulls and the old snapshot must agree. Reject a stale edit.
 3. Connect with the default Chinese name, load a named GPKG layer; query known DEM point and region values; subtract a lake and validate geometry/area.
