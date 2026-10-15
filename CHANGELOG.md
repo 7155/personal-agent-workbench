@@ -6,7 +6,11 @@ source checkpoint is not a signed and notarized macOS binary release.
 ## Unreleased
 
 - Keep App Center search, filter buttons and selected filter counts on the
-  active theme surface, preserving text contrast in dark mode.
+  active theme surface, preserving text contrast in dark mode, and let search
+  and the enable switch wrap without squeezing the switch label.
+
+- Keep Browser's raw address text hidden behind its styled resting URL in the
+  dark theme, while preserving the exact editable address on focus.
 
 - Keep App Center Package card surfaces in the active system theme, so dark
   mode text remains readable.

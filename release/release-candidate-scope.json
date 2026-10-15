@@ -5,7 +5,7 @@
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "undo/app-center-control-surface-20261015",
     "baseCommit": "87e3217f264e40722bbf3521023bd8b8d3d6e6df",
-    "candidateCommitPolicy": "Complete the App Center theme surface repair for search and filtering controls."
+    "candidateCommitPolicy": "Keep catalogue controls readable across themes and narrow windows; preserve the Browser resting address presentation state."
   },
   "dispositions": {
     "keep_release": "Retain task-owned source and release metadata.",
@@ -20,6 +20,10 @@
     "release_metadata": {
       "description": "release metadata",
       "pathCount": 2
+    },
+    "browser_theme": {
+      "description": "Browser resting address theme",
+      "pathCount": 1
     }
   },
   "items": [
@@ -29,6 +33,13 @@
       "group": "app_center_theme",
       "disposition": "keep_release",
       "reason": "Use the active system surface for catalogue search, filters and selected counts, as proved necessary by installed build1973."
+    },
+    {
+      "path": "control-center-web/src/paw-os/styles/paw-os-stellar-dark.css",
+      "status": "modified",
+      "group": "browser_theme",
+      "disposition": "keep_release",
+      "reason": "Respect the Browser hidden raw-input state while its styled address is presented."
     },
     {
       "path": "CHANGELOG.md",
@@ -46,13 +57,14 @@
     }
   ],
   "summary": {
-    "pathCount": 3,
+    "pathCount": 4,
     "dispositionCounts": {
-      "keep_release": 3
+      "keep_release": 4
     },
     "groupCounts": {
       "app_center_theme": 1,
-      "release_metadata": 2
+      "release_metadata": 2,
+      "browser_theme": 1
     },
     "unclassifiedPathCount": 0,
     "otherWorkNotInReleasePathCount": 0

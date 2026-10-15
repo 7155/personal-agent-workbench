@@ -660,7 +660,8 @@
 
 .paw-desktop-root .paw-system-catalog-tools {
   display: flex;
-  align-items: end;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 10px;
@@ -668,6 +669,7 @@
 
 .paw-desktop-root .paw-system-catalog-tools > label:first-child {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 7px;
   width: min(420px, 100%);
@@ -676,6 +678,10 @@
   border: 1px solid var(--paw-system-line);
   border-radius: var(--paw-system-radius-sm);
   color: var(--paw-system-muted);
+}
+
+.paw-desktop-root .paw-system-catalog-tools > .ui-switch-field {
+  flex-shrink: 0;
 }
 
 .paw-desktop-root .paw-system-catalog-tools > label:first-child .ui-input {

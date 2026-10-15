@@ -625,6 +625,12 @@
   background: var(--paw-app-surface-strong);
 }
 
+/* Keep the raw address hidden while the styled resting URL is visible.
+ * The shared dark input palette above must not paint both text layers. */
+:root[data-theme='dark'] .paw-desktop-root[data-paw-visual='stellar'] .paw-window-shell[data-app='browser'] .paw-omnibox-field[data-presenting] > input {
+  color: transparent;
+}
+
 :root[data-theme='dark'] .paw-desktop-root[data-paw-visual='stellar'] .paw-window-shell[data-app='browser'] :is(.paw-browser-workspace, .paw-browser-viewport) {
   background: var(--paw-app-surface);
 }
