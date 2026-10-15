@@ -887,7 +887,7 @@
 }
 
 .paw-desktop-root .paw-system-app[data-system-app='system-monitor'] .mgmt-metric {
-  background: #fff;
+  background: var(--paw-system-surface);
   border: 1px solid var(--paw-system-line);
 }
 
@@ -915,13 +915,13 @@
 }
 
 .paw-desktop-root .paw-system-app[data-system-app='system-monitor'] .context-debug-session-viewer {
-  background: #fff;
+  background: var(--paw-system-surface);
   border-color: var(--paw-system-line);
   border-radius: var(--paw-system-radius-lg);
 }
 
 .paw-desktop-root .paw-system-app[data-system-app='system-monitor'] .context-debug-session-tree {
-  background: #f8f9fa;
+  background: var(--color-surface-subtle);
   border-right-color: var(--paw-system-line);
 }
 

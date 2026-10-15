@@ -5,6 +5,9 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Keep System Monitor metrics and context readers on their active theme
+  surfaces so dark mode readings retain contrast.
+
 - Retain unsent Agent creator text when a minimized window is restored, without
   sharing it across windows or transport owners, replaying its original seed,
   or letting a previous view's late creation receipt clear newer input.

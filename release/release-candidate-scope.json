@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-15T16:36:28.100829+00:00",
+  "generatedAt": "2026-10-15T17:21:18.232742+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
-    "branch": "undo/creator-minimize-draft-20261016",
-    "baseCommit": "7c9ce94df9656773247f6c76461e6efa9a694bf8",
-    "candidateCommitPolicy": "Retain unsent creator text across minimized view remounts under its existing renderer transport and window; keep late callbacks isolated."
+    "branch": "undo/system-monitor-theme-20261016",
+    "baseCommit": "e9dc9f81f164a18b72c670f9f811fa74f8fbf00f",
+    "candidateCommitPolicy": "Use the existing System Monitor theme surfaces for metrics and context reader panels, retaining contrast in dark and light themes."
   },
   "dispositions": {
     "keep_release": "Retain task-owned source and release metadata.",
@@ -13,9 +13,9 @@
     "other_work_not_in_release": "Preserve unrelated work outside this candidate."
   },
   "groups": {
-    "agent_creator": {
-      "description": "Agent creator draft lifetime",
-      "pathCount": 2
+    "system_monitor": {
+      "description": "System Monitor theme surface ownership",
+      "pathCount": 1
     },
     "release_metadata": {
       "description": "release metadata",
@@ -24,41 +24,34 @@
   },
   "items": [
     {
-      "path": "control-center-web/src/paw-os/apps/PawAgentApp.tsx",
+      "path": "control-center-web/src/paw-os/styles/paw-os-system-apps.css",
       "status": "modified",
-      "group": "agent_creator",
+      "group": "system_monitor",
       "disposition": "keep_release",
-      "reason": "Preserve unsent creator text across minimized view remounts and verify identity isolation, successful consumption and late receipts."
-    },
-    {
-      "path": "control-center-web/src/paw-os/apps/PawAgentApp.test.tsx",
-      "status": "modified",
-      "group": "agent_creator",
-      "disposition": "keep_release",
-      "reason": "Preserve unsent creator text across minimized view remounts and verify identity isolation, successful consumption and late receipts."
+      "reason": "Keep System Monitor readings and context reader panels on their active theme surface."
     },
     {
       "path": "CHANGELOG.md",
       "status": "modified",
       "group": "release_metadata",
       "disposition": "keep_release",
-      "reason": "Preserve unsent creator text across minimized view remounts and verify identity isolation, successful consumption and late receipts."
+      "reason": "Keep System Monitor readings and context reader panels on their active theme surface."
     },
     {
       "path": "release/release-candidate-scope.json",
       "status": "modified",
       "group": "release_metadata",
       "disposition": "keep_release",
-      "reason": "Preserve unsent creator text across minimized view remounts and verify identity isolation, successful consumption and late receipts."
+      "reason": "Keep System Monitor readings and context reader panels on their active theme surface."
     }
   ],
   "summary": {
-    "pathCount": 4,
+    "pathCount": 3,
     "dispositionCounts": {
-      "keep_release": 4
+      "keep_release": 3
     },
     "groupCounts": {
-      "agent_creator": 2,
+      "system_monitor": 1,
       "release_metadata": 2
     },
     "unclassifiedPathCount": 0,
