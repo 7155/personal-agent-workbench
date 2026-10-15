@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-15T14:37:24.988403+00:00",
+  "generatedAt": "2026-10-15T15:21:03.075927+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
-    "branch": "undo/app-center-theme-surface-20261015",
-    "baseCommit": "3afeacb017a7344e0795eb56f283576f29d84e18",
-    "candidateCommitPolicy": "Use the system surface token for App Center Package cards in both themes."
+    "branch": "undo/app-center-control-surface-20261015",
+    "baseCommit": "87e3217f264e40722bbf3521023bd8b8d3d6e6df",
+    "candidateCommitPolicy": "Keep catalogue controls readable across themes and narrow windows; preserve the Browser resting address presentation state."
   },
   "dispositions": {
     "keep_release": "Retain task-owned source and release metadata.",
@@ -20,6 +20,10 @@
     "release_metadata": {
       "description": "release metadata",
       "pathCount": 2
+    },
+    "browser_theme": {
+      "description": "Browser resting address theme",
+      "pathCount": 1
     }
   },
   "items": [
@@ -28,31 +32,39 @@
       "status": "modified",
       "group": "app_center_theme",
       "disposition": "keep_release",
-      "reason": "Remove the fixed white Package card surface that conflicts with the active dark text palette."
+      "reason": "Use the active system surface for catalogue search, filters and selected counts, as proved necessary by installed build1973."
+    },
+    {
+      "path": "control-center-web/src/paw-os/styles/paw-os-stellar-dark.css",
+      "status": "modified",
+      "group": "browser_theme",
+      "disposition": "keep_release",
+      "reason": "Respect the Browser hidden raw-input state while its styled address is presented."
     },
     {
       "path": "CHANGELOG.md",
       "status": "modified",
       "group": "release_metadata",
       "disposition": "keep_release",
-      "reason": "Remove the fixed white Package card surface that conflicts with the active dark text palette."
+      "reason": "Use the active system surface for catalogue search, filters and selected counts, as proved necessary by installed build1973."
     },
     {
       "path": "release/release-candidate-scope.json",
       "status": "modified",
       "group": "release_metadata",
       "disposition": "keep_release",
-      "reason": "Remove the fixed white Package card surface that conflicts with the active dark text palette."
+      "reason": "Use the active system surface for catalogue search, filters and selected counts, as proved necessary by installed build1973."
     }
   ],
   "summary": {
-    "pathCount": 3,
+    "pathCount": 4,
     "dispositionCounts": {
-      "keep_release": 3
+      "keep_release": 4
     },
     "groupCounts": {
       "app_center_theme": 1,
-      "release_metadata": 2
+      "release_metadata": 2,
+      "browser_theme": 1
     },
     "unclassifiedPathCount": 0,
     "otherWorkNotInReleasePathCount": 0
