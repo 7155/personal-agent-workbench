@@ -42,7 +42,13 @@ fixture setup errors are fixture issues, not claimed product vulnerabilities.
 
 ```bash
 python3 scripts/run_paw_acceptance.py
-python3 -m unittest tests.test_agent_lab_acceptance_fixtures \
+PAW_PYTHON="$(uv run --locked python -c 'import sys; print(sys.executable)')"
+PAW_OFFLINE_STATE="$(mktemp -d "${TMPDIR:-/tmp}/paw-offline.XXXXXX")"
+mkdir -p "$PAW_OFFLINE_STATE/home"
+env -i PATH="$PATH" HOME="$PAW_OFFLINE_STATE/home" TMPDIR="${TMPDIR:-/tmp}" \
+  RAG_IME_APP_SUPPORT_DIR="$PAW_OFFLINE_STATE/support" \
+  RAG_IME_KNOWLEDGE_ROOT="$PAW_OFFLINE_STATE/knowledge" \
+  "$PAW_PYTHON" -m unittest tests.test_agent_lab_acceptance_fixtures \
   tests.test_agent_lab_acceptance_storage tests.test_agent_lab_acceptance_trace \
   tests.test_agent_lab_acceptance
 node --test scripts/test_paw_acceptance_provider_guard.mjs
@@ -65,20 +71,22 @@ sandbox for arbitrary subprocesses or imported networking libraries.
 Example using caller-supplied path variables:
 
 ```bash
+test -f "$ROUND_LEDGER" || { echo "Restore the original budget ledger before live execution" >&2; exit 1; }
 python3 scripts/run_paw_acceptance.py --live \
   --repo "$REPO" --runtime-payload "$PAIRED_RUNTIME" \
   --state-root "$FRESH_RUN_STATE" --agent-dir "$EXISTING_AGENT_CONFIG" \
   --model gpt-6.1-sol \
   --case personal-profile-update-v1 --max-provider-calls 1 \
-  --budget-usd 10 --budget-ledger "$ROUND_LEDGER" \
-  --initial-known-usd "$PRIOR_KNOWN_USD" \
-  --initial-unknown-usd "$PRIOR_UNKNOWN_RESERVED_USD" \
+  --budget-usd "$ORIGINAL_ROUND_LIMIT_USD" --budget-ledger "$ROUND_LEDGER" \
   --enable-provider-guard
 ```
 
 Use `--inherit-proxy-env` only when the existing configured proxy is needed.
 No credential-bearing environment defaults are imported. `--help` makes no
 provider request. Omitting `--live` always stays offline.
+The example resumes an **existing ledger** and deliberately omits new-ledger
+opening flags. See [macOS local acceptance](../../CONTRIBUTING.md#macos-本地接续与验收)
+for the separate UI mock, staged deterministic Pi checks and their boundaries.
 
 For a **new ledger**, opening known/unknown balances are mandatory, including
 explicit `0` values for a truly new round. Carry prior spend and outstanding
