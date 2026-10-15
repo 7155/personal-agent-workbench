@@ -5,6 +5,9 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Keep App Center search, filter buttons and selected filter counts on the
+  active theme surface, preserving text contrast in dark mode.
+
 - Keep App Center Package card surfaces in the active system theme, so dark
   mode text remains readable.
 

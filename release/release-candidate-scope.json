@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-15T14:37:24.988403+00:00",
+  "generatedAt": "2026-10-15T15:21:03.075927+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
-    "branch": "undo/app-center-theme-surface-20261015",
-    "baseCommit": "3afeacb017a7344e0795eb56f283576f29d84e18",
-    "candidateCommitPolicy": "Use the system surface token for App Center Package cards in both themes."
+    "branch": "undo/app-center-control-surface-20261015",
+    "baseCommit": "87e3217f264e40722bbf3521023bd8b8d3d6e6df",
+    "candidateCommitPolicy": "Complete the App Center theme surface repair for search and filtering controls."
   },
   "dispositions": {
     "keep_release": "Retain task-owned source and release metadata.",
@@ -28,21 +28,21 @@
       "status": "modified",
       "group": "app_center_theme",
       "disposition": "keep_release",
-      "reason": "Remove the fixed white Package card surface that conflicts with the active dark text palette."
+      "reason": "Use the active system surface for catalogue search, filters and selected counts, as proved necessary by installed build1973."
     },
     {
       "path": "CHANGELOG.md",
       "status": "modified",
       "group": "release_metadata",
       "disposition": "keep_release",
-      "reason": "Remove the fixed white Package card surface that conflicts with the active dark text palette."
+      "reason": "Use the active system surface for catalogue search, filters and selected counts, as proved necessary by installed build1973."
     },
     {
       "path": "release/release-candidate-scope.json",
       "status": "modified",
       "group": "release_metadata",
       "disposition": "keep_release",
-      "reason": "Remove the fixed white Package card surface that conflicts with the active dark text palette."
+      "reason": "Use the active system surface for catalogue search, filters and selected counts, as proved necessary by installed build1973."
     }
   ],
   "summary": {
