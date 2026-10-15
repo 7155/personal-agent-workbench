@@ -136,11 +136,19 @@ describe('persistent coordinator App', () => {
   expect(failed.turnsById['tool-only'].status).toBe('failed');
   expect(coordinatorLatestTurnOutcome(failed)).toBe('failed');
   const ready=reduceAgentEvent(failed,coordinatorOutcomeEvent(5,'','status_changed',{status:'ready'})).state;
-  expect(ready.turnsById.unscoped.messageIds).toEqual([]);
-  expect(ready.turnsById.unscoped.activityIds).toEqual([]);
-  expect(ready.turnsById.unscoped.status).toBe('completed');
+  expect(ready.status).toBe('ready');
+  expect(ready.turnOrder).toEqual(failed.turnOrder);
+  expect(ready.turnsById).toEqual(failed.turnsById);
+  expect(ready.turnsById).not.toHaveProperty('unscoped');
   expect(ready.turnsById.previous.status).toBe('completed');
   expect(coordinatorLatestTurnOutcome(ready)).toBe('failed');
+  // Older cached projections can still contain an empty bootstrap turn.
+  const legacyReady={...ready,turnOrder:[...ready.turnOrder,'unscoped'],turnsById:{...ready.turnsById,
+   unscoped:{id:'unscoped',status:'completed' as const,messageIds:[],activityIds:[],createdAtMs:50,updatedAtMs:50}}};
+  expect(legacyReady.turnsById.unscoped.messageIds).toEqual([]);
+  expect(legacyReady.turnsById.unscoped.activityIds).toEqual([]);
+  expect(legacyReady.turnsById.unscoped.status).toBe('completed');
+  expect(coordinatorLatestTurnOutcome(legacyReady)).toBe('failed');
  });
  it('shows a newer source failure rather than the old completion after ready bootstrap', async () => {
   vi.mocked(useAgentLiveSession).mockImplementation(function useSyncedLiveFixture({ sessionId, onSnapshot, onRecoveryState }) {

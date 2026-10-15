@@ -132,19 +132,17 @@ export function OrganizationWorkspace({ spaceKeys, selectedKey, onOpen, onClose 
   </OrganizationSurface>;
 }
 function GroupEditor({ item, disabled, onSave }: { item: Space; disabled: boolean; onSave: (value: string) => void }) {
-  const [value, setValue] = useState(item.group);
-  const stored = useRef({ key: item.key, group: item.group });
-  useEffect(() => {
-    const previous = stored.current;
-    if (previous.key === item.key && previous.group === item.group) return;
-    stored.current = { key: item.key, group: item.group };
-    // Mount already initializes the field. Later receipts update untouched
-    // fields without replacing a draft the user is still editing.
-    setValue(current => previous.key === item.key && current !== previous.group ? current : item.group);
-  }, [item.key, item.group]);
+  const [draft, setDraft] = useState({ key: item.key, group: item.group, value: item.group });
+  if (draft.key !== item.key || draft.group !== item.group) {
+    // React retries this render before committing children. An untouched input
+    // and its summary must publish the same receipt, while edits stay intact.
+    setDraft({ key: item.key, group: item.group,
+      value: draft.key === item.key && draft.value !== draft.group ? draft.value : item.group });
+  }
+  const value = draft.value;
   return <details className="jev-space__group"><summary>{item.group ? `分组：${item.group}` : '设置分组'}</summary>
     <form onSubmit={event => { event.preventDefault(); if (!disabled) onSave(value.trim()); }}>
-      <input aria-label={`${item.title}的分组`} disabled={disabled} maxLength={80} placeholder="例如：RAG 实验" value={value} onChange={event => setValue(event.target.value)} />
+      <input aria-label={`${item.title}的分组`} disabled={disabled} maxLength={80} placeholder="例如：RAG 实验" value={value} onChange={event => setDraft({ key: item.key, group: item.group, value: event.target.value })} />
       <button disabled={disabled || value.trim() === item.group} type="submit">保存</button>
     </form>
   </details>;

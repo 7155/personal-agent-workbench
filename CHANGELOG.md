@@ -5,6 +5,10 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Keep refreshed workspace group summaries and untouched inputs consistent in
+  the same commit, while preserving edits. Cover both live Session readiness
+  and legacy empty bootstrap projections in the coordinator regression checks.
+
 - Keep previously visible windows inside the desktop through successive browser
   zoom steps, while restoring their original size and preserving manual placement.
 
