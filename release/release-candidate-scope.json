@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-15T10:59:22.110112+00:00",
+  "generatedAt": "2026-10-15T14:37:24.988403+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
-    "branch": "undo/earth-preview-provenance-20261015",
-    "baseCommit": "179d113b66401ee37736e72bf8406af6697a9643",
-    "candidateCommitPolicy": "Bind Earth preview provenance to the actual open script; HTML reports retain their own evidence."
+    "branch": "undo/app-center-theme-surface-20261015",
+    "baseCommit": "3afeacb017a7344e0795eb56f283576f29d84e18",
+    "candidateCommitPolicy": "Use the system surface token for App Center Package cards in both themes."
   },
   "dispositions": {
     "keep_release": "Retain task-owned source and release metadata.",
@@ -13,9 +13,9 @@
     "other_work_not_in_release": "Preserve unrelated work outside this candidate."
   },
   "groups": {
-    "earth_preview_provenance": {
-      "description": "earth preview provenance",
-      "pathCount": 2
+    "app_center_theme": {
+      "description": "App Center Package surface theme",
+      "pathCount": 1
     },
     "release_metadata": {
       "description": "release metadata",
@@ -24,41 +24,34 @@
   },
   "items": [
     {
-      "path": "control-center-web/extension-apps/earth-research/App.tsx",
+      "path": "control-center-web/src/paw-os/styles/paw-os-system-apps.css",
       "status": "modified",
-      "group": "earth_preview_provenance",
+      "group": "app_center_theme",
       "disposition": "keep_release",
-      "reason": "Do not associate an independent report or a different script with the current run merely because another saved script matches."
-    },
-    {
-      "path": "control-center-web/extension-apps/earth-research/App.test.tsx",
-      "status": "modified",
-      "group": "earth_preview_provenance",
-      "disposition": "keep_release",
-      "reason": "Do not associate an independent report or a different script with the current run merely because another saved script matches."
+      "reason": "Remove the fixed white Package card surface that conflicts with the active dark text palette."
     },
     {
       "path": "CHANGELOG.md",
       "status": "modified",
       "group": "release_metadata",
       "disposition": "keep_release",
-      "reason": "Do not associate an independent report or a different script with the current run merely because another saved script matches."
+      "reason": "Remove the fixed white Package card surface that conflicts with the active dark text palette."
     },
     {
       "path": "release/release-candidate-scope.json",
       "status": "modified",
       "group": "release_metadata",
       "disposition": "keep_release",
-      "reason": "Do not associate an independent report or a different script with the current run merely because another saved script matches."
+      "reason": "Remove the fixed white Package card surface that conflicts with the active dark text palette."
     }
   ],
   "summary": {
-    "pathCount": 4,
+    "pathCount": 3,
     "dispositionCounts": {
-      "keep_release": 4
+      "keep_release": 3
     },
     "groupCounts": {
-      "earth_preview_provenance": 2,
+      "app_center_theme": 1,
       "release_metadata": 2
     },
     "unclassifiedPathCount": 0,

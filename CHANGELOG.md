@@ -5,6 +5,9 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Keep App Center Package card surfaces in the active system theme, so dark
+  mode text remains readable.
+
 - Bind Earth script provenance to the opened file, and keep independent HTML
   reports free of another script's run correspondence label.
 

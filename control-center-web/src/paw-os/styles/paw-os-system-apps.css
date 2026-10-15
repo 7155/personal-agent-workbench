@@ -755,7 +755,7 @@
   gap: 10px;
   min-width: 0;
   padding: 14px 15px;
-  background: #fff;
+  background: var(--paw-system-surface);
   border: 1px solid var(--paw-system-line);
   border-radius: var(--paw-system-radius-lg);
   transition: border-color 150ms ease-out, box-shadow 150ms ease-out, transform 150ms ease-out;
