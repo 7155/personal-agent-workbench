@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-17T02:44:00.680071+00:00",
+  "generatedAt": "2026-10-17T02:50:43.630269+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "undo/observability-search-focus-20261017",
     "baseCommit": "b43ca1bd1cdd7c01fbdb245d600a2eefcce43e42",
-    "candidateCommitPolicy": "Return focus to the event search after an explicit filter reset, including a fresh category snapshot, without taking focus from another control or an inactive window."
+    "candidateCommitPolicy": "Return focus to the event search after an explicit filter reset, including a fresh category snapshot, without taking focus from another control or an inactive window. Keep the existing visible outer focus ring without a duplicate inner outline."
   },
   "dispositions": {
     "keep_release": "Retain task-owned source and release metadata.",
@@ -15,7 +15,7 @@
   "groups": {
     "observability_focus": {
       "description": "Explicit event-search focus recovery and regression coverage",
-      "pathCount": 2
+      "pathCount": 3
     },
     "release_metadata": {
       "description": "release metadata",
@@ -29,6 +29,13 @@
       "group": "observability_focus",
       "disposition": "keep_release",
       "reason": "Preserve keyboard continuity after clearing event filters, including asynchronous snapshot reloads."
+    },
+    {
+      "path": "control-center-web/src/features/observability/observability.css",
+      "status": "modified",
+      "group": "observability_focus",
+      "disposition": "keep_release",
+      "reason": "Retain the existing search-pill focus ring without a duplicate desktop input outline."
     },
     {
       "path": "control-center-web/src/features/observability/observability-feature.test.tsx",
@@ -53,12 +60,12 @@
     }
   ],
   "summary": {
-    "pathCount": 4,
+    "pathCount": 5,
     "dispositionCounts": {
-      "keep_release": 4
+      "keep_release": 5
     },
     "groupCounts": {
-      "observability_focus": 2,
+      "observability_focus": 3,
       "release_metadata": 2
     },
     "unclassifiedPathCount": 0,
