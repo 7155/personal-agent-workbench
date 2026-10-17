@@ -915,6 +915,47 @@ describe('ObservabilityFeature', () => {
     expect(await screen.findByRole('heading', { name: '没有匹配的记录' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '清除筛选' }));
     expect((await screen.findAllByText('记忆工具 已完成')).length).toBeGreaterThan(0);
+    expect(screen.getByRole('searchbox', { name: '搜索运行记录' })).toHaveFocus();
+  });
+
+  it('restores search focus when clearing a category needs a new snapshot', async () => {
+    const user = userEvent.setup();
+    let releaseSnapshot!: () => void;
+    const nextSnapshot = new Promise<void>((resolve) => { releaseSnapshot = resolve; });
+    renderFeature(observationTransport({
+      beforeSnapshot: (request) => request.query?.category ? undefined : nextSnapshot,
+    }), '/observability?category=tool');
+    await screen.findByRole('list', { name: '运行记录事件' });
+    await user.type(screen.getByRole('searchbox', { name: '搜索运行记录' }), '不会匹配');
+    await user.click(screen.getByRole('button', { name: '清除筛选' }));
+    await waitFor(() => expect(screen.queryByRole('searchbox', { name: '搜索运行记录' })).not.toBeInTheDocument());
+
+    releaseSnapshot();
+    const search = await screen.findByRole('searchbox', { name: '搜索运行记录' });
+    await waitFor(() => expect(search).toHaveFocus());
+    await user.keyboard('继续搜索');
+    expect(search).toHaveValue('继续搜索');
+  });
+
+  it('does not steal focus from another input while a cleared category reloads', async () => {
+    const user = userEvent.setup();
+    let releaseSnapshot!: () => void;
+    const nextSnapshot = new Promise<void>((resolve) => { releaseSnapshot = resolve; });
+    renderFeature(observationTransport({
+      beforeSnapshot: (request) => request.query?.category ? undefined : nextSnapshot,
+    }), '/observability?category=tool');
+    render(<input aria-label="另一个输入框" />);
+    await screen.findByRole('list', { name: '运行记录事件' });
+    await user.type(screen.getByRole('searchbox', { name: '搜索运行记录' }), '不会匹配');
+    await user.click(screen.getByRole('button', { name: '清除筛选' }));
+    await waitFor(() => expect(screen.queryByRole('searchbox', { name: '搜索运行记录' })).not.toBeInTheDocument());
+    const other = screen.getByRole('textbox', { name: '另一个输入框' });
+    await user.type(other, '保留正在输入的内容');
+
+    releaseSnapshot();
+    await screen.findByRole('searchbox', { name: '搜索运行记录' });
+    expect(other).toHaveFocus();
+    expect(other).toHaveValue('保留正在输入的内容');
   });
 
   it('uses local search only for the timeline and keeps every loaded step of the selected trace', async () => {
@@ -1036,7 +1077,7 @@ function renderFeature(
 }
 
 function observationTransport(options: {
-  beforeSnapshot?: () => void;
+  beforeSnapshot?: (request: ControlRequest) => void | Promise<void>;
   items?: ObservationEventV1[];
   total?: number;
   truncated?: boolean;
@@ -1053,7 +1094,7 @@ function observationTransport(options: {
   return new MockControlTransport({
     routes: {
       'observability.snapshot': (request: ControlRequest) => {
-        options.beforeSnapshot?.();
+        const beforeSnapshot = options.beforeSnapshot?.(request);
         const category = String(request.query?.category ?? '');
         const items = (options.items ?? [
           observationEvent({
@@ -1074,7 +1115,7 @@ function observationTransport(options: {
             summary: 'Agent 正在分析',
           }),
         ]).filter((item) => !category || item.category === category);
-        return {
+        const snapshot = {
           schemaVersion: 'rag-ime.observation-snapshot.v1',
           generatedAtMs: 1_000,
           firstSequence: 1,
@@ -1085,6 +1126,7 @@ function observationTransport(options: {
           counts: { total: options.total ?? items.length, byCategory: {}, byStatus: {} },
           items,
         };
+        return beforeSnapshot ? beforeSnapshot.then(() => snapshot) : snapshot;
       },
       'observability.trace.get': options.trace ?? canonicalTraceResponse(),
       'observability.evals.list': options.evals ?? evalListResponse(),

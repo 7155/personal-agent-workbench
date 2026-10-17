@@ -5,6 +5,10 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Return focus to System Monitor's event search after clearing an empty filter,
+  including a fresh category snapshot, without taking focus from another input
+  or an inactive window. Keep one visible focus ring around the search field.
+
 - Offer the existing reload action when the workbench entry remains pending
   for 30 seconds, keep recovery visible if that entry finishes late, and retain
   heading contrast in its dark theme.

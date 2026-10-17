@@ -161,6 +161,11 @@
   font-size: 13px;
 }
 
+/* The search pill already provides a visible focus-within ring. */
+:is(main, section)[data-route-id='observability'] .observation-search input:focus-visible {
+  outline: 0;
+}
+
 :is(main, section)[data-route-id='observability'] .observation-scope {
   display: flex;
   align-items: center;
