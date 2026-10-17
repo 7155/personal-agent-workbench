@@ -6,7 +6,8 @@ source checkpoint is not a signed and notarized macOS binary release.
 ## Unreleased
 
 - Offer the existing reload action when the workbench entry remains pending
-  for 30 seconds, and keep recovery visible if that entry finishes late.
+  for 30 seconds, keep recovery visible if that entry finishes late, and retain
+  heading contrast in its dark theme.
 
 - Keep System Monitor metrics and context readers on their active theme
   surfaces so dark mode readings retain contrast.

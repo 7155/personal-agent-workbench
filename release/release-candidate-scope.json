@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-17T02:08:44.896086+00:00",
+  "generatedAt": "2026-10-17T02:21:11.329123+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
     "branch": "undo/boot-load-recovery-20261017",
     "baseCommit": "4771741f2f606c3428c430fb2e12ca35ab90c70c",
-    "candidateCommitPolicy": "Offer the existing startup recovery action when the split entry does not settle within 30 seconds, without mounting a late result or automatically reloading."
+    "candidateCommitPolicy": "Offer the existing startup recovery action when the split entry does not settle within 30 seconds, without mounting a late result or automatically reloading. Keep the startup recovery heading on its inherited theme color before application theme bootstrap."
   },
   "dispositions": {
     "keep_release": "Retain task-owned source and release metadata.",
@@ -15,7 +15,7 @@
   "groups": {
     "startup_recovery": {
       "description": "Bounded split-entry loading and recovery regression coverage",
-      "pathCount": 2
+      "pathCount": 3
     },
     "release_metadata": {
       "description": "release metadata",
@@ -23,6 +23,13 @@
     }
   },
   "items": [
+    {
+      "path": "control-center-web/index.html",
+      "status": "modified",
+      "group": "startup_recovery",
+      "disposition": "keep_release",
+      "reason": "Keep the standalone recovery heading readable before application theme bootstrap."
+    },
     {
       "path": "control-center-web/src/app/start-control-center.ts",
       "status": "modified",
@@ -53,12 +60,12 @@
     }
   ],
   "summary": {
-    "pathCount": 4,
+    "pathCount": 5,
     "dispositionCounts": {
-      "keep_release": 4
+      "keep_release": 5
     },
     "groupCounts": {
-      "startup_recovery": 2,
+      "startup_recovery": 3,
       "release_metadata": 2
     },
     "unclassifiedPathCount": 0,
