@@ -1880,7 +1880,8 @@ i.paw-files-tree__disclosure {
 .paw-files-location button { display: grid; place-items: center; width: 34px; height: 100%; flex: none; border: 0; background: transparent; color: var(--paw-files-control-ink); cursor: pointer; }
 .paw-files-location button:disabled { opacity: .45; cursor: default; }
 .paw-files-location:focus-within { outline: 2px solid var(--paw-accent, #3567b7); outline-offset: 2px; }
-.paw-files-location input:focus { outline: none; }
+/* The address shell owns focus; outrank the desktop input ring on its child. */
+.paw-files-app .paw-files-location input:focus { outline: none; }
 .paw-files-session-notice { display: flex; gap: 10px; align-items: center; padding: 8px 14px; color: var(--paw-files-muted); font-size: 12px; flex: none; }
 .paw-files-session-notice button, .paw-files-tree__limit button { color: var(--paw-accent, #3567b7); font: inherit; border: 0; background: none; padding: 6px; cursor: pointer; }
 @container paw-files (max-width: 620px) {
