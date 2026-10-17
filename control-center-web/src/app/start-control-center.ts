@@ -8,6 +8,7 @@ type StartControlCenterOptions = {
 };
 
 const DEFAULT_LOAD_ERROR_MESSAGE = '工作台没有完整载入。你的数据没有改变，请检查连接后重新载入。';
+const ENTRY_LOAD_TIMEOUT_MS = 30_000;
 
 export async function startControlCenter({
   load = () => import('./mount-control-center'),
@@ -19,12 +20,19 @@ export async function startControlCenter({
     throw new Error('Missing #root mount point');
   }
 
+  let loadTimeout: ReturnType<typeof setTimeout> | undefined;
+
   try {
-    const { mountControlCenter } = await load();
+    const deadline = new Promise<never>((_, reject) => {
+      loadTimeout = setTimeout(() => reject(new Error('Control Center entry load timed out')), ENTRY_LOAD_TIMEOUT_MS);
+    });
+    const { mountControlCenter } = await Promise.race([load(), deadline]);
     mountControlCenter(root);
   } catch (error) {
     showStartupRecovery(root, reload);
     console.error('Control Center failed to start', error);
+  } finally {
+    clearTimeout(loadTimeout);
   }
 }
 
