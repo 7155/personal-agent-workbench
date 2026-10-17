@@ -5,6 +5,9 @@ source checkpoint is not a signed and notarized macOS binary release.
 
 ## Unreleased
 
+- Keep one visible focus ring around the Files address field when typing a path,
+  including narrow windows.
+
 - Return focus to System Monitor's event search after clearing an empty filter,
   including a fresh category snapshot, without taking focus from another input
   or an inactive window. Keep one visible focus ring around the search field.
