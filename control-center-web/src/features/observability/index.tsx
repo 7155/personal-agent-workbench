@@ -35,6 +35,7 @@ import type { ObservabilityEvalListV1 } from '@/contracts/generated/observabilit
 import type { ObservabilityTraceGetV1 } from '@/contracts/generated/observability-trace-get.v1';
 import type { SandboxRunV1 } from '@/contracts/generated/sandbox-run.v1';
 import { DebugContextInspector } from '@/features/agent/status/DebugContextInspector';
+import { usePawOsAppActive } from '@/features/paw-os/surface-context';
 import {
   InlineNotice,
   ManagementPage,
@@ -81,8 +82,24 @@ type CategoryFilter = (typeof CATEGORY_FILTERS)[number];
 
 export function ObservabilityFeature() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const appActive = usePawOsAppActive();
   const category = observationCategory(searchParams.get('category')) ?? 'all';
   const [needle, setNeedle] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const restoreSearchFocus = useRef(false);
+
+  useEffect(() => {
+    if (appActive === false) {
+      restoreSearchFocus.current = false;
+      return;
+    }
+    const input = searchInputRef.current;
+    if (!restoreSearchFocus.current || needle || category !== 'all' || !input) return;
+    restoreSearchFocus.current = false;
+    // Filter state and its snapshot can settle in separate commits. Restore
+    // the input once both return, unless the user has moved to another control.
+    if (document.activeElement === document.body || document.activeElement === input) input.focus();
+  });
   const filters = useMemo<ObservationFilters>(() => ({
     ...(searchParams.get('sessionId') ? { sessionId: searchParams.get('sessionId') ?? '' } : {}),
     ...(searchParams.get('roomId') ? { roomId: searchParams.get('roomId') ?? '' } : {}),
@@ -171,6 +188,7 @@ export function ObservabilityFeature() {
   }
 
   function clearViewFilters(): void {
+    restoreSearchFocus.current = true;
     setNeedle('');
     const params = new URLSearchParams(searchParams);
     params.delete('category');
@@ -267,6 +285,7 @@ export function ObservabilityFeature() {
               <Search aria-hidden="true" size={15} />
               <input
                 aria-label="搜索运行记录"
+                ref={searchInputRef}
                 onChange={(event) => setNeedle(event.target.value)}
                 placeholder="搜索流程、对话、协作或步骤"
                 type="search"

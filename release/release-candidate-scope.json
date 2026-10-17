@@ -1,11 +1,11 @@
 {
   "schemaVersion": "personal-agent-workbench.release-candidate-scope.v1",
-  "generatedAt": "2026-10-17T02:21:11.329123+00:00",
+  "generatedAt": "2026-10-17T02:44:00.680071+00:00",
   "source": {
     "repository": "git@github.com:7155/personal-agent-workbench.git",
-    "branch": "undo/boot-load-recovery-20261017",
-    "baseCommit": "4771741f2f606c3428c430fb2e12ca35ab90c70c",
-    "candidateCommitPolicy": "Offer the existing startup recovery action when the split entry does not settle within 30 seconds, without mounting a late result or automatically reloading. Keep the startup recovery heading on its inherited theme color before application theme bootstrap."
+    "branch": "undo/observability-search-focus-20261017",
+    "baseCommit": "b43ca1bd1cdd7c01fbdb245d600a2eefcce43e42",
+    "candidateCommitPolicy": "Return focus to the event search after an explicit filter reset, including a fresh category snapshot, without taking focus from another control or an inactive window."
   },
   "dispositions": {
     "keep_release": "Retain task-owned source and release metadata.",
@@ -13,9 +13,9 @@
     "other_work_not_in_release": "Preserve unrelated work outside this candidate."
   },
   "groups": {
-    "startup_recovery": {
-      "description": "Bounded split-entry loading and recovery regression coverage",
-      "pathCount": 3
+    "observability_focus": {
+      "description": "Explicit event-search focus recovery and regression coverage",
+      "pathCount": 2
     },
     "release_metadata": {
       "description": "release metadata",
@@ -24,48 +24,41 @@
   },
   "items": [
     {
-      "path": "control-center-web/index.html",
+      "path": "control-center-web/src/features/observability/index.tsx",
       "status": "modified",
-      "group": "startup_recovery",
+      "group": "observability_focus",
       "disposition": "keep_release",
-      "reason": "Keep the standalone recovery heading readable before application theme bootstrap."
+      "reason": "Preserve keyboard continuity after clearing event filters, including asynchronous snapshot reloads."
     },
     {
-      "path": "control-center-web/src/app/start-control-center.ts",
+      "path": "control-center-web/src/features/observability/observability-feature.test.tsx",
       "status": "modified",
-      "group": "startup_recovery",
+      "group": "observability_focus",
       "disposition": "keep_release",
-      "reason": "Offer focused recovery for a pending startup entry and preserve it when the entry finishes late."
-    },
-    {
-      "path": "control-center-web/src/app/start-control-center.test.ts",
-      "status": "modified",
-      "group": "startup_recovery",
-      "disposition": "keep_release",
-      "reason": "Offer focused recovery for a pending startup entry and preserve it when the entry finishes late."
+      "reason": "Preserve keyboard continuity after clearing event filters, including asynchronous snapshot reloads."
     },
     {
       "path": "CHANGELOG.md",
       "status": "modified",
       "group": "release_metadata",
       "disposition": "keep_release",
-      "reason": "Offer focused recovery for a pending startup entry and preserve it when the entry finishes late."
+      "reason": "Preserve keyboard continuity after clearing event filters, including asynchronous snapshot reloads."
     },
     {
       "path": "release/release-candidate-scope.json",
       "status": "modified",
       "group": "release_metadata",
       "disposition": "keep_release",
-      "reason": "Offer focused recovery for a pending startup entry and preserve it when the entry finishes late."
+      "reason": "Preserve keyboard continuity after clearing event filters, including asynchronous snapshot reloads."
     }
   ],
   "summary": {
-    "pathCount": 5,
+    "pathCount": 4,
     "dispositionCounts": {
-      "keep_release": 5
+      "keep_release": 4
     },
     "groupCounts": {
-      "startup_recovery": 3,
+      "observability_focus": 2,
       "release_metadata": 2
     },
     "unclassifiedPathCount": 0,
